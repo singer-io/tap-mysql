@@ -18,9 +18,20 @@ from singer import utils
 
 import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
-ColumnDesc = collections.namedtuple(
-    'ColumnDesc',
-    ['name', 'type_code', 'display_size', 'internal_size', 'precision', 'scale', 'null_ok'])
+@attr.s
+class Column(object):
+
+    name = attr.ib(default=None)
+    type_code = attr.ib(default=None)
+    display_size = attr.ib(default=None)
+    internal_size = attr.ib(default=None)
+    precision = attr.ib(default=None)
+    scale = attr.ib(default=None)
+    null_ok = attr.ib(default=None)
+
+    sql_datatype = attr.ib(default=None)
+    key = attr.ib(default=None)
+    
 
 REQUIRED_CONFIG_KEYS = [
     'host',
@@ -44,77 +55,81 @@ def open_connection(config):
 
 def schema_for_column(c):
     
-    # if c.type_code == FIELD_TYPE.DECIMAL:
-    #     return c
-    # elif c.type_code == FIELD_TYPE.TINY:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.SHORT:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.LONG:
-    #     print(c)
-    # elif c.type_code == FIELD_TYPE.FLOAT:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.DOUBLE:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.NULL:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.TIMESTAMP:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.LONGLONG:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.INT24:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.DATE:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.TIME:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.DATETIME:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.YEAR:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.NEWDATE:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.VARCHAR:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.BIT:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.JSON:
-    #     raise Exception('Unrecognized type')
-    if c.type_code == FIELD_TYPE.NEWDECIMAL:
+    if c.type_code == FIELD_TYPE.TINY:
+        return {
+            'type': 'integer',
+            }
+    elif c.type_code == FIELD_TYPE.SHORT:
+        return {
+            'type': 'integer',
+            }
+    elif c.type_code == FIELD_TYPE.LONG:
+        return {
+            'type': 'integer',
+            }
+    elif c.type_code == FIELD_TYPE.FLOAT:
+        return {
+            'type': 'number'
+        }
+    elif c.type_code == FIELD_TYPE.DOUBLE:
+        return {
+            'type': 'number'
+        }
+    elif c.type_code == FIELD_TYPE.LONGLONG:
+        return {
+            'type': 'integer',
+            }    
+    elif c.type_code == FIELD_TYPE.INT24:
+        return {
+            'type': 'integer',
+            }    
+    elif c.type_code == FIELD_TYPE.NEWDECIMAL:
         return {
             'type': 'number',
-            'maximum': 10 ** c.precision - 1,
+            'exclusiveMaximum': 10 ** (c.precision - c.scale),
+            'multipleOf': 10 ** (0 - c.scale),
             }
-    # elif c.type_code == FIELD_TYPE.ENUM:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.SET:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.TINY_BLOB:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.MEDIUM_BLOB:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.LONG_BLOB:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.BLOB:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.VAR_STRING:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.STRING:
-    #     raise Exception('Unrecognized type')
-    # elif c.type_code == FIELD_TYPE.GEOMETRY:
-    #     raise Exception('Unrecognized type')
-    raise Exception('Unrecognized column description {}'.format(c))
+    else:
+        return {
+            'inclusion': 'unsupported',
+            'description': 'Unsupported column type {}'.format(c.sql_datatype)
+        }
+
     
 def schema_for_table(connection, table):
     schema = {
         'type': 'object',
         'properties': {}
     }
+
+    columns = {}
+    with connection.cursor() as cursor:
+        cursor.execute('SHOW columns FROM {}'.format(table))
+        
+        for c in cursor.fetchall():
+            (name, datatype, _, _, _, _) = c
+            column = Column()
+            column.name = name
+            column.sql_datatype = datatype
+            columns[name] = column
+
     with connection.cursor() as cursor:
         cursor.execute('SELECT * FROM {} LIMIT 1'.format(table))
-        for column_desc in cursor.description:
-            column_desc = ColumnDesc(*column_desc)
-            schema['properties'][column_desc.name] = schema_for_column(column_desc)
+        for description in cursor.description:
+
+            # Destructure column desc
+            (name, type_code, display_size, internal_size,
+             precision, scale, null_ok) = description
+            col = columns[name]
+            col.type_code = type_code
+            col.display_size = display_size
+            col.internal_size = internal_size
+            col.precision = precision
+            col.scale = scale
+            col.null_ok = null_ok
+            
+            schema['properties'][col.name] = schema_for_column(col)
+
         return schema
 
 
