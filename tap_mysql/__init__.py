@@ -147,7 +147,7 @@ def do_discover(connection):
             tables = [row[0] for row in cursor.fetchall()]
             LOGGER.info('DB %s has tables %s', db, tables)
         for table in tables:
-            pass
+            schema = schema_for_table(connection, table)
 
 
 def main():
