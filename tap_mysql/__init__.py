@@ -18,20 +18,18 @@ from singer import utils
 
 import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
-@attr.s
-class Column(object):
-
-    name = attr.ib(default=None)
-    type_code = attr.ib(default=None)
-    display_size = attr.ib(default=None)
-    internal_size = attr.ib(default=None)
-    precision = attr.ib(default=None)
-    scale = attr.ib(default=None)
-    null_ok = attr.ib(default=None)
-
-    sql_datatype = attr.ib(default=None)
-    key = attr.ib(default=None)
-    
+Column = collections.namedtuple('Column', [
+    "table_schema", 
+    "table_name", 
+    "column_name", 
+    "data_type", 
+    "character_maximum_length", 
+    "numeric_precision", 
+    "numeric_scale", 
+    "datetime_precision", 
+    "column_type", 
+    "column_key"]
+)
 
 REQUIRED_CONFIG_KEYS = [
     'host',
@@ -52,43 +50,79 @@ def open_connection(config):
         database=config['database'],
     )
 
+STRING_TYPES = set([
+    'char',
+    'enum',
+    'longtext',
+    'mediumtext',
+    'text',
+    'varchar'
+])
+
+MAX_VAL_FOR_INTEGER_TYPE = {
+    
+}
+
 
 def schema_for_column(c):
-    
-    if c.type_code == FIELD_TYPE.TINY:
+
+ # varchar    
+ # longtext   
+ # datetime   
+ # timestamp  
+ # text       
+ # bit        
+ # char       
+ # set        
+ # enum       
+ # longblob   
+ # mediumtext 
+ # blob       
+ # time       
+ # date       
+ # binary     
+
+    t = c.data_type
+
+    if t == 'tinyint':
         return {
             'type': 'integer',
-            }
-    elif c.type_code == FIELD_TYPE.SHORT:
+        }
+    elif t == 'smallint':
         return {
             'type': 'integer',
-            }
-    elif c.type_code == FIELD_TYPE.LONG:
+        }
+    elif t == 'int':
         return {
             'type': 'integer',
-            }
-    elif c.type_code == FIELD_TYPE.FLOAT:
+        }
+    elif t == 'float':
         return {
             'type': 'number'
         }
-    elif c.type_code == FIELD_TYPE.DOUBLE:
+    elif t == 'double':
         return {
             'type': 'number'
         }
-    elif c.type_code == FIELD_TYPE.LONGLONG:
+    elif t == 'bigint':
         return {
             'type': 'integer',
             }    
-    elif c.type_code == FIELD_TYPE.INT24:
+    elif t == 'mediumint':
         return {
             'type': 'integer',
-            }    
-    elif c.type_code == FIELD_TYPE.NEWDECIMAL:
+        }    
+    elif t == 'decimal':
         return {
             'type': 'number',
-            'exclusiveMaximum': 10 ** (c.precision - c.scale),
-            'multipleOf': 10 ** (0 - c.scale),
-            }
+            'exclusiveMaximum': 10 ** (c.numeric_precision - c.numeric_scale),
+            'multipleOf': 10 ** (0 - c.numeric_scale),
+        }
+    elif t in STRING_TYPES:
+        return {
+            'type': 'string',
+            'maxLength': c.character_maximum_length
+        }
     else:
         return {
             'inclusion': 'unsupported',
@@ -135,19 +169,41 @@ def schema_for_table(connection, table):
 
 def do_discover(connection):
     with connection.cursor() as cursor:
-        cursor.execute('SHOW DATABASES')
-        dbs = [row[0] for row in cursor.fetchall()]
+        cursor.execute("""
+          SELECT table_schema, 
+                 table_name, 
+                 column_name, 
+                 data_type, 
+                 character_maximum_length, 
+                 numeric_precision, 
+                 numeric_scale, 
+                 datetime_precision, 
+                 column_type, 
+                 column_key from information_schema.columns
+            WHERE table_schema NOT IN (
+              'information_schema',
+              'performance_schema',
+              'mysql')
+""")
 
-    LOGGER.info("Databases are %s", dbs)
-    for db in dbs:
-        with connection.cursor() as cursor:
-            # TODO: Cleanse the db name
-            cursor.execute('USE {}'.format(db))
-            cursor.execute('SHOW TABLES')
-            tables = [row[0] for row in cursor.fetchall()]
-            LOGGER.info('DB %s has tables %s', db, tables)
-        for table in tables:
-            schema = schema_for_table(connection, table)
+        rec = cursor.fetchone()
+        while rec is not None:
+            col = Column(*rec)
+            LOGGER.info('%s', col)
+
+            rec = cursor.fetchone()
+            
+
+    # LOGGER.info("Databases are %s", dbs)
+    # for db in dbs:
+    #     with connection.cursor() as cursor:
+    #         # TODO: Cleanse the db name
+    #         cursor.execute('USE {}'.format(db))
+    #         cursor.execute('SHOW TABLES')
+    #         tables = [row[0] for row in cursor.fetchall()]
+    #         LOGGER.info('DB %s has tables %s', db, tables)
+    #     for table in tables:
+    #         schema = schema_for_table(connection, table)
 
 
 def main():
