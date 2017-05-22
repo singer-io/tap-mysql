@@ -34,65 +34,77 @@ class TestTypeMapping(unittest.TestCase):
                   c_double DOUBLE,
                   c_bit BIT(4)
 )''')
-            
-        cls.schema = tap_mysql.schema_for_table(connection, 'column_test')
+
+        discovered = tap_mysql.discover_schemas(connection)
+        
+        cls.schema = discovered['column_test']['schema']
             
             
     def test_decimal(self):
         self.assertEqual(self.schema['properties']['c_decimal'], {
-            "type": "number",
-            "exclusiveMaximum": 100000000000,
-            "multipleOf": 1
+            'type': 'number',
+            'exclusiveMaximum': 10000000000,
+            'multipleOf': 1
         })
 
     def test_decimal_with_defined_scale_and_precision(self):        
         self.assertEqual(self.schema['properties']['c_decimal_2'], {
-            "type": "number",
-            "exclusiveMaximum": 100000000000,
+            'type': 'number',
+            'exclusiveMaximum': 1000000000,
             'multipleOf': 0.01})
 
     def test_tinyint(self):
         self.assertEqual(self.schema['properties']['c_tinyint'], {
-            "type": "integer",
-            })
+            'type': 'integer',
+            'minimum': -128,
+            'maximum': 127
+        })
 
     def test_smallint(self):
         self.assertEqual(self.schema['properties']['c_smallint'], {
-            "type": "integer",
-            })
+            'type': 'integer',
+            'minimum': -32768,
+            'maximum':  32767
+        })
 
     def test_mediumint(self):
         self.assertEqual(self.schema['properties']['c_mediumint'], {
-            "type": "integer",
-            })
+            'type': 'integer',
+            'minimum': -8388608,
+            'maximum':  8388607
+        })
 
     def test_int(self):
         self.assertEqual(self.schema['properties']['c_int'], {
-            "type": "integer",
-            })
+            'type': 'integer',
+            'minimum': -2147483648,
+            'maximum': 2147483647
+        })
         
     def test_bigint(self):
         self.assertEqual(self.schema['properties']['c_bigint'], {
-            "type": "integer",
-            })
+            'type': 'integer',
+            'minimum': -9223372036854775808,
+            'maximum':  9223372036854775807
+        })
 
     def test_float(self):
         self.assertEqual(self.schema['properties']['c_float'], {
-            "type": "number",
-            })                        
+            'type': 'number',
+        })                        
     
 
     def test_double(self):
         self.assertEqual(self.schema['properties']['c_double'], {
-            "type": "number",
+            'type': 'number',
         })                        
     
         
 
     def test_bit(self):
         self.assertEqual(self.schema['properties']['c_bit'], {
-            "inclusion": "unsupported",
-            "description": "Unsupported column type bit(4)",
+            'inclusion': 'unsupported',
+            'description': 'Unsupported column type bit(4)',
         })                        
     
         

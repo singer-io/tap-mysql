@@ -59,10 +59,15 @@ STRING_TYPES = set([
     'varchar'
 ])
 
-MAX_VAL_FOR_INTEGER_TYPE = {
-    
+BYTES_FOR_INTEGER_TYPE = {
+    'tinyint' : 1,
+    'smallint': 2,
+    'mediumint' : 3,
+    'int': 4,
+    'bigint': 8
 }
 
+FLOAT_TYPES = set(['float', 'double'])
 
 def schema_for_column(c):
 
@@ -84,90 +89,34 @@ def schema_for_column(c):
 
     t = c.data_type
 
-    if t == 'tinyint':
-        return {
-            'type': 'integer',
-        }
-    elif t == 'smallint':
-        return {
-            'type': 'integer',
-        }
-    elif t == 'int':
-        return {
-            'type': 'integer',
-        }
-    elif t == 'float':
-        return {
-            'type': 'number'
-        }
-    elif t == 'double':
-        return {
-            'type': 'number'
-        }
-    elif t == 'bigint':
-        return {
-            'type': 'integer',
-            }    
-    elif t == 'mediumint':
-        return {
-            'type': 'integer',
-        }    
+    result = {}
+    
+    if t in BYTES_FOR_INTEGER_TYPE:
+        result['type'] = 'integer'
+        bits = BYTES_FOR_INTEGER_TYPE[t] * 8
+        if 'unsigned' in c.column_type:
+            result['minimum'] = 0
+            result['maximum'] = 2 ** bits
+        else:
+            result['minimum'] = 0 - 2 ** (bits - 1)
+            result['maximum'] = 2 ** (bits - 1) - 1
+
+    elif t in FLOAT_TYPES:
+        result['type'] = 'number'
     elif t == 'decimal':
-        return {
-            'type': 'number',
-            'exclusiveMaximum': 10 ** (c.numeric_precision - c.numeric_scale),
-            'multipleOf': 10 ** (0 - c.numeric_scale),
-        }
+        result['type'] = 'number'
+        result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
+        result['multipleOf'] = 10 ** (0 - c.numeric_scale)
     elif t in STRING_TYPES:
-        return {
-            'type': 'string',
-            'maxLength': c.character_maximum_length
-        }
+        result['type'] = 'string'
+        result['maxLength'] = c.character_maximum_length
     else:
-        return {
-            'inclusion': 'unsupported',
-            'description': 'Unsupported column type {}'.format(c.sql_datatype)
-        }
+        result['inclusion'] = 'unsupported'
+        result['description'] = 'Unsupported column type {}'.format(c.column_type)
+    return result
 
     
-def schema_for_table(connection, table):
-    schema = {
-        'type': 'object',
-        'properties': {}
-    }
-
-    columns = {}
-    with connection.cursor() as cursor:
-        cursor.execute('SHOW columns FROM {}'.format(table))
-        
-        for c in cursor.fetchall():
-            (name, datatype, _, _, _, _) = c
-            column = Column()
-            column.name = name
-            column.sql_datatype = datatype
-            columns[name] = column
-
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT * FROM {} LIMIT 1'.format(table))
-        for description in cursor.description:
-
-            # Destructure column desc
-            (name, type_code, display_size, internal_size,
-             precision, scale, null_ok) = description
-            col = columns[name]
-            col.type_code = type_code
-            col.display_size = display_size
-            col.internal_size = internal_size
-            col.precision = precision
-            col.scale = scale
-            col.null_ok = null_ok
-            
-            schema['properties'][col.name] = schema_for_column(col)
-
-        return schema
-
-
-def do_discover(connection):
+def discover_schemas(connection):
     with connection.cursor() as cursor:
         cursor.execute("""
           SELECT table_schema, 
@@ -185,15 +134,28 @@ def do_discover(connection):
               'performance_schema',
               'mysql')
 """)
-
+        data = {}
         rec = cursor.fetchone()
         while rec is not None:
             col = Column(*rec)
-            LOGGER.info('%s', col)
+            db = col.table_schema
+            table = col.table_name
+            if db not in data:
+                data[db] = {}
+            if table not in data[db]:
+                data[db][table] = {
+                    'type': 'object',
+                    'properties': {}
+                }
+            data[db][table]['properties'][col.column_name] = schema_for_column(col)
 
             rec = cursor.fetchone()
-            
-
+        result = {}
+        for db in data:
+            for table in data[db]:
+                result[table] = {'schema': data[db][table]}
+        return result
+    
     # LOGGER.info("Databases are %s", dbs)
     # for db in dbs:
     #     with connection.cursor() as cursor:
@@ -205,6 +167,10 @@ def do_discover(connection):
     #     for table in tables:
     #         schema = schema_for_table(connection, table)
 
+def do_discover(connection):
+    schemas = discover_schemas(connection)
+    json.dump(schemas, sys.stdout, indent=2)
+    
 
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
