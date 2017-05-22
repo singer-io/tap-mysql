@@ -71,25 +71,14 @@ FLOAT_TYPES = set(['float', 'double'])
 
 def schema_for_column(c):
 
- # varchar    
- # longtext   
- # datetime   
- # timestamp  
- # text       
- # bit        
- # char       
- # set        
- # enum       
- # longblob   
- # mediumtext 
- # blob       
- # time       
- # date       
- # binary     
-
     t = c.data_type
 
     result = {}
+
+    if c.column_key == 'PRI':
+        result['inclusion'] = 'automatic'
+    else:
+        result['inclusion'] = 'available'
     
     if t in BYTES_FOR_INTEGER_TYPE:
         result['type'] = 'integer'
@@ -155,22 +144,11 @@ def discover_schemas(connection):
             for table in data[db]:
                 result[table] = {'schema': data[db][table]}
         return result
-    
-    # LOGGER.info("Databases are %s", dbs)
-    # for db in dbs:
-    #     with connection.cursor() as cursor:
-    #         # TODO: Cleanse the db name
-    #         cursor.execute('USE {}'.format(db))
-    #         cursor.execute('SHOW TABLES')
-    #         tables = [row[0] for row in cursor.fetchall()]
-    #         LOGGER.info('DB %s has tables %s', db, tables)
-    #     for table in tables:
-    #         schema = schema_for_table(connection, table)
 
 def do_discover(connection):
-    schemas = discover_schemas(connection)
-    json.dump(schemas, sys.stdout, indent=2)
-    
+    streams = discover_schemas(connection)
+    json.dump({'streams': streams}, sys.stdout, indent=2)
+
 
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
