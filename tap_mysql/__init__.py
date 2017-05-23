@@ -8,6 +8,7 @@ import sys
 import time
 import collections
 import itertools
+import copy
 
 import attr
 import pendulum
@@ -288,16 +289,15 @@ def columns_to_select(connection, db, table, user_selected_columns):
     return user_selected_columns.union(pks)
 
 
-def sync_table(connection, db, table, selected_columns):
-    columns = columns_to_select(connection, db, table, selected_columns)
+def sync_table(connection, db, table, columns):
 
     if not columns:
         LOGGER.warn('There are no columns selected for table %s, skipping it', table)
         return
-     
+
     with connection.cursor() as cursor:
         # TODO: Escape the columns
-        select = 'SELECT {} FROM {}'.format(','.join(columns), table)
+        select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
         LOGGER.info('Running %s', select)
         cursor.execute(select)
         row = cursor.fetchone()
@@ -308,15 +308,21 @@ def sync_table(connection, db, table, selected_columns):
 
 def do_sync(con, raw_selections):
     cooked_selections = translate_selected_properties(raw_selections)
+    discovered = discover_schemas(con)
 
-    for db in cooked_selections:
-        with con.cursor() as cursor:
-            cursor.execute('USE {}'.format(db))
-        try:
-            for table, columns in cooked_selections[db].items():
-                sync_table(con, db, table, columns)
-        finally:
-            con.close()
+    for stream in discovered['streams']:
+        db = stream['database']
+        table = stream['table']
+
+        if db in cooked_selections and table in cooked_selections[db]:
+            columns = columns_to_select(con, db, table, cooked_selections[db][table])
+
+            schema = copy.deepcopy(stream['schema'])
+            unselected_props = set(schema['properties'].keys()).difference(columns)
+            for prop in unselected_props:
+                del schema['properties'][prop]
+            singer.write_schema(table, schema, stream['key_properties'])
+            sync_table(con, db, table, columns)
 
 
 def main():
