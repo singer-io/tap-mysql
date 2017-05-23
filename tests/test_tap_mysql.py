@@ -7,38 +7,41 @@ class TestTypeMapping(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        connection = pymysql.connect(
+        with pymysql.connect(
+            host='localhost',
+            user='root',
+            password='password') as con:
+            try:
+                con.execute('DROP DATABASE tap_mysql_test')
+            except:
+                pass
+            con.execute('CREATE DATABASE tap_mysql_test')
+
+        con = pymysql.connect(
             host='localhost',
             user='root',
             password='password',
-            database='test_tap_mysql')
+            database='tap_mysql_test')
 
+        with con.cursor() as cur:
+            cur.execute('''
+            CREATE TABLE column_test (
+            c_pk INTEGER PRIMARY KEY,
+            c_decimal DECIMAL,
+            c_decimal_2 DECIMAL(11, 2),
+            c_tinyint TINYINT,
+            c_smallint SMALLINT,
+            c_mediumint MEDIUMINT,
+            c_int INT,
+            c_bigint BIGINT,
+            c_float FLOAT,
+            c_double DOUBLE,
+            c_bit BIT(4)
+            )''')
+
+            discovered = tap_mysql.discover_schemas(con)
         
-        with connection.cursor() as cursor:
-            try:
-                cursor.execute('DROP TABLE column_test')
-            except:
-                pass
-
-        with connection.cursor() as cursor:
-            cursor.execute('''
-                CREATE TABLE column_test (
-                  c_pk INTEGER PRIMARY KEY,
-                  c_decimal DECIMAL,
-                  c_decimal_2 DECIMAL(11, 2),
-                  c_tinyint TINYINT,
-                  c_smallint SMALLINT,
-                  c_mediumint MEDIUMINT,
-                  c_int INT,
-                  c_bigint BIGINT,
-                  c_float FLOAT,
-                  c_double DOUBLE,
-                  c_bit BIT(4)
-)''')
-
-        discovered = tap_mysql.discover_schemas(connection)
-        
-        cls.schema = discovered['column_test']['schema']
+            cls.schema = discovered['column_test']['schema']
             
             
     def test_decimal(self):
