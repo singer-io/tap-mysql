@@ -160,7 +160,6 @@ class TestTranslateSelectedProperties(unittest.TestCase):
             tap_mysql.translate_selected_properties(discovered),
             {},
             'with no selections, should be an empty dict')
-
         
         discovered = copy.deepcopy(self.discovered)
         discovered['streams']['tab']['selected'] = True
@@ -183,4 +182,28 @@ class TestTranslateSelectedProperties(unittest.TestCase):
             tap_mysql.translate_selected_properties(discovered),
             {'tab': set('a')},
             'table with a column selected')
+        
+
+class TestTranslateSelectedProperties(unittest.TestCase):
+
+    def runTest(self):
+        con = get_test_connection()
+        try:
+            with con.cursor() as cur:
+                cur.execute('''
+                    CREATE TABLE tab (
+                      id INTEGER PRIMARY KEY,
+                      a INTEGER,
+                      b INTEGER)
+                ''')
+
+            self.assertEqual(
+                tap_mysql.columns_to_select(con, 'tab', set(['a'])),
+                set(['id', 'a']),
+                'automatically include primary key columns')
+
+        finally:
+            con.close()
+
+
         

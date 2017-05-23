@@ -78,6 +78,7 @@ def schema_for_column(c):
 
     result = {}
 
+    # We want to automatically include all primary key columns
     if c.column_key == 'PRI':
         result['inclusion'] = 'automatic'
     else:
@@ -95,16 +96,21 @@ def schema_for_column(c):
 
     elif t in FLOAT_TYPES:
         result['type'] = 'number'
+
     elif t == 'decimal':
+        # TODO: What about unsigned decimals?
         result['type'] = 'number'
         result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
         result['multipleOf'] = 10 ** (0 - c.numeric_scale)
+
     elif t in STRING_TYPES:
         result['type'] = 'string'
         result['maxLength'] = c.character_maximum_length
+
     else:
         result['inclusion'] = 'unsupported'
         result['description'] = 'Unsupported column type {}'.format(c.column_type)
+
     return result
 
     
@@ -168,21 +174,23 @@ def discover_schemas(connection):
                 result['streams'][table] = {'schema': data[db][table]}
         return result
 
+
 def do_discover(connection):
     json.dump(discover_schemas(connection), sys.stdout, indent=2)
 
 
-def primary_key_columns(connection, db, table):
+def primary_key_columns(connection, table):
+    '''Return a list of names of columns that are primary keys in the given table'''
     with connection.cursor() as cur:
-        cur.execute("""
+        select = """
             SELECT column_name
               FROM information_schema.columns
              WHERE column_key = 'pri'
-              AND table_schema = ?
-              AND table_name = ?
+              AND table_schema = %s
+              AND table_name = %s
         """
-        (db, table))
-        return set([c.column_name for c in cur.fetchall()])
+        cur.execute(select, (connection.db, table))
+        return set([c[0] for c in cur.fetchall()])
 
 
 def translate_selected_properties(properties):
@@ -233,6 +241,38 @@ def translate_selected_properties(properties):
     return result
 
 
+def columns_to_select(connection, table, user_selected_columns):
+    pks = primary_key_columns(connection, table)
+    pks_to_add = pks.difference(user_selected_columns)
+    if pks_to_add:
+        LOGGER.info('For table %s, columns %s are primary keys but were not selected. Automatically adding them.',
+                    table, pks_to_add)
+    return user_selected_columns.union(pks)
+
+
+def sync_table(connection, table, selected_columns):
+    columns = columns_to_select(connection, db, table, selected_columns)
+
+    if not columns:
+        LOGGER.warn('There are no columns selected for table %s, skipping it', table)
+        return
+     
+    with connection.cursor() as cursor:
+        # TODO: Escape the columns
+        select = 'SELECT {} FROM {}'.format(','.join(columns), table)
+        LOGGER.info('Running %s', select)
+        cursor.execute(select)
+        row = cursor.fetchone()
+        while row:
+            rec = zip(columns, row)
+            stitch.write_record(table, rec)
+
+
+def do_sync(connection, selections):
+    for table, columns in selections.items():
+        sync_table(connection, table, columns)
+
+
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     config = args.config
@@ -243,3 +283,5 @@ def main():
         do_sync(connection, args.properties)
     else:
         LOGGER.info("No properties were selected")
+
+# TODO: How to deal with primary keys for views
