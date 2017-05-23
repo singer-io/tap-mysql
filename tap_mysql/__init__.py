@@ -162,11 +162,13 @@ def discover_schemas(connection):
 
         streams = []
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
+            cols = list(cols)
             (table_schema, table_name) = k
             streams.append({
                 'database': table_schema,
                 'table': table_name,
-                'key_properties': list(primary_key_columns(connection, table_schema, table_name)),
+                'key_properties': [c.column_name for c in cols if c.column_key == 'PRI'],
+#                'row_count': row_count_for_table(connection, db, table),
                 'schema': {
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
