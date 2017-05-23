@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import collections
+import itertools
 
 import attr
 import pendulum
@@ -152,27 +153,25 @@ def discover_schemas(connection):
                           'mysql')
             """)
 
-        data = {}
+
+        columns = []
         rec = cursor.fetchone()
         while rec is not None:
-            col = Column(*rec)
-            db = col.table_schema
-            table = col.table_name
-            if db not in data:
-                data[db] = {}
-            if table not in data[db]:
-                data[db][table] = {
-                    'type': 'object',
-                    'properties': {}
-                }
-            data[db][table]['properties'][col.column_name] = schema_for_column(col)
-
+            columns.append(Column(*rec))
             rec = cursor.fetchone()
-        result = {'streams': {}}
-        for db in data:
-            for table in data[db]:
-                result['streams'][table] = {'schema': data[db][table]}
-        return result
+
+        streams = []
+        for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
+            (table_schema, table_name) = k
+            streams.append({
+                'database': table_schema,
+                'table': table_name,
+                'schema': {
+                    'type': 'object',
+                    'properties': {c.column_name: schema_for_column(c) for c in cols}
+                }
+            })
+        return {'streams': streams}
 
 
 def do_discover(connection):
@@ -197,28 +196,33 @@ def translate_selected_properties(properties):
     '''Turns the raw annotated schemas input into a map a map from table name
     to set of columns selected. For every (table, column) tuple where
 
-      properties['streams'][table]['schema']['properties'][column]['selected']
+      properties['streams'][i]['schema']['properties'][column]['selected']
 
     is true, there will be an entry in 
 
-      result[table][column]
+      result[db][table][column]
 
     '''
     result = {}
     if not isinstance(properties, dict):
         raise InputException('properties must contain "streams" key')
-    if not isinstance(properties['streams'], dict):
-        raise InputException('properties["streams"] must be a dictionary')
+    if not isinstance(properties['streams'], list):
+        raise InputException('properties["streams"] must be a list')
 
-    for stream_name, stream_selections in properties['streams'].items():
-        if not isinstance(stream_selections, dict):
-            raise InputException('streams.{} must be a dictionary'.format(stream_name))
-        if not stream_selections.get('selected'):
+    for i, stream in enumerate(properties['streams']):
+        if not isinstance(stream, dict):
+            raise InputException('streams[{}] must be a dictionary'.format(i))
+        if not stream.get('selected'):
             continue
-        result[stream_name] = set()
 
-        path = 'streams.' + stream_name + '.schema'
-        schema = stream_selections.get('schema')
+        database = stream['database']
+        table = stream['table']
+        if database not in result:
+            result[database] = {}
+        result[database][table] = set()
+
+        path = 'streams.' + str(i) + '.schema'
+        schema = stream.get('schema')
         if not schema:
             raise InputException(path + ' not defined')
         if not isinstance(schema, dict):
@@ -231,13 +235,12 @@ def translate_selected_properties(properties):
         if not isinstance(props, dict):
             raise InputException(path + ' must be a dictionary')
 
-        cols = set()
         for col_name, col_schema in props.items():
             if not isinstance(col_schema, dict):
                 raise InputException(path + '.' + col_name + ' must be a dictionary')
             if col_schema.get('selected'):
-                cols.add(col_name)
-        result[stream_name] = cols
+                result[database][table].add(col_name)
+
     return result
 
 
@@ -251,7 +254,7 @@ def columns_to_select(connection, table, user_selected_columns):
 
 
 def sync_table(connection, table, selected_columns):
-    columns = columns_to_select(connection, db, table, selected_columns)
+    columns = columns_to_select(connection, table, selected_columns)
 
     if not columns:
         LOGGER.warn('There are no columns selected for table %s, skipping it', table)
@@ -264,13 +267,24 @@ def sync_table(connection, table, selected_columns):
         cursor.execute(select)
         row = cursor.fetchone()
         while row:
-            rec = zip(columns, row)
-            stitch.write_record(table, rec)
+            rec = dict(zip(columns, row))
+            singer.write_record(table, rec)
+            row = cursor.fetchone()
 
+def do_sync(config, raw_selections):
+    cooked_selections = translate_selected_properties(raw_selections)
 
-def do_sync(connection, selections):
-    for table, columns in selections.items():
-        sync_table(connection, table, columns)
+    for db in cooked_selections:
+        con = pymysql.connect(
+            host=config['host'],
+            user=config['user'],
+            password=config['password'],
+            database=db)
+        try:
+            for table, columns in cooked_selections[db].items():
+                sync_table(con, table, columns)
+        finally:
+            con.close()
 
 
 def main():
@@ -280,7 +294,7 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.properties:
-        do_sync(connection, args.properties)
+        do_sync(args.config, args.properties)
     else:
         LOGGER.info("No properties were selected")
 

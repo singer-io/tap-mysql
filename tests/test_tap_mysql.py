@@ -55,7 +55,7 @@ class TestTypeMapping(unittest.TestCase):
 
             discovered = tap_mysql.discover_schemas(con)
         
-            cls.schema = discovered['streams']['test_type_mapping']['schema']
+            cls.schema = discovered['streams'][0]['schema']
             
             
     def test_decimal(self):
@@ -162,29 +162,29 @@ class TestTranslateSelectedProperties(unittest.TestCase):
             'with no selections, should be an empty dict')
         
         discovered = copy.deepcopy(self.discovered)
-        discovered['streams']['tab']['selected'] = True
+        discovered['streams'][0]['selected'] = True
         self.assertEqual(
             tap_mysql.translate_selected_properties(discovered),
-            {'tab': set()},
+            {DB_NAME: {'tab': set()}},
             'table with no columns selected')
 
         discovered = copy.deepcopy(self.discovered)
-        discovered['streams']['tab']['schema']['properties']['a']['selected'] = True
+        discovered['streams'][0]['schema']['properties']['a']['selected'] = True
         self.assertEqual(
             tap_mysql.translate_selected_properties(discovered),
             {},
             'columns selected without table')
 
         discovered = copy.deepcopy(self.discovered)
-        discovered['streams']['tab']['selected'] = True
-        discovered['streams']['tab']['schema']['properties']['a']['selected'] = True
+        discovered['streams'][0]['selected'] = True
+        discovered['streams'][0]['schema']['properties']['a']['selected'] = True
         self.assertEqual(
             tap_mysql.translate_selected_properties(discovered),
-            {'tab': set('a')},
+            {DB_NAME: {'tab': set('a')}},
             'table with a column selected')
         
 
-class TestTranslateSelectedProperties(unittest.TestCase):
+class TestColumnsToSelect(unittest.TestCase):
 
     def runTest(self):
         con = get_test_connection()
