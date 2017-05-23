@@ -1,31 +1,45 @@
 import unittest
 import pymysql
 import tap_mysql
+import copy
+
+DB_HOST = 'localhost'
+DB_USER = 'root'
+DB_PASSWORD = 'password'
+DB_NAME = 'tap_mysql_test'
+
+def get_test_connection():
+    con = pymysql.connect(
+            host=DB_HOST,
+            user='root',
+            password='password')
+
+    try:
+        with con.cursor() as cur:
+            try:
+                cur.execute('DROP DATABASE {}'.format(DB_NAME))
+            except:
+                pass
+            cur.execute('CREATE DATABASE {}'.format(DB_NAME))
+    finally:
+        con.close()
+    
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME)
 
 
 class TestTypeMapping(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with pymysql.connect(
-            host='localhost',
-            user='root',
-            password='password') as con:
-            try:
-                con.execute('DROP DATABASE tap_mysql_test')
-            except:
-                pass
-            con.execute('CREATE DATABASE tap_mysql_test')
-
-        con = pymysql.connect(
-            host='localhost',
-            user='root',
-            password='password',
-            database='tap_mysql_test')
+        con = get_test_connection()
 
         with con.cursor() as cur:
             cur.execute('''
-            CREATE TABLE column_test (
+            CREATE TABLE test_type_mapping (
             c_pk INTEGER PRIMARY KEY,
             c_decimal DECIMAL,
             c_decimal_2 DECIMAL(11, 2),
@@ -41,7 +55,7 @@ class TestTypeMapping(unittest.TestCase):
 
             discovered = tap_mysql.discover_schemas(con)
         
-            cls.schema = discovered['column_test']['schema']
+            cls.schema = discovered['streams']['test_type_mapping']['schema']
             
             
     def test_decimal(self):
@@ -122,3 +136,51 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(
             self.schema['properties']['c_pk']['inclusion'],
             'automatic')
+
+class TestTranslateSelectedProperties(unittest.TestCase):
+
+    def setUp(self):
+        con = get_test_connection()
+
+        try:
+            with con.cursor() as cur:
+                cur.execute('''
+                    CREATE TABLE tab (
+                      a INTEGER,
+                      b INTEGER)
+                ''')
+
+                self.discovered = tap_mysql.discover_schemas(con)
+        finally:
+            con.close()
+
+    def runTest(self):
+        discovered = copy.deepcopy(self.discovered)
+        self.assertEqual(
+            tap_mysql.translate_selected_properties(discovered),
+            {},
+            'with no selections, should be an empty dict')
+
+        
+        discovered = copy.deepcopy(self.discovered)
+        discovered['streams']['tab']['selected'] = True
+        self.assertEqual(
+            tap_mysql.translate_selected_properties(discovered),
+            {'tab': set()},
+            'table with no columns selected')
+
+        discovered = copy.deepcopy(self.discovered)
+        discovered['streams']['tab']['schema']['properties']['a']['selected'] = True
+        self.assertEqual(
+            tap_mysql.translate_selected_properties(discovered),
+            {},
+            'columns selected without table')
+
+        discovered = copy.deepcopy(self.discovered)
+        discovered['streams']['tab']['selected'] = True
+        discovered['streams']['tab']['schema']['properties']['a']['selected'] = True
+        self.assertEqual(
+            tap_mysql.translate_selected_properties(discovered),
+            {'tab': set('a')},
+            'table with a column selected')
+        

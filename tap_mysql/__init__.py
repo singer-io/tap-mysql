@@ -109,37 +109,43 @@ def schema_for_column(c):
 
     
 def discover_schemas(connection):
+    
     with connection.cursor() as cursor:
-#         cursor.execute("""
-#           SELECT table_schema, 
-#                  table_name, 
-#                  column_name, 
-#                  data_type, 
-#                  character_maximum_length, 
-#                  numeric_precision, 
-#                  numeric_scale, 
-#                  datetime_precision, 
-#                  column_type, 
-#                  column_key from information_schema.columns
-#             WHERE table_schema NOT IN (
-#               'information_schema',
-#               'performance_schema',
-#               'mysql')
-# """)
-        cursor.execute("""
-           SELECT table_schema, 
-                  table_name, 
-                  column_name, 
-                  data_type, 
-                  character_maximum_length, 
-                  numeric_precision, 
-                  numeric_scale, 
-                  datetime_precision, 
-                  column_type, 
-                  column_key from information_schema.columns
-             WHERE table_schema = %s""",
-                        (connection.db,))
-        
+
+        if connection.db:
+            cursor.execute("""
+                SELECT table_schema, 
+                       table_name, 
+                       column_name, 
+                       data_type, 
+                       character_maximum_length, 
+                       numeric_precision, 
+                       numeric_scale, 
+                       datetime_precision, 
+                       column_type, 
+                       column_key
+                  FROM information_schema.columns
+                 WHERE table_schema = %s""",
+                           (connection.db,))
+        else:
+            cursor.execute("""
+                SELECT table_schema, 
+                       table_name, 
+                       column_name, 
+                       data_type, 
+                       character_maximum_length, 
+                       numeric_precision, 
+                       numeric_scale, 
+                       datetime_precision, 
+                       column_type, 
+                       column_key
+                  FROM information_schema.columns
+                 WHERE table_schema NOT IN (
+                          'information_schema',
+                          'performance_schema',
+                          'mysql')
+            """)
+
         data = {}
         rec = cursor.fetchone()
         while rec is not None:
@@ -156,44 +162,14 @@ def discover_schemas(connection):
             data[db][table]['properties'][col.column_name] = schema_for_column(col)
 
             rec = cursor.fetchone()
-        result = {}
+        result = {'streams': {}}
         for db in data:
             for table in data[db]:
-                result[table] = {'schema': data[db][table]}
+                result['streams'][table] = {'schema': data[db][table]}
         return result
 
 def do_discover(connection):
-    streams = discover_schemas(connection)
-    print('hi')
-    json.dump({'streams': streams}, sys.stdout, indent=2)
-
-
-def primary_key_columns(connection, table):
-    with connection.cursor() as cursor:
-        curser.execute("SELECT column_name FROM %s WHERE column_key = 'PRI'")
-        return [row[0] for row in cursor.fetchall()]
-
-
-def selected_columns(selections, table):
-    props = selections['streams'][table]['schema']['properties']
-    return set([k for (k, v) in props.items() if v.get('selected')])
-
-def automatic_col_names(schema):
-    cols = set()
-    for (k, v) in schema['properties'].items():
-        if v.get('inclusion') == 'automatic':
-            cols.add(k)
-    return cols
-
-def selected_col_names(schema):
-    cols = set()
-    for (k, v) in schema['properties'].items():
-        if v.get('selected'):
-            cols.add(k)
-    return cols
-
-def all_col_names(schema):
-    return schema['properties'].keys()
+    json.dump(discover_schemas(connection), sys.stdout, indent=2)
 
 
 def primary_key_columns(connection, db, table):
@@ -209,36 +185,24 @@ def primary_key_columns(connection, db, table):
         return set([c.column_name for c in cur.fetchall()])
 
 
-def columns_to_include(connection, selections, table):
-    cols = []
-    schema = selections['streams'][table]['schema']
-    schema_current = schema_for_table(connection, stream)
+def translate_selected_properties(properties):
+    '''Turns the raw annotated schemas input into a map a map from table name
+    to set of columns selected. For every (table, column) tuple where
 
-    cols_all = all_col_names(schema_current)
-    cols_auto = automatic_col_names(schema_current)
-    cols_selected = selected_col_names(schema_in).intersection(cols_all)
-
-    return cols_selected.union(cols_auto)
-
-
-def interpret_properties(selected_properties):
-    '''Given a raw set of annotated schemas, returns a map from table name to
-    set of columns selected. For every (table, column) where 
-
-    selected_properties['streams'][table]['schema']['properties'][column]['selected']
+      properties['streams'][table]['schema']['properties'][column]['selected']
 
     is true, there will be an entry in 
 
-    result[table][column]
+      result[table][column]
 
     '''
     result = {}
-    if not isinstance(selected_properties, dict):
+    if not isinstance(properties, dict):
         raise InputException('properties must contain "streams" key')
-    if not isinstance(selected_properties['streams'], dict):
+    if not isinstance(properties['streams'], dict):
         raise InputException('properties["streams"] must be a dictionary')
 
-    for stream_name, stream_selections in selected_properties['streams'][stream]:
+    for stream_name, stream_selections in properties['streams'].items():
         if not isinstance(stream_selections, dict):
             raise InputException('streams.{} must be a dictionary'.format(stream_name))
         if not stream_selections.get('selected'):
@@ -259,6 +223,7 @@ def interpret_properties(selected_properties):
         if not isinstance(props, dict):
             raise InputException(path + ' must be a dictionary')
 
+        cols = set()
         for col_name, col_schema in props.items():
             if not isinstance(col_schema, dict):
                 raise InputException(path + '.' + col_name + ' must be a dictionary')
