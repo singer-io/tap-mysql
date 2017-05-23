@@ -116,7 +116,34 @@ def schema_for_column(c):
 
     
 def discover_schemas(connection):
-    
+
+    with connection.cursor() as cursor:
+        if connection.db:
+            cursor.execute("""
+                SELECT table_schema, 
+                       table_name, 
+                       table_rows
+                  FROM information_schema.tables
+                 WHERE table_schema = %s""",
+                           (connection.db,))
+        else:
+            cursor.execute("""
+                SELECT table_schema, 
+                       table_name, 
+                       table_rows
+                  FROM information_schema.tables
+                 WHERE table_schema NOT IN (
+                          'information_schema',
+                          'performance_schema',
+                          'mysql')
+            """)
+        row_counts = {}
+        for (db, table, rows) in cursor.fetchall():
+            LOGGER.info('db %s table %s rows %d', db, table, rows)
+            if db not in row_counts:
+                row_counts[db] = {}
+            row_counts[db][table] = rows
+
     with connection.cursor() as cursor:
 
         if connection.db:
@@ -164,16 +191,20 @@ def discover_schemas(connection):
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
-            streams.append({
+
+            stream = {
                 'database': table_schema,
                 'table': table_name,
                 'key_properties': [c.column_name for c in cols if c.column_key == 'PRI'],
-#                'row_count': row_count_for_table(connection, db, table),
                 'schema': {
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
-                }
-            })
+                },
+            }
+            if table_schema in row_counts and table_name in row_counts[table_schema]:
+                stream['row_count'] = row_counts[table_schema][table_name]
+            streams.append(stream)
+            
         return {'streams': streams}
 
 
