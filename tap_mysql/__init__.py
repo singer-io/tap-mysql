@@ -129,7 +129,7 @@ def discover_schemas(connection):
                        numeric_precision, 
                        numeric_scale, 
                        datetime_precision, 
-                       column_type, 
+                       column_type,
                        column_key
                   FROM information_schema.columns
                  WHERE table_schema = %s""",
@@ -166,6 +166,7 @@ def discover_schemas(connection):
             streams.append({
                 'database': table_schema,
                 'table': table_name,
+                'key_properties': list(primary_key_columns(connection, table_schema, table_name)),
                 'schema': {
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
@@ -178,8 +179,9 @@ def do_discover(connection):
     json.dump(discover_schemas(connection), sys.stdout, indent=2)
 
 
-def primary_key_columns(connection, table):
-    '''Return a list of names of columns that are primary keys in the given table'''
+def primary_key_columns(connection, db, table):
+    '''Return a list of names of columns that are primary keys in the given
+    table in the given db.'''
     with connection.cursor() as cur:
         select = """
             SELECT column_name
@@ -188,7 +190,7 @@ def primary_key_columns(connection, table):
               AND table_schema = %s
               AND table_name = %s
         """
-        cur.execute(select, (connection.db, table))
+        cur.execute(select, (db, table))
         return set([c[0] for c in cur.fetchall()])
 
 
@@ -244,8 +246,8 @@ def translate_selected_properties(properties):
     return result
 
 
-def columns_to_select(connection, table, user_selected_columns):
-    pks = primary_key_columns(connection, table)
+def columns_to_select(connection, db, table, user_selected_columns):
+    pks = primary_key_columns(connection, db, table)
     pks_to_add = pks.difference(user_selected_columns)
     if pks_to_add:
         LOGGER.info('For table %s, columns %s are primary keys but were not selected. Automatically adding them.',
@@ -253,8 +255,8 @@ def columns_to_select(connection, table, user_selected_columns):
     return user_selected_columns.union(pks)
 
 
-def sync_table(connection, table, selected_columns):
-    columns = columns_to_select(connection, table, selected_columns)
+def sync_table(connection, db, table, selected_columns):
+    columns = columns_to_select(connection, db, table, selected_columns)
 
     if not columns:
         LOGGER.warn('There are no columns selected for table %s, skipping it', table)
@@ -271,18 +273,15 @@ def sync_table(connection, table, selected_columns):
             singer.write_record(table, rec)
             row = cursor.fetchone()
 
-def do_sync(config, raw_selections):
+def do_sync(con, raw_selections):
     cooked_selections = translate_selected_properties(raw_selections)
 
     for db in cooked_selections:
-        con = pymysql.connect(
-            host=config['host'],
-            user=config['user'],
-            password=config['password'],
-            database=db)
+        with con.cursor() as cursor:
+            cursor.execute('USE {}'.format(db))
         try:
             for table, columns in cooked_selections[db].items():
-                sync_table(con, table, columns)
+                sync_table(con, db, table, columns)
         finally:
             con.close()
 
@@ -294,7 +293,7 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.properties:
-        do_sync(args.config, args.properties)
+        do_sync(connection, args.properties)
     else:
         LOGGER.info("No properties were selected")
 
