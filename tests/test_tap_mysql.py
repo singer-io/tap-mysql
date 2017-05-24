@@ -24,7 +24,7 @@ def get_test_connection():
             cur.execute('CREATE DATABASE {}'.format(DB_NAME))
     finally:
         con.close()
-    
+
     return pymysql.connect(
         host=DB_HOST,
         user=DB_USER,
@@ -55,10 +55,10 @@ class TestTypeMapping(unittest.TestCase):
             )''')
 
             discovered = tap_mysql.discover_schemas(con)
-        
+
             cls.schema = discovered['streams'][0]['schema']
-            
-            
+
+
     def test_decimal(self):
         self.assertEqual(self.schema['properties']['c_decimal'], {
             'type': 'number',
@@ -67,7 +67,7 @@ class TestTypeMapping(unittest.TestCase):
             'multipleOf': 1
         })
 
-    def test_decimal_with_defined_scale_and_precision(self):        
+    def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema['properties']['c_decimal_2'], {
             'type': 'number',
             'inclusion': 'available',
@@ -105,7 +105,7 @@ class TestTypeMapping(unittest.TestCase):
             'minimum': -2147483648,
             'maximum': 2147483647
         })
-        
+
     def test_bigint(self):
         self.assertEqual(self.schema['properties']['c_bigint'], {
             'type': 'integer',
@@ -118,20 +118,20 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema['properties']['c_float'], {
             'type': 'number',
             'inclusion': 'available',
-        })                        
-    
+        })
+
 
     def test_double(self):
         self.assertEqual(self.schema['properties']['c_double'], {
             'type': 'number',
             'inclusion': 'available',
-        })                        
-    
+        })
+
     def test_bit(self):
         self.assertEqual(self.schema['properties']['c_bit'], {
             'inclusion': 'unsupported',
             'description': 'Unsupported column type bit(4)',
-        })                        
+        })
 
     def test_pk(self):
         self.assertEqual(
@@ -161,7 +161,7 @@ class TestTranslateSelectedProperties(unittest.TestCase):
             tap_mysql.translate_selected_properties(discovered),
             {},
             'with no selections, should be an empty dict')
-        
+
         discovered = copy.deepcopy(self.discovered)
         discovered['streams'][0]['selected'] = True
         self.assertEqual(
@@ -183,7 +183,7 @@ class TestTranslateSelectedProperties(unittest.TestCase):
             tap_mysql.translate_selected_properties(discovered),
             {DB_NAME: {'tab': set('a')}},
             'table with a column selected')
-        
+
 
 class TestColumnsToSelect(unittest.TestCase):
 
@@ -232,4 +232,3 @@ class TestSchemaMessages(unittest.TestCase):
 
         finally:
             con.close()
-    
