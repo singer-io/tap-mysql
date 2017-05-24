@@ -308,7 +308,7 @@ def sync_table(connection, db, table, columns):
             rowToPersist = ()
             for elem in row:
                 if isinstance(elem, datetime.datetime):
-                    rowToPersist += (elem.isoformat(),)
+                    rowToPersist += (pendulum.instance(elem).to_iso8601_string(),)
                 else:
                     rowToPersist += (elem,)
             rec = dict(zip(columns, rowToPersist))
