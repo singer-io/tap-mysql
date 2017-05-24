@@ -83,13 +83,15 @@ class State(object):
             self.state = state
 
     def to_where_clause(self, database, table):
-        if self.state is not None:
-            for bookmark in self.state['last_replicated']:
-                if (database == bookmark['database'] and
-                    table == bookmark['table'] and
-                    bookmark['value'] is not None):
-                    return ' WHERE `{}` >= {!s}'.format(bookmark['replication_key'],
-                                                        bookmark['value'])
+        if 'last_replicated' in self.state:
+            for last_replicated in self.state['last_replicated']:
+                if (last_replicated['database'] == database and
+                    last_replicated['table'] == table and
+                    last_replicated['value'] is not None):
+                    value = str(last_replicated['value'])
+                    if last_replicated['replication_key_schema']['type'] == 'string':
+                        value = '"{}"'.format(value)
+                    return ' WHERE `{}` >= {}'.format(last_replicated['replication_key'], value)
 
 
 def schema_for_column(c):
