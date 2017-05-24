@@ -21,15 +21,15 @@ from singer import utils
 import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
 Column = collections.namedtuple('Column', [
-    "table_schema", 
-    "table_name", 
-    "column_name", 
-    "data_type", 
-    "character_maximum_length", 
-    "numeric_precision", 
-    "numeric_scale", 
-    "datetime_precision", 
-    "column_type", 
+    "table_schema",
+    "table_name",
+    "column_name",
+    "data_type",
+    "character_maximum_length",
+    "numeric_precision",
+    "numeric_scale",
+    "datetime_precision",
+    "column_type",
     "column_key"]
 )
 
@@ -74,6 +74,24 @@ FLOAT_TYPES = set(['float', 'double'])
 class InputException(Exception):
     pass
 
+class State(object):
+    def __init__(self, state):
+        if state is None:
+            self.state = {}
+        else:
+            LOGGER.info("Initial state: {}".format(state))
+            self.state = state
+
+    def to_where_clause(self, database, table):
+        if self.state is not None:
+            for bookmark in self.state['last_replicated']:
+                if (database == bookmark['database'] and
+                    table == bookmark['table'] and
+                    bookmark['value'] is not None):
+                    return ' WHERE `{}` >= {!s}'.format(bookmark['replication_key'],
+                                                        bookmark['value'])
+
+
 def schema_for_column(c):
 
     t = c.data_type
@@ -85,7 +103,7 @@ def schema_for_column(c):
         result['inclusion'] = 'automatic'
     else:
         result['inclusion'] = 'available'
-    
+
     if t in BYTES_FOR_INTEGER_TYPE:
         result['type'] = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
@@ -115,22 +133,22 @@ def schema_for_column(c):
 
     return result
 
-    
+
 def discover_schemas(connection):
 
     with connection.cursor() as cursor:
         if connection.db:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
+                SELECT table_schema,
+                       table_name,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema = %s""",
                            (connection.db,))
         else:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
+                SELECT table_schema,
+                       table_name,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema NOT IN (
@@ -140,7 +158,6 @@ def discover_schemas(connection):
             """)
         row_counts = {}
         for (db, table, rows) in cursor.fetchall():
-            LOGGER.info('db %s table %s rows %d', db, table, rows)
             if db not in row_counts:
                 row_counts[db] = {}
             row_counts[db][table] = rows
@@ -149,14 +166,14 @@ def discover_schemas(connection):
 
         if connection.db:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
-                       column_name, 
-                       data_type, 
-                       character_maximum_length, 
-                       numeric_precision, 
-                       numeric_scale, 
-                       datetime_precision, 
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       datetime_precision,
                        column_type,
                        column_key
                   FROM information_schema.columns
@@ -164,15 +181,15 @@ def discover_schemas(connection):
                            (connection.db,))
         else:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
-                       column_name, 
-                       data_type, 
-                       character_maximum_length, 
-                       numeric_precision, 
-                       numeric_scale, 
-                       datetime_precision, 
-                       column_type, 
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       datetime_precision,
+                       column_type,
                        column_key
                   FROM information_schema.columns
                  WHERE table_schema NOT IN (
@@ -205,7 +222,7 @@ def discover_schemas(connection):
             if table_schema in row_counts and table_name in row_counts[table_schema]:
                 stream['row_count'] = row_counts[table_schema][table_name]
             streams.append(stream)
-            
+
         return {'streams': streams}
 
 
@@ -234,7 +251,7 @@ def translate_selected_properties(properties):
 
       properties['streams'][i]['schema']['properties'][column]['selected']
 
-    is true, there will be an entry in 
+    is true, there will be an entry in
 
       result[db][table][column]
 
@@ -289,24 +306,28 @@ def columns_to_select(connection, db, table, user_selected_columns):
     return user_selected_columns.union(pks)
 
 
-def sync_table(connection, db, table, columns):
+def sync_table(connection, db, table, columns, state):
     if not columns:
         LOGGER.warn('There are no columns selected for table %s, skipping it', table)
         return
 
     with connection.cursor() as cursor:
-        # TODO: Escape the columns
-        select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
+        escaped_col_names = [(lambda c: '`{}`'.format(c))(c) for c in columns]
+        select = 'SELECT {} FROM `{}`.`{}`'.format(','.join(escaped_col_names), db, table)
+        where_clause = state.to_where_clause(db, table)
+        if where_clause is not None:
+            select += where_clause
         LOGGER.info('Running %s', select)
         cursor.execute(select)
         row = cursor.fetchone()
         while row:
             rec = dict(zip(columns, row))
-            yield singer.RecordMessage(stream=table, record=rec)
+            yield (singer.RecordMessage(stream=table, record=rec),
+                   singer.StateMessage(value={"anything": "fakestate"}))
             row = cursor.fetchone()
 
 
-def generate_messages(con, raw_selections):
+def generate_messages(con, raw_selections, state):
     cooked_selections = translate_selected_properties(raw_selections)
     discovered = discover_schemas(con)
 
@@ -322,23 +343,29 @@ def generate_messages(con, raw_selections):
             for prop in unselected_props:
                 del schema['properties'][prop]
             yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
-            for message in sync_table(con, db, table, columns):
+            state_every = 10 # TODO: write state every 10k(?)
+            message_num = 0
+            for (message, state_message) in sync_table(con, db, table, columns, state):
                 yield message
+                message_num += 1
+                if message_num % state_every is 0:
+                    yield state_message
 
-    
-def do_sync(con, raw_selections):
-    for message in generate_messages(con, raw_selections):
+
+def do_sync(con, raw_selections, state):
+    for message in generate_messages(con, raw_selections, state):
         singer.write_message(message)
 
 
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-    config = args.config
     connection = open_connection(args.config)
+    state = State(args.state)
+
     if args.discover:
         do_discover(connection)
     elif args.properties:
-        do_sync(connection, args.properties)
+        do_sync(connection, args.properties, state)
     else:
         LOGGER.info("No properties were selected")
 
