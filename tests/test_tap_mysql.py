@@ -2,6 +2,7 @@ import unittest
 import pymysql
 import tap_mysql
 import copy
+import singer
 
 DB_HOST = 'localhost'
 DB_USER = 'root'
@@ -198,7 +199,7 @@ class TestColumnsToSelect(unittest.TestCase):
                 ''')
 
             self.assertEqual(
-                tap_mysql.columns_to_select(con, 'tab', set(['a'])),
+                tap_mysql.columns_to_select(con, DB_NAME, 'tab', set(['a'])),
                 set(['id', 'a']),
                 'automatically include primary key columns')
 
@@ -206,4 +207,29 @@ class TestColumnsToSelect(unittest.TestCase):
             con.close()
 
 
-        
+class TestSchemaMessages(unittest.TestCase):
+
+    # Assert that the schema includes only the columns the user selected,
+    # plus primary key columns
+    def runTest(self):
+        con = get_test_connection()
+        try:
+            with con.cursor() as cur:
+                cur.execute('''
+                    CREATE TABLE tab (
+                      id INTEGER PRIMARY KEY,
+                      a INTEGER,
+                      b INTEGER)
+                ''')
+
+            selections = tap_mysql.discover_schemas(con)
+            selections['streams'][0]['selected'] = True
+            selections['streams'][0]['schema']['properties']['a']['selected'] = True
+            messages = list(tap_mysql.generate_messages(con, selections))
+            schema_message = messages[0]
+            self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
+            self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
+
+        finally:
+            con.close()
+    
