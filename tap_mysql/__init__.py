@@ -290,7 +290,6 @@ def columns_to_select(connection, db, table, user_selected_columns):
 
 
 def sync_table(connection, db, table, columns):
-
     if not columns:
         LOGGER.warn('There are no columns selected for table %s, skipping it', table)
         return
@@ -303,10 +302,11 @@ def sync_table(connection, db, table, columns):
         row = cursor.fetchone()
         while row:
             rec = dict(zip(columns, row))
-            singer.write_record(table, rec)
+            yield singer.RecordMessage(stream=table, record=rec)
             row = cursor.fetchone()
 
-def do_sync(con, raw_selections):
+
+def generate_messages(con, raw_selections):
     cooked_selections = translate_selected_properties(raw_selections)
     discovered = discover_schemas(con)
 
@@ -321,8 +321,14 @@ def do_sync(con, raw_selections):
             unselected_props = set(schema['properties'].keys()).difference(columns)
             for prop in unselected_props:
                 del schema['properties'][prop]
-            singer.write_schema(table, schema, stream['key_properties'])
-            sync_table(con, db, table, columns)
+            yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
+            for message in sync_table(con, db, table, columns):
+                yield message
+
+    
+def do_sync(con, raw_selections):
+    for message in generate_messages(con, raw_selections):
+        singer.write_message(message)
 
 
 def main():
