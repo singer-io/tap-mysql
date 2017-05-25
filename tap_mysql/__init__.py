@@ -82,20 +82,41 @@ class StreamState(object):
     def update(self, record):
         self.replication_key_value = record[self.replication_key]
 
+
+def replication_key_by_table(raw_selections):
+    result = {}
+    for stream in raw_selections['streams']:
+        key = stream.get('replication_key')
+        if key is not None:
+            result[stream['stream']] = key
+    return result
+
+
 class State(object):
-    def __init__(self, state):
+    def __init__(self, state, selections):
         self.current_stream = None
         self.streams = []
-        streams = state.get('streams', [])
+
         current_stream = state.get('current_stream')
-        for stream_state in streams:
-            self.streams.append(
-                StreamState(
-                    stream=stream_state['stream'],
-                    replication_key=stream_state['replication_key'],
-                    replication_key_value=stream_state['replication_key_value']))
         if current_stream:
             self.current_stream = current_stream
+
+        for selected_stream in selections['streams']:
+            selected_rep_key = selected_stream['replication_key']
+            if selected_rep_key:
+                selected_stream_name = selected_stream['stream']
+                stored_stream_state = None
+                value = None
+                for s in state.get('streams', []):
+                    if s['stream'] == selected_stream_name:
+                        stored_stream_state = s
+                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key:
+                    value = stored_stream_state['replication_key_value']
+                stream_state = StreamState(
+                    stream=selected_stream_name,
+                    replication_key=selected_rep_key,
+                    replication_key_value=value)
+                self.streams.append(stream_state)
 
 
     def get_stream_state(self, stream):
@@ -263,7 +284,7 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-def translate_selected_properties(properties):
+def index_schema(properties):
     '''Turns the raw annotated schemas input into a map a map from table name
     to set of columns selected. For every (table, column) tuple where
 
@@ -271,57 +292,64 @@ def translate_selected_properties(properties):
 
     is true, there will be an entry in
 
-      result[db][table][column]
+      result[db][table][column] { the schema for the column }
 
     '''
     result = {}
-    if not isinstance(properties, dict):
-        raise InputException('properties must contain "streams" key')
-    if not isinstance(properties['streams'], list):
-        raise InputException('properties["streams"] must be a list')
 
-    for i, stream in enumerate(properties['streams']):
-        if not isinstance(stream, dict):
-            raise InputException('streams[{}] must be a dictionary'.format(i))
-        if not stream.get('selected'):
-            continue
+    for stream in properties['streams']:
 
         database = stream['database']
         table = stream['table']
         if database not in result:
             result[database] = {}
-        result[database][table] = set()
+        result[database][table] = {}
 
-        path = 'streams.' + str(i) + '.schema'
-        schema = stream.get('schema')
-        if not schema:
-            raise InputException(path + ' not defined')
-        if not isinstance(schema, dict):
-            raise InputException(path + ' must be a dictionary')
-
-        path += '.properties'
-        props = schema.get('properties')
-        if not props:
-            raise InputException(path + ' not defined')
-        if not isinstance(props, dict):
-            raise InputException(path + ' must be a dictionary')
-
-        for col_name, col_schema in props.items():
-            if not isinstance(col_schema, dict):
-                raise InputException(path + '.' + col_name + ' must be a dictionary')
-            if col_schema.get('selected'):
-                result[database][table].add(col_name)
+        for col_name, col_schema in stream['schema']['properties'].items():
+            result[database][table][col_name] = col_schema
 
     return result
 
 
-def columns_to_select(connection, db, table, user_selected_columns):
-    pks = primary_key_columns(connection, db, table)
-    pks_to_add = pks.difference(user_selected_columns)
-    if pks_to_add:
-        LOGGER.info('For table %s, columns %s are primary keys but were not selected. Automatically adding them.',
-                    table, pks_to_add)
-    return user_selected_columns.union(pks)
+def remove_unwanted_columns(selected, indexed_schema, database, table):
+
+    selected    = set(selected)
+    all_columns = set()
+    available   = set()
+    automatic   = set()
+    unsupported = set()
+
+    for column, column_schema in indexed_schema[database][table].items():
+        all_columns.add(column)
+        inclusion = column_schema['inclusion']
+        if inclusion == 'automatic':
+            automatic.add(column)
+        elif inclusion == 'available':
+            available.add(column)
+        elif inclusion == 'unsupported':
+            unsupported.add(column)
+        else:
+            raise Exception('Unknown inclusion ' + inclusion)
+
+    selected_but_unsupported = selected.intersection(unsupported)
+    if selected_but_unsupported:
+        LOGGER.warn('For database %s, table %s, columns %s were selected but are not supported. Skipping them.',
+                    database, table, selected_but_unsupported)
+
+    selected_but_nonexistent = selected.difference(all_columns)
+    if selected_but_nonexistent:
+        LOGGER.warn('For databasee %s, table %s, columns %s were selected but do not exist..',
+                    database, table, selected_but_nonexistent)
+
+    not_selected_but_automatic = automatic.difference(selected)
+    if not_selected_but_automatic:
+        LOGGER.warn('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.',
+                    database, table, not_selected_but_automatic)
+
+    keep = selected.intersection(available).union(automatic)
+    remove = all_columns.difference(keep)
+    for col in remove:
+        del indexed_schema[database][table][col]
 
 
 def sync_table(connection, db, table, columns, state):
@@ -334,7 +362,7 @@ def sync_table(connection, db, table, columns, state):
         select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
         params = {}
         stream_state = state.get_stream_state(table)
-        if stream_state:
+        if stream_state and stream_state.replication_key_value is not None:
             key = stream_state.replication_key
             value = stream_state.replication_key_value
             select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
@@ -355,40 +383,50 @@ def sync_table(connection, db, table, columns, state):
         yield state.make_state_message()
 
 
-def generate_messages(con, raw_selections, state):
-    cooked_selections = translate_selected_properties(raw_selections)
-    discovered = discover_schemas(con)
 
-    for stream in discovered['streams']:
-        db = stream['database']
+def generate_messages(con, raw_selections, raw_state):
+    indexed_schema = index_schema(discover_schemas(con))
+    state = State(raw_state, raw_selections)
+
+    for stream in raw_selections['streams']:
+        if not stream.get('selected'):
+            continue
+
+        database = stream['database']
         table = stream['table']
 
-        if db in cooked_selections and table in cooked_selections[db]:
-            columns = columns_to_select(con, db, table, cooked_selections[db][table])
+        # TODO: How to handle a table that's missing
+        if database not in indexed_schema:
+            raise Exception('No database called {}'.format(database))
+        if table not in indexed_schema[database]:
+            raise Exception('No table called {} in database {}'.format(table, database))
 
-            schema = copy.deepcopy(stream['schema'])
-            unselected_props = set(schema['properties'].keys()).difference(columns)
-            for prop in unselected_props:
-                del schema['properties'][prop]
-            yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
-            for message in sync_table(con, db, table, columns, state):
-                yield message
+        selected = [k for k, v in stream['schema']['properties'].items() if v.get('selected')]
+
+        remove_unwanted_columns(selected, indexed_schema, database, table)
+        schema = {
+            'type': 'object',
+            'properties': indexed_schema[database][table]
+        }
+        columns = schema['properties'].keys()
+        yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
+        for message in sync_table(con, database, table, columns, state):
+            yield message
 
 
-def do_sync(con, raw_selections, state):
-    for message in generate_messages(con, raw_selections, state):
+def do_sync(con, raw_selections, raw_state):
+    for message in generate_messages(con, raw_selections, raw_state):
         singer.write_message(message)
 
 
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
-    state = State(args.state)
 
     if args.discover:
         do_discover(connection)
     elif args.properties:
-        do_sync(connection, args.properties, state)
+        do_sync(connection, args.properties, args.state)
     else:
         LOGGER.info("No properties were selected")
 
