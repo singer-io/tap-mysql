@@ -74,24 +74,54 @@ FLOAT_TYPES = set(['float', 'double'])
 class InputException(Exception):
     pass
 
+
 class State(object):
     def __init__(self, state):
         if state is None:
             self.state = {}
         else:
-            LOGGER.info("Initial state: {}".format(state))
-            self.state = state
+            self.state = self._translate_raw_state(state)
+
+
+    def _translate_raw_state(self, raw_state):
+        result = {}
+        if 'last_replicated' not in raw_state:
+            result = raw_state
+        else:
+            for last_replicated in raw_state['last_replicated']:
+                database = last_replicated['database']
+                del last_replicated['database']
+                table = last_replicated['table']
+                del last_replicated['table']
+                if database not in result:
+                    result[database] = {}
+                result[database][table] = last_replicated
+
+        return result
+
+
+    def _get_last_replicated(self, database, table):
+        if database in self.state and table in self.state[database]:
+            return self.state[database][table]
+
+
+    def make_state_message(self, database, table, record):
+        last_replicated = self._get_last_replicated(database, table)
+        rep_key = last_replicated['replication_key']
+        return singer.StateMessage(value={"database": database,
+                                          "table": table,
+                                          "value": record[rep_key],
+                                          "replication_key": rep_key,
+                                          "replication_key_schema": last_replicated['replication_key_schema']})
+
 
     def to_where_clause(self, database, table):
-        if 'last_replicated' in self.state:
-            for last_replicated in self.state['last_replicated']:
-                if (last_replicated['database'] == database and
-                    last_replicated['table'] == table and
-                    last_replicated['value'] is not None):
-                    value = str(last_replicated['value'])
-                    if last_replicated['replication_key_schema']['type'] == 'string':
-                        value = '"{}"'.format(value)
-                    return ' WHERE `{}` >= {}'.format(last_replicated['replication_key'], value)
+        last_replicated = self._get_last_replicated(database, table)
+        if last_replicated and last_replicated['value'] is not None:
+            value = str(last_replicated['value'])
+            if last_replicated['replication_key_schema']['type'] == 'string':
+                value = '"{}"'.format(value)
+            return ' WHERE `{}` >= {}'.format(last_replicated['replication_key'], value)
 
 
 def schema_for_column(c):
@@ -323,9 +353,12 @@ def sync_table(connection, db, table, columns, state):
         cursor.execute(select)
         row = cursor.fetchone()
         while row:
+            # LOGGER.info(columns)
+            # LOGGER.info(row)
             rec = dict(zip(columns, row))
+            # LOGGER.info(rec)
             yield (singer.RecordMessage(stream=table, record=rec),
-                   singer.StateMessage(value={"anything": "fakestate"}))
+                   state.make_state_message(db, table, rec))
             row = cursor.fetchone()
 
 
@@ -350,8 +383,10 @@ def generate_messages(con, raw_selections, state):
             for (message, state_message) in sync_table(con, db, table, columns, state):
                 yield message
                 message_num += 1
-                if message_num % state_every is 0:
+                if message_num % state_every == 0:
                     yield state_message
+                final_state_message = state_message
+            yield state_message
 
 
 def do_sync(con, raw_selections, state):
