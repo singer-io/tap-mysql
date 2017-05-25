@@ -30,8 +30,7 @@ Column = collections.namedtuple('Column', [
     "numeric_scale",
     "datetime_precision",
     "column_type",
-    "column_key"]
-)
+    "column_key"])
 
 REQUIRED_CONFIG_KEYS = [
     'host',
@@ -74,55 +73,48 @@ FLOAT_TYPES = set(['float', 'double'])
 class InputException(Exception):
     pass
 
+@attr.s
+class StreamState(object):
+    database = attr.ib()
+    table = attr.ib()
+    replication_key = attr.ib()
+    replication_key_value = attr.ib()
+    replication_key_schema = attr.ib()
 
 class State(object):
     def __init__(self, state):
         if state is None:
             self.state = {}
         else:
-            self.state = self._translate_raw_state(state)
+            self.streams = []
+            for stream in state['streams']:
+                self.streams.append(
+                    StreamState(
+                        database=stream['database'],
+                        table=stream['table'],
+                        replication_key=stream['replication_key'],
+                        replication_key_value=stream['replication_key_value'],
+                        replication_key_schema=stream['replication_key_schema']))
+                current_stream = stream.get('current_stream')
+                if current_stream:
+                    self.current_database = current_stream['database']
+                    self.current_table = current_stream['table']
 
 
-    def _translate_raw_state(self, raw_state):
-        result = {}
-        if 'last_replicated' not in raw_state:
-            result = raw_state
-        else:
-            for last_replicated in raw_state['last_replicated']:
-                database = last_replicated['database']
-                del last_replicated['database']
-                table = last_replicated['table']
-                del last_replicated['table']
-                if database not in result:
-                    result[database] = {}
-                result[database][table] = last_replicated
-
-        return result
+    def get_stream_state(self, database, table):
+        for stream in self.streams:
+            if stream.database == database and stream.table == table:
+                return stream
 
 
-    def _get_last_replicated(self, database, table):
-        if database in self.state and table in self.state[database]:
-            return self.state[database][table]
-
-
-    def make_state_message(self, database, table, record):
-        last_replicated = self._get_last_replicated(database, table)
-        rep_key = last_replicated['replication_key']
-        return singer.StateMessage(value={"database": database,
-                                          "table": table,
-                                          "value": record[rep_key],
-                                          "replication_key": rep_key,
-                                          "replication_key_schema": last_replicated['replication_key_schema']})
-
-
-    def to_where_clause(self, database, table):
-        last_replicated = self._get_last_replicated(database, table)
-        if last_replicated and last_replicated['value'] is not None:
-            value = str(last_replicated['value'])
-            if last_replicated['replication_key_schema']['type'] == 'string':
-                value = '"{}"'.format(value)
-            return ' WHERE `{}` >= {}'.format(last_replicated['replication_key'], value)
-
+    # def make_state_message(self, database, table, record):
+    #     last_replicated = self._get_stream_state(database, table)
+    #     rep_key = last_replicated.replication_key
+    #     return singer.StateMessage(value={"database": database,
+    #                                       "table": table,
+    #                                       "value": record[rep_key],
+    #                                       "replication_key": rep_key,
+    #                                       "replication_key_schema": last_replicated['replication_key_schema']})
 
 def schema_for_column(c):
 
@@ -346,20 +338,25 @@ def sync_table(connection, db, table, columns, state):
     with connection.cursor() as cursor:
         escaped_col_names = [(lambda c: '`{}`'.format(c))(c) for c in columns]
         select = 'SELECT {} FROM `{}`.`{}`'.format(','.join(escaped_col_names), db, table)
-        where_clause = state.to_where_clause(db, table)
-        if where_clause is not None:
-            select += where_clause
+        params = {}
+        stream_state = state.get_stream_state(db, table)
+        if stream_state:
+            key = stream_state.replication_key
+            value = stream_state.replication_key_value
+            select += ' WHERE `{}` >= %(replication_key_value)s'.format(key)
+            params['replication_key_value'] = value
+
         LOGGER.info('Running %s', select)
-        cursor.execute(select)
+        cursor.execute(select, params)
         row = cursor.fetchone()
+        counter = 0
         while row:
-            # LOGGER.info(columns)
-            # LOGGER.info(row)
             rec = dict(zip(columns, row))
-            # LOGGER.info(rec)
-            yield (singer.RecordMessage(stream=table, record=rec),
-                   state.make_state_message(db, table, rec))
+            yield singer.RecordMessage(stream=table, record=rec)
+            #if counter % 1000 == 0:
+            #    yield state.make_state_message()
             row = cursor.fetchone()
+        #yield state.make_state_message()
 
 
 def generate_messages(con, raw_selections, state):
@@ -378,15 +375,8 @@ def generate_messages(con, raw_selections, state):
             for prop in unselected_props:
                 del schema['properties'][prop]
             yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
-            state_every = 10 # TODO: write state every 10k(?)
-            message_num = 0
-            for (message, state_message) in sync_table(con, db, table, columns, state):
+            for message in sync_table(con, db, table, columns, state):
                 yield message
-                message_num += 1
-                if message_num % state_every == 0:
-                    yield state_message
-                final_state_message = state_message
-            yield state_message
 
 
 def do_sync(con, raw_selections, state):
