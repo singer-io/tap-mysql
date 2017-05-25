@@ -75,46 +75,40 @@ class InputException(Exception):
 
 @attr.s
 class StreamState(object):
-    database = attr.ib()
-    table = attr.ib()
+    stream = attr.ib()
     replication_key = attr.ib()
     replication_key_value = attr.ib()
-    replication_key_schema = attr.ib()
+
+    def update(self, record):
+        self.replication_key_value = record[self.replication_key]
 
 class State(object):
     def __init__(self, state):
-        if state is None:
-            self.state = {}
-        else:
-            self.streams = []
-            for stream in state['streams']:
-                self.streams.append(
-                    StreamState(
-                        database=stream['database'],
-                        table=stream['table'],
-                        replication_key=stream['replication_key'],
-                        replication_key_value=stream['replication_key_value'],
-                        replication_key_schema=stream['replication_key_schema']))
-                current_stream = stream.get('current_stream')
-                if current_stream:
-                    self.current_database = current_stream['database']
-                    self.current_table = current_stream['table']
+        self.current_stream = None
+        self.streams = []
+        streams = state.get('streams', [])
+        current_stream = state.get('current_stream')
+        for stream_state in streams:
+            self.streams.append(
+                StreamState(
+                    stream=stream_state['stream'],
+                    replication_key=stream_state['replication_key'],
+                    replication_key_value=stream_state['replication_key_value']))
+        if current_stream:
+            self.current_stream = current_stream
 
 
-    def get_stream_state(self, database, table):
-        for stream in self.streams:
-            if stream.database == database and stream.table == table:
-                return stream
+    def get_stream_state(self, stream):
+        for stream_state in self.streams:
+            if stream_state.stream == stream:
+                return stream_state
 
-
-    # def make_state_message(self, database, table, record):
-    #     last_replicated = self._get_stream_state(database, table)
-    #     rep_key = last_replicated.replication_key
-    #     return singer.StateMessage(value={"database": database,
-    #                                       "table": table,
-    #                                       "value": record[rep_key],
-    #                                       "replication_key": rep_key,
-    #                                       "replication_key_schema": last_replicated['replication_key_schema']})
+    def make_state_message(self):
+        result = {}
+        if self.current_stream:
+            result['current_stream'] = self.current_stream
+        result['streams'] = [s.__dict__ for s in self.streams]
+        return singer.StateMessage(value=result)
 
 def schema_for_column(c):
 
@@ -336,14 +330,14 @@ def sync_table(connection, db, table, columns, state):
         return
 
     with connection.cursor() as cursor:
-        escaped_col_names = [(lambda c: '`{}`'.format(c))(c) for c in columns]
-        select = 'SELECT {} FROM `{}`.`{}`'.format(','.join(escaped_col_names), db, table)
+        # TODO: escape column names
+        select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
         params = {}
-        stream_state = state.get_stream_state(db, table)
+        stream_state = state.get_stream_state(table)
         if stream_state:
             key = stream_state.replication_key
             value = stream_state.replication_key_value
-            select += ' WHERE `{}` >= %(replication_key_value)s'.format(key)
+            select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
             params['replication_key_value'] = value
 
         LOGGER.info('Running %s', select)
@@ -351,12 +345,14 @@ def sync_table(connection, db, table, columns, state):
         row = cursor.fetchone()
         counter = 0
         while row:
+            counter += 1
             rec = dict(zip(columns, row))
+            stream_state.update(rec)
             yield singer.RecordMessage(stream=table, record=rec)
-            #if counter % 1000 == 0:
-            #    yield state.make_state_message()
+            if counter % 1000 == 0:
+                yield state.make_state_message()
             row = cursor.fetchone()
-        #yield state.make_state_message()
+        yield state.make_state_message()
 
 
 def generate_messages(con, raw_selections, state):
