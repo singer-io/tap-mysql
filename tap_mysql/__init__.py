@@ -102,7 +102,7 @@ class State(object):
             self.current_stream = current_stream
 
         for selected_stream in selections['streams']:
-            selected_rep_key = selected_stream['replication_key']
+            selected_rep_key = selected_stream.get('replication_key')
             if selected_rep_key:
                 selected_stream_name = selected_stream['stream']
                 stored_stream_state = None
@@ -284,20 +284,19 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-def index_schema(properties):
-    '''Turns the raw annotated schemas input into a map a map from table name
-    to set of columns selected. For every (table, column) tuple where
+def index_schema(schemas):
+    '''Turns the discovered stream schemas into a nested map of column schemas
+    indexed by database, table, and column name.
 
-      properties['streams'][i]['schema']['properties'][column]['selected']
+      schemas['streams'][i]['schema']['schemas']['column'] { the column schema }
 
-    is true, there will be an entry in
+    to
 
-      result[db][table][column] { the schema for the column }
+      result[db][table][column] { the column schema }'''
 
-    '''
     result = {}
 
-    for stream in properties['streams']:
+    for stream in schemas['streams']:
 
         database = stream['database']
         table = stream['table']
@@ -338,7 +337,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected_but_nonexistent = selected.difference(all_columns)
     if selected_but_nonexistent:
-        LOGGER.warn('For databasee %s, table %s, columns %s were selected but do not exist..',
+        LOGGER.warn('For databasee %s, table %s, columns %s were selected but do not exist.',
                     database, table, selected_but_nonexistent)
 
     not_selected_but_automatic = automatic.difference(selected)
@@ -375,7 +374,8 @@ def sync_table(connection, db, table, columns, state):
         while row:
             counter += 1
             rec = dict(zip(columns, row))
-            stream_state.update(rec)
+            if stream_state:
+                stream_state.update(rec)
             yield singer.RecordMessage(stream=table, record=rec)
             if counter % 1000 == 0:
                 yield state.make_state_message()
