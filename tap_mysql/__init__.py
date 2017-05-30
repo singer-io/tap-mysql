@@ -374,6 +374,9 @@ def sync_table(connection, db, table, columns, state):
             value = stream_state.replication_key_value
             select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
             params['replication_key_value'] = value
+        elif stream_state:
+            key = stream_state.replication_key
+            select += ' ORDER BY `{}` ASC'.format(key)
 
         LOGGER.info('Running %s', select)
         cursor.execute(select, params)
