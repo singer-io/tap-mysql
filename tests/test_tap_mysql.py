@@ -4,6 +4,8 @@ import tap_mysql
 import copy
 import singer
 
+
+# These 
 DB_HOST = 'localhost'
 DB_USER = 'root'
 DB_PASSWORD = 'password'
@@ -11,9 +13,8 @@ DB_NAME = 'tap_mysql_test'
 
 def get_test_connection():
     con = pymysql.connect(
-            host=DB_HOST,
-            user='root',
-            password='password')
+            host='localhost',
+            user='ubuntu')
 
     try:
         with con.cursor() as cur:
