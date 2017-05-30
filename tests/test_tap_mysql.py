@@ -138,7 +138,8 @@ class TestTypeMapping(unittest.TestCase):
             self.schema['properties']['c_pk']['inclusion'],
             'automatic')
 
-class TestTranslateSelectedProperties(unittest.TestCase):
+
+class TestIndexDiscoveredSchema(unittest.TestCase):
 
     def setUp(self):
         con = get_test_connection()
@@ -157,60 +158,56 @@ class TestTranslateSelectedProperties(unittest.TestCase):
 
     def runTest(self):
         discovered = copy.deepcopy(self.discovered)
+        print(tap_mysql.index_schema(discovered))
         self.assertEqual(
-            tap_mysql.translate_selected_properties(discovered),
-            {},
-            'with no selections, should be an empty dict')
-
-        discovered = copy.deepcopy(self.discovered)
-        discovered['streams'][0]['selected'] = True
-        self.assertEqual(
-            tap_mysql.translate_selected_properties(discovered),
-            {DB_NAME: {'tab': set()}},
-            'table with no columns selected')
-
-        discovered = copy.deepcopy(self.discovered)
-        discovered['streams'][0]['schema']['properties']['a']['selected'] = True
-        self.assertEqual(
-            tap_mysql.translate_selected_properties(discovered),
-            {},
-            'columns selected without table')
-
-        discovered = copy.deepcopy(self.discovered)
-        discovered['streams'][0]['selected'] = True
-        discovered['streams'][0]['schema']['properties']['a']['selected'] = True
-        self.assertEqual(
-            tap_mysql.translate_selected_properties(discovered),
-            {DB_NAME: {'tab': set('a')}},
-            'table with a column selected')
+            tap_mysql.index_schema(discovered),
+            {
+                "tap_mysql_test": {
+                    "tab": {
+                        "b": {
+                            "inclusion": "available",
+                            "type": "integer",
+                            "maximum": 2147483647,
+                            "minimum": -2147483648
+                        },
+                        "a": {
+                            "inclusion": "available",
+                            "type": "integer",
+                            "maximum": 2147483647,
+                            "minimum": -2147483648
+                        }
+                    }
+                }
+            },
+            'makes nested structure from flat discovered schemas')
 
 
-class TestColumnsToSelect(unittest.TestCase):
+class TestSelectsAppropriateColumns(unittest.TestCase):
 
     def runTest(self):
-        con = get_test_connection()
-        try:
-            with con.cursor() as cur:
-                cur.execute('''
-                    CREATE TABLE tab (
-                      id INTEGER PRIMARY KEY,
-                      a INTEGER,
-                      b INTEGER)
-                ''')
+        selected_cols = ['a', 'b', 'd']
+        indexed_schema = {'some_db':
+                          {'some_table':
+                           {'a': {'inclusion': 'available'},
+                            'b': {'inclusion': 'unsupported'},
+                            'c': {'inclusion': 'automatic'}}}}
 
-            self.assertEqual(
-                tap_mysql.columns_to_select(con, DB_NAME, 'tab', set(['a'])),
-                set(['id', 'a']),
-                'automatically include primary key columns')
+        expected_pruned_schema = {'some_db':
+                                  {'some_table':
+                                   {'a': {'inclusion': 'available'},
+                                    'c': {'inclusion': 'automatic'}}}}
 
-        finally:
-            con.close()
+        tap_mysql.remove_unwanted_columns(selected_cols,
+                                          indexed_schema,
+                                          'some_db',
+                                          'some_table')
 
+        self.assertEqual(indexed_schema,
+                         expected_pruned_schema,
+                         'Keep automatic as well as selected, available columns.')
 
 class TestSchemaMessages(unittest.TestCase):
 
-    # Assert that the schema includes only the columns the user selected,
-    # plus primary key columns
     def runTest(self):
         con = get_test_connection()
         try:
@@ -225,7 +222,7 @@ class TestSchemaMessages(unittest.TestCase):
             selections = tap_mysql.discover_schemas(con)
             selections['streams'][0]['selected'] = True
             selections['streams'][0]['schema']['properties']['a']['selected'] = True
-            messages = list(tap_mysql.generate_messages(con, selections))
+            messages = list(tap_mysql.generate_messages(con, selections, {}))
             schema_message = messages[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
             self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
