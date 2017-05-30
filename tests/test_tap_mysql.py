@@ -7,14 +7,14 @@ import singer
 
 # These 
 DB_HOST = 'localhost'
-DB_USER = 'root'
+DB_USER = 'ubuntu'
 DB_PASSWORD = 'password'
 DB_NAME = 'tap_mysql_test'
 
 def get_test_connection():
     con = pymysql.connect(
-            host='localhost',
-            user='ubuntu')
+            host=DB_HOST,
+            user=DB_USER)
 
     try:
         with con.cursor() as cur:
@@ -29,7 +29,6 @@ def get_test_connection():
     return pymysql.connect(
         host=DB_HOST,
         user=DB_USER,
-        password=DB_PASSWORD,
         database=DB_NAME)
 
 
