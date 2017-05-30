@@ -14,11 +14,13 @@ import attr
 import pendulum
 
 import pymysql
+import pymysql.constants.FIELD_TYPE as FIELD_TYPE
+
 import singer
 import singer.stats
 from singer import utils
 
-import pymysql.constants.FIELD_TYPE as FIELD_TYPE
+
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -110,7 +112,7 @@ class State(object):
                 for s in state.get('streams', []):
                     if s['stream'] == selected_stream_name:
                         stored_stream_state = s
-                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key:
+                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key: # pylint: disable=line-too-long
                     value = stored_stream_state['replication_key_value']
                 stream_state = StreamState(
                     stream=selected_stream_name,
@@ -312,10 +314,10 @@ def index_schema(schemas):
 
 def remove_unwanted_columns(selected, indexed_schema, database, table):
 
-    selected    = set(selected)
+    selected = set(selected)
     all_columns = set()
-    available   = set()
-    automatic   = set()
+    available = set()
+    automatic = set()
     unsupported = set()
 
     for column, column_schema in indexed_schema[database][table].items():
@@ -332,18 +334,18 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected_but_unsupported = selected.intersection(unsupported)
     if selected_but_unsupported:
-        LOGGER.warn('For database %s, table %s, columns %s were selected but are not supported. Skipping them.',
-                    database, table, selected_but_unsupported)
+        LOGGER.warning('For database %s, table %s, columns %s were selected but are not supported. Skipping them.', # pylint: disable=line-too-long
+                       database, table, selected_but_unsupported)
 
     selected_but_nonexistent = selected.difference(all_columns)
     if selected_but_nonexistent:
-        LOGGER.warn('For databasee %s, table %s, columns %s were selected but do not exist.',
-                    database, table, selected_but_nonexistent)
+        LOGGER.warning('For databasee %s, table %s, columns %s were selected but do not exist.',
+                       database, table, selected_but_nonexistent)
 
     not_selected_but_automatic = automatic.difference(selected)
     if not_selected_but_automatic:
-        LOGGER.warn('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.',
-                    database, table, not_selected_but_automatic)
+        LOGGER.warning('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.', # pylint: disable=line-too-long
+                       database, table, not_selected_but_automatic)
 
     keep = selected.intersection(available).union(automatic)
     remove = all_columns.difference(keep)
@@ -353,7 +355,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
 def sync_table(connection, db, table, columns, state):
     if not columns:
-        LOGGER.warn('There are no columns selected for table %s, skipping it', table)
+        LOGGER.warning('There are no columns selected for table %s, skipping it', table)
         return
 
     with connection.cursor() as cursor:
@@ -409,7 +411,10 @@ def generate_messages(con, raw_selections, raw_state):
             'properties': indexed_schema[database][table]
         }
         columns = schema['properties'].keys()
-        yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
+        yield singer.SchemaMessage(
+            stream=table,
+            schema=schema,
+            key_properties=stream['key_properties'])
         for message in sync_table(con, database, table, columns, state):
             yield message
 
