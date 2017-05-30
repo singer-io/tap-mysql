@@ -72,6 +72,8 @@ BYTES_FOR_INTEGER_TYPE = {
 
 FLOAT_TYPES = set(['float', 'double'])
 
+DATETIME_TYPES = set(['datetime', 'timestamp'])
+
 class InputException(Exception):
     pass
 
@@ -167,6 +169,10 @@ def schema_for_column(c):
     elif t in STRING_TYPES:
         result['type'] = 'string'
         result['maxLength'] = c.character_maximum_length
+
+    elif t in DATETIME_TYPES:
+        result['type'] = 'string'
+        result['format'] = 'date-time'
 
     else:
         result['inclusion'] = 'unsupported'
@@ -375,7 +381,13 @@ def sync_table(connection, db, table, columns, state):
         counter = 0
         while row:
             counter += 1
-            rec = dict(zip(columns, row))
+            row_to_persist = ()
+            for elem in row:
+                if isinstance(elem, datetime.datetime):
+                    row_to_persist += (pendulum.instance(elem).to_iso8601_string(),)
+                else:
+                    row_to_persist += (elem,)
+            rec = dict(zip(columns, row_to_persist))
             if stream_state:
                 stream_state.update(rec)
             yield singer.RecordMessage(stream=table, record=rec)
@@ -420,6 +432,8 @@ def generate_messages(con, raw_selections, raw_state):
 
 
 def do_sync(con, raw_selections, raw_state):
+    with con.cursor() as cur:
+        cur.execute('SET time_zone="+0:00"')
     for message in generate_messages(con, raw_selections, raw_state):
         singer.write_message(message)
 
