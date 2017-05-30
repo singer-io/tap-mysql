@@ -3,18 +3,21 @@ import pymysql
 import tap_mysql
 import copy
 import singer
+import os
 
 
-# These 
-DB_HOST = 'localhost'
-DB_USER = 'ubuntu'
-DB_PASSWORD = 'password'
-DB_NAME = 'tap_mysql_test'
+DB_NAME='tap_mysql_test'
 
 def get_test_connection():
-    con = pymysql.connect(
-            host=DB_HOST,
-            user=DB_USER)
+
+    creds = {}
+    creds['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
+    creds['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
+    creds['password'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_PASSWORD')
+    if not creds['password']:
+        del creds['password']
+
+    con = pymysql.connect(**creds)
 
     try:
         with con.cursor() as cur:
@@ -26,10 +29,9 @@ def get_test_connection():
     finally:
         con.close()
 
-    return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        database=DB_NAME)
+    creds['database'] = DB_NAME
+
+    return pymysql.connect(**creds)
 
 
 class TestTypeMapping(unittest.TestCase):
