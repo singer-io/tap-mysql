@@ -2,10 +2,6 @@ machine:
   python:
     version: 3.4.4
 
-database:
-  pre:
-    - mysql -e 'CREATE USER root IDENTIFIED BY password'
-
 dependencies:
   pre:
     - pip install pylint
