@@ -21,17 +21,16 @@ from singer import utils
 import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
 Column = collections.namedtuple('Column', [
-    "table_schema", 
-    "table_name", 
-    "column_name", 
-    "data_type", 
-    "character_maximum_length", 
-    "numeric_precision", 
-    "numeric_scale", 
-    "datetime_precision", 
-    "column_type", 
-    "column_key"]
-)
+    "table_schema",
+    "table_name",
+    "column_name",
+    "data_type",
+    "character_maximum_length",
+    "numeric_precision",
+    "numeric_scale",
+    "datetime_precision",
+    "column_type",
+    "column_key"])
 
 REQUIRED_CONFIG_KEYS = [
     'host',
@@ -71,6 +70,8 @@ BYTES_FOR_INTEGER_TYPE = {
 
 FLOAT_TYPES = set(['float', 'double'])
 
+DATETIME_TYPES = set(['datetime', 'timestamp'])
+
 class InputException(Exception):
     pass
 
@@ -85,7 +86,7 @@ def schema_for_column(c):
         result['inclusion'] = 'automatic'
     else:
         result['inclusion'] = 'available'
-    
+
     if t in BYTES_FOR_INTEGER_TYPE:
         result['type'] = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
@@ -109,28 +110,32 @@ def schema_for_column(c):
         result['type'] = 'string'
         result['maxLength'] = c.character_maximum_length
 
+    elif t in DATETIME_TYPES:
+        result['type'] = 'string'
+        result['format'] = 'date-time'
+
     else:
         result['inclusion'] = 'unsupported'
         result['description'] = 'Unsupported column type {}'.format(c.column_type)
 
     return result
 
-    
+
 def discover_schemas(connection):
 
     with connection.cursor() as cursor:
         if connection.db:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
+                SELECT table_schema,
+                       table_name,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema = %s""",
                            (connection.db,))
         else:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
+                SELECT table_schema,
+                       table_name,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema NOT IN (
@@ -140,7 +145,6 @@ def discover_schemas(connection):
             """)
         row_counts = {}
         for (db, table, rows) in cursor.fetchall():
-            LOGGER.info('db %s table %s rows %d', db, table, rows)
             if db not in row_counts:
                 row_counts[db] = {}
             row_counts[db][table] = rows
@@ -149,14 +153,14 @@ def discover_schemas(connection):
 
         if connection.db:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
-                       column_name, 
-                       data_type, 
-                       character_maximum_length, 
-                       numeric_precision, 
-                       numeric_scale, 
-                       datetime_precision, 
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       datetime_precision,
                        column_type,
                        column_key
                   FROM information_schema.columns
@@ -164,15 +168,15 @@ def discover_schemas(connection):
                            (connection.db,))
         else:
             cursor.execute("""
-                SELECT table_schema, 
-                       table_name, 
-                       column_name, 
-                       data_type, 
-                       character_maximum_length, 
-                       numeric_precision, 
-                       numeric_scale, 
-                       datetime_precision, 
-                       column_type, 
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       datetime_precision,
+                       column_type,
                        column_key
                   FROM information_schema.columns
                  WHERE table_schema NOT IN (
@@ -205,7 +209,7 @@ def discover_schemas(connection):
             if table_schema in row_counts and table_name in row_counts[table_schema]:
                 stream['row_count'] = row_counts[table_schema][table_name]
             streams.append(stream)
-            
+
         return {'streams': streams}
 
 
@@ -234,7 +238,7 @@ def translate_selected_properties(properties):
 
       properties['streams'][i]['schema']['properties'][column]['selected']
 
-    is true, there will be an entry in 
+    is true, there will be an entry in
 
       result[db][table][column]
 
@@ -284,7 +288,8 @@ def columns_to_select(connection, db, table, user_selected_columns):
     pks = primary_key_columns(connection, db, table)
     pks_to_add = pks.difference(user_selected_columns)
     if pks_to_add:
-        LOGGER.info('For table %s, columns %s are primary keys but were not selected. Automatically adding them.',
+        LOGGER.info(('For table %s, columns %s are primary keys but were not selected. '
+                     'Automatically adding them.'),
                     table, pks_to_add)
     return user_selected_columns.union(pks)
 
@@ -297,11 +302,16 @@ def sync_table(connection, db, table, columns):
     with connection.cursor() as cursor:
         # TODO: Escape the columns
         select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
-        LOGGER.info('Running %s', select)
         cursor.execute(select)
         row = cursor.fetchone()
         while row:
-            rec = dict(zip(columns, row))
+            rowToPersist = ()
+            for elem in row:
+                if isinstance(elem, datetime.datetime):
+                    rowToPersist += (pendulum.instance(elem).to_iso8601_string(),)
+                else:
+                    rowToPersist += (elem,)
+            rec = dict(zip(columns, rowToPersist))
             yield singer.RecordMessage(stream=table, record=rec)
             row = cursor.fetchone()
 
@@ -321,12 +331,16 @@ def generate_messages(con, raw_selections):
             unselected_props = set(schema['properties'].keys()).difference(columns)
             for prop in unselected_props:
                 del schema['properties'][prop]
-            yield singer.SchemaMessage(stream=table, schema=schema, key_properties=stream['key_properties'])
+            yield singer.SchemaMessage(stream=table,
+                                       schema=schema,
+                                       key_properties=stream['key_properties'])
             for message in sync_table(con, db, table, columns):
                 yield message
 
-    
+
 def do_sync(con, raw_selections):
+    with con.cursor() as cur:
+        cur.execute('SET time_zone="+0:00"')
     for message in generate_messages(con, raw_selections):
         singer.write_message(message)
 
