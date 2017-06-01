@@ -246,7 +246,7 @@ class TestViews(unittest.TestCase):
 
             cursor.execute(
                 '''
-                CREATE TABLE a_view AS SELECT id, a FROM a_table
+                CREATE VIEW a_view AS SELECT id, a FROM a_table
                 ''')
 
     def tearDown(self):
@@ -256,7 +256,11 @@ class TestViews(unittest.TestCase):
     def runTest(self):
         discovered = tap_mysql.discover_schemas(self.con)
 
-        stream_names = set([s.get('table') for s in discovered['streams']])
+        is_view = {
+            s.get('table'): s.get('is_view')
+            for s in discovered['streams']
+        }
         self.assertEqual(
-            set(['a_table', 'a_view']),
-            stream_names)             
+            is_view,
+            {'a_table': False,
+             'a_view': True})
