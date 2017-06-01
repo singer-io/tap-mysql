@@ -5,7 +5,6 @@ import copy
 import singer
 import os
 
-
 DB_NAME='tap_mysql_test'
 
 def get_test_connection():
@@ -231,3 +230,33 @@ class TestSchemaMessages(unittest.TestCase):
 
         finally:
             con.close()
+
+class TestViews(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute(
+                '''
+                CREATE TABLE a_table (
+                  id int,
+                  a int,
+                  b int)
+                ''')
+
+            cursor.execute(
+                '''
+                CREATE TABLE a_view AS SELECT id, a FROM a_table
+                ''')
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+    def runTest(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+
+        stream_names = set([s.get('table') for s in discovered['streams']])
+        self.assertEqual(
+            set(['a_table', 'a_view']),
+            stream_names)             
