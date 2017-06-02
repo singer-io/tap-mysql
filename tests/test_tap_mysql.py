@@ -5,9 +5,6 @@ import copy
 import singer
 import os
 
-import json
-import sys
-
 DB_NAME='tap_mysql_test'
 
 def get_test_connection():
@@ -243,7 +240,6 @@ def current_stream_seq(messages):
     )
 
 class TestCurrentStream(unittest.TestCase):
-
     def setUp(self):
         self.con = get_test_connection()
         with self.con.cursor() as cursor:
@@ -255,14 +251,13 @@ class TestCurrentStream(unittest.TestCase):
         discovered = tap_mysql.discover_schemas(self.con)
         for stream in discovered['streams']:
             stream['selected'] = True
+            stream['key_properties'] = []
             stream['schema']['properties']['val']['selected'] = True
             stream['stream'] = stream['table']
         self.selections = discovered
-
     def tearDown(self):
         if self.con:
             self.con.close()
-            
     def test_emit_current_stream(self):
         state = {}
         messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
@@ -272,3 +267,64 @@ class TestCurrentStream(unittest.TestCase):
         state = {'current_stream': 'b'}
         messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
+
+class TestViews(unittest.TestCase):
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute(
+                '''
+                CREATE TABLE a_table (
+                  id int primary key,
+                  a int,
+                  b int)
+                ''')
+
+            cursor.execute(
+                '''
+                CREATE VIEW a_view AS SELECT id, a FROM a_table
+                ''')
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+    def test_discovery_sets_is_view(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+
+        is_view = {
+            s.get('table'): s.get('is_view')
+            for s in discovered['streams']
+        }
+        self.assertEqual(
+            is_view,
+            {'a_table': False,
+             'a_view': True})
+
+    def test_do_not_discover_key_properties_for_view(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+        discovered_key_properties = {
+            s.get('table'): s.get('key_properties')
+            for s in discovered['streams']
+        }
+        self.assertEqual(
+            discovered_key_properties,
+            {'a_table': ['id'],
+             'a_view': None})
+
+    def test_can_set_key_properties_for_view(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+        for stream in discovered['streams']:
+            stream['stream'] = stream['table']
+            
+            if stream['table'] == 'a_view':
+                stream['key_properties'] = ['id']
+                stream['selected'] = True
+                stream['schema']['properties']['a']['selected'] = True
+                
+        messages = list(tap_mysql.generate_messages(self.con, discovered, {}))
+        schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
+        
+        self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
+        self.assertEqual(schema_message.key_properties, ['id'])
+
