@@ -222,7 +222,7 @@ class TestSchemaMessages(unittest.TestCase):
 
             selections = tap_mysql.discover_schemas(con)
             selections['streams'][0]['stream'] = 'tab'
-            selections['streams'][0]['selected'] = True            
+            selections['streams'][0]['selected'] = True
             selections['streams'][0]['schema']['properties']['a']['selected'] = True
             messages = list(tap_mysql.generate_messages(con, selections, {}))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
@@ -247,7 +247,7 @@ class TestCurrentStream(unittest.TestCase):
             cursor.execute('CREATE TABLE b (val int)')
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
-            
+
         discovered = tap_mysql.discover_schemas(self.con)
         for stream in discovered['streams']:
             stream['selected'] = True
@@ -316,15 +316,14 @@ class TestViews(unittest.TestCase):
         discovered = tap_mysql.discover_schemas(self.con)
         for stream in discovered['streams']:
             stream['stream'] = stream['table']
-            
+
             if stream['table'] == 'a_view':
                 stream['key_properties'] = ['id']
                 stream['selected'] = True
                 stream['schema']['properties']['a']['selected'] = True
-                
+
         messages = list(tap_mysql.generate_messages(self.con, discovered, {}))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
-        
+
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
-
