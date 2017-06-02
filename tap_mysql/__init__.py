@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import datetime
@@ -188,6 +187,7 @@ def discover_schemas(connection):
             cursor.execute("""
                 SELECT table_schema,
                        table_name,
+                       table_type,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema = %s""",
@@ -196,6 +196,7 @@ def discover_schemas(connection):
             cursor.execute("""
                 SELECT table_schema,
                        table_name,
+                       table_type,
                        table_rows
                   FROM information_schema.tables
                  WHERE table_schema NOT IN (
@@ -203,11 +204,15 @@ def discover_schemas(connection):
                           'performance_schema',
                           'mysql')
             """)
-        row_counts = {}
-        for (db, table, rows) in cursor.fetchall():
-            if db not in row_counts:
-                row_counts[db] = {}
-            row_counts[db][table] = rows
+        table_info = {}
+
+        for (db, table, table_type, rows) in cursor.fetchall():
+            if db not in table_info:
+                table_info[db] = {}
+            table_info[db][table] = {
+                'row_count': rows,
+                'is_view': table_type == 'VIEW'
+            }
 
     with connection.cursor() as cursor:
 
@@ -256,18 +261,21 @@ def discover_schemas(connection):
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
-
             stream = {
                 'database': table_schema,
                 'table': table_name,
-                'key_properties': [c.column_name for c in cols if c.column_key == 'PRI'],
                 'schema': {
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
                 },
             }
-            if table_schema in row_counts and table_name in row_counts[table_schema]:
-                stream['row_count'] = row_counts[table_schema][table_name]
+            key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
+            if key_properties:
+                stream['key_properties'] = key_properties
+
+            if table_schema in table_info and table_name in table_info[table_schema]:
+                stream['row_count'] = table_info[table_schema][table_name]['row_count']
+                stream['is_view'] = table_info[table_schema][table_name]['is_view']
             streams.append(stream)
 
         return {'streams': streams}
@@ -404,7 +412,6 @@ def sync_table(connection, db, table, columns, state):
 def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
-
     for stream in raw_selections['streams']:
         if not stream.get('selected'):
             continue
@@ -451,5 +458,3 @@ def main():
         do_sync(connection, args.properties, args.state)
     else:
         LOGGER.info("No properties were selected")
-
-# TODO: How to deal with primary keys for views
