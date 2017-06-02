@@ -239,7 +239,7 @@ class TestViews(unittest.TestCase):
             cursor.execute(
                 '''
                 CREATE TABLE a_table (
-                  id int,
+                  id int primary key,
                   a int,
                   b int)
                 ''')
@@ -253,7 +253,7 @@ class TestViews(unittest.TestCase):
         if self.con:
             self.con.close()
 
-    def runTest(self):
+    def test_discovery_sets_is_view(self):
         discovered = tap_mysql.discover_schemas(self.con)
 
         is_view = {
@@ -264,3 +264,16 @@ class TestViews(unittest.TestCase):
             is_view,
             {'a_table': False,
              'a_view': True})
+
+    def test_can_set_key_properties(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+
+        discovered_key_properties = {
+            s.get('table'): s.get('key_properties')
+            for s in discovered['streams']
+        }
+
+        self.assertEqual(
+            discovered_key_properties,
+            {'a_table': ['id'],
+             'a_view': None})
