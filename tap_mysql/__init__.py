@@ -272,10 +272,10 @@ def discover_schemas(connection):
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
             if key_properties:
                 stream['key_properties'] = key_properties
-            
+
             if table_schema in table_info and table_name in table_info[table_schema]:
                 stream['row_count'] = table_info[table_schema][table_name]['row_count']
-                stream['is_view'] = table_info[table_schema][table_name]['is_view']                                                                           
+                stream['is_view'] = table_info[table_schema][table_name]['is_view']
             streams.append(stream)
 
         return {'streams': streams}
@@ -458,4 +458,3 @@ def main():
         do_sync(connection, args.properties, args.state)
     else:
         LOGGER.info("No properties were selected")
-
