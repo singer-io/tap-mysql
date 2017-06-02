@@ -5,6 +5,8 @@ import copy
 import singer
 import os
 
+import json
+import sys
 
 DB_NAME='tap_mysql_test'
 
@@ -231,3 +233,42 @@ class TestSchemaMessages(unittest.TestCase):
 
         finally:
             con.close()
+
+def current_stream_seq(messages):
+    return ''.join(
+        [m.value.get('current_stream', '_')
+         for m in messages
+         if isinstance(m, singer.StateMessage)]
+    )
+
+class TestCurrentStream(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute('CREATE TABLE a (val int)')
+            cursor.execute('CREATE TABLE b (val int)')
+            cursor.execute('INSERT INTO a (val) VALUES (1)')
+            cursor.execute('INSERT INTO b (val) VALUES (1)')
+            
+        discovered = tap_mysql.discover_schemas(self.con)
+        for stream in discovered['streams']:
+            stream['selected'] = True
+            stream['schema']['properties']['val']['selected'] = True
+        self.selections = discovered
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+
+            
+    def test_emit_current_stream(self):
+        state = {}
+        messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
+        self.assertEqual('_ab_', current_stream_seq(messages))
+
+    def test_start_at_current_stream(self):
+        state = {'current_stream': 'b'}
+        messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
+        self.assertEqual('b_', current_stream_seq(messages))
