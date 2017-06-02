@@ -412,7 +412,6 @@ def sync_table(connection, db, table, columns, state):
 def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
-
     for stream in raw_selections['streams']:
         if not stream.get('selected'):
             continue
@@ -460,4 +459,3 @@ def main():
     else:
         LOGGER.info("No properties were selected")
 
-# TODO: How to deal with primary keys for views

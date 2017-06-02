@@ -265,15 +265,28 @@ class TestViews(unittest.TestCase):
             {'a_table': False,
              'a_view': True})
 
-    def test_can_set_key_properties(self):
+    def test_do_not_discover_key_properties_for_view(self):
         discovered = tap_mysql.discover_schemas(self.con)
-
         discovered_key_properties = {
             s.get('table'): s.get('key_properties')
             for s in discovered['streams']
         }
-
         self.assertEqual(
             discovered_key_properties,
             {'a_table': ['id'],
              'a_view': None})
+
+    def test_can_set_key_properties_for_view(self):
+        discovered = tap_mysql.discover_schemas(self.con)
+        for stream in discovered['streams']:
+            if stream['table'] == 'a_view':
+                stream['key_properties'] = ['id']
+                stream['selected'] = True
+                stream['schema']['properties']['a']['selected'] = True
+                
+        messages = list(tap_mysql.generate_messages(self.con, discovered, {}))
+        message = messages[0]
+
+        
+        self.assertTrue(isinstance(message, singer.SchemaMessage))
+        self.assertEqual(message.key_properties, ['id'])
