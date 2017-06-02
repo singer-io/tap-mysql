@@ -44,6 +44,7 @@ class TestTypeMapping(unittest.TestCase):
             CREATE TABLE test_type_mapping (
             c_pk INTEGER PRIMARY KEY,
             c_decimal DECIMAL,
+            c_decimal_2_unsigned DECIMAL(5, 2) UNSIGNED,
             c_decimal_2 DECIMAL(11, 2),
             c_tinyint TINYINT,
             c_smallint SMALLINT,
@@ -65,14 +66,25 @@ class TestTypeMapping(unittest.TestCase):
             'type': 'number',
             'inclusion': 'available',
             'exclusiveMaximum': 10000000000,
+            'exclusiveMinimum': -10000000000,            
             'multipleOf': 1
         })
+
+    def test_decimal_unsigned(self):
+        self.assertEqual(self.schema['properties']['c_decimal_2_unsigned'], {
+            'type': 'number',
+            'inclusion': 'available',
+            'exclusiveMaximum': 1000,            
+            'minimum': 0,
+            'multipleOf': 0.01
+        })        
 
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema['properties']['c_decimal_2'], {
             'type': 'number',
             'inclusion': 'available',
             'exclusiveMaximum': 1000000000,
+            'exclusiveMinimum': -1000000000,
             'multipleOf': 0.01})
 
     def test_tinyint(self):

@@ -160,10 +160,13 @@ def schema_for_column(c):
         result['type'] = 'number'
 
     elif t == 'decimal':
-        # TODO: What about unsigned decimals?
         result['type'] = 'number'
         result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
         result['multipleOf'] = 10 ** (0 - c.numeric_scale)
+        if 'unsigned' in c.column_type:
+            result['minimum'] = 0
+        else:
+            result['exclusiveMinimum'] = -10 ** (c.numeric_precision - c.numeric_scale)
 
     elif t in STRING_TYPES:
         result['type'] = 'string'
