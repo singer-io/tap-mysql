@@ -8,6 +8,7 @@ import sys
 import time
 import collections
 import itertools
+from itertools import dropwhile
 import copy
 
 import attr
@@ -127,7 +128,7 @@ class State(object):
         for stream_state in self.streams:
             if stream_state.stream == stream:
                 return stream_state
-
+            
     def make_state_message(self):
         result = {}
         if self.current_stream:
@@ -400,14 +401,19 @@ def sync_table(connection, db, table, columns, state):
         yield state.make_state_message()
 
 
-
 def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
 
-    for stream in raw_selections['streams']:
+    streams = raw_selections['streams']
+    if state.current_stream:
+        streams = dropwhile(lambda s: s['stream'] != state.current_stream, streams)
+    
+    for stream in streams:
         if not stream.get('selected'):
             continue
+        state.current_stream = stream['stream']
+        yield state.make_state_message()
 
         database = stream['database']
         table = stream['table']
@@ -432,7 +438,8 @@ def generate_messages(con, raw_selections, raw_state):
             key_properties=stream['key_properties'])
         for message in sync_table(con, database, table, columns, state):
             yield message
-
+    state.current_stream = None
+    yield state.make_state_message()
 
 def do_sync(con, raw_selections, raw_state):
     with con.cursor() as cur:

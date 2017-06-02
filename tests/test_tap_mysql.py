@@ -224,10 +224,11 @@ class TestSchemaMessages(unittest.TestCase):
                 ''')
 
             selections = tap_mysql.discover_schemas(con)
-            selections['streams'][0]['selected'] = True
+            selections['streams'][0]['stream'] = 'tab'
+            selections['streams'][0]['selected'] = True            
             selections['streams'][0]['schema']['properties']['a']['selected'] = True
             messages = list(tap_mysql.generate_messages(con, selections, {}))
-            schema_message = messages[0]
+            schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
             self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
 
@@ -255,20 +256,19 @@ class TestCurrentStream(unittest.TestCase):
         for stream in discovered['streams']:
             stream['selected'] = True
             stream['schema']['properties']['val']['selected'] = True
+            stream['stream'] = stream['table']
         self.selections = discovered
 
     def tearDown(self):
         if self.con:
             self.con.close()
-
-
             
     def test_emit_current_stream(self):
         state = {}
         messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
-        self.assertEqual('_ab_', current_stream_seq(messages))
+        self.assertRegexpMatches(current_stream_seq(messages), '^a+b+_+')
 
     def test_start_at_current_stream(self):
         state = {'current_stream': 'b'}
         messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
-        self.assertEqual('b_', current_stream_seq(messages))
+        self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
