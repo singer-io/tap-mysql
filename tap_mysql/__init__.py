@@ -413,13 +413,11 @@ def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
 
-    streams = raw_selections['streams']
+    streams = filter(lambda stream: stream.get('selected'), raw_selections['streams'])
     if state.current_stream:
         streams = dropwhile(lambda s: s['stream'] != state.current_stream, streams)
 
     for stream in streams:
-        if not stream.get('selected'):
-            continue
         state.current_stream = stream['stream']
         yield state.make_state_message()
 
