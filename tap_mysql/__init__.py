@@ -7,6 +7,7 @@ import sys
 import time
 import collections
 import itertools
+from itertools import dropwhile
 import copy
 
 import attr
@@ -18,7 +19,6 @@ import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 import singer
 import singer.stats
 from singer import utils
-
 
 
 Column = collections.namedtuple('Column', [
@@ -62,9 +62,9 @@ STRING_TYPES = set([
 ])
 
 BYTES_FOR_INTEGER_TYPE = {
-    'tinyint' : 1,
+    'tinyint': 1,
     'smallint': 2,
-    'mediumint' : 3,
+    'mediumint': 3,
     'int': 4,
     'bigint': 8
 }
@@ -73,8 +73,10 @@ FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp'])
 
+
 class InputException(Exception):
     pass
+
 
 @attr.s
 class StreamState(object):
@@ -113,14 +115,13 @@ class State(object):
                 for s in state.get('streams', []):
                     if s['stream'] == selected_stream_name:
                         stored_stream_state = s
-                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key: # pylint: disable=line-too-long
+                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key:  # pylint: disable=line-too-long
                     value = stored_stream_state['replication_key_value']
                 stream_state = StreamState(
                     stream=selected_stream_name,
                     replication_key=selected_rep_key,
                     replication_key_value=value)
                 self.streams.append(stream_state)
-
 
     def get_stream_state(self, stream):
         for stream_state in self.streams:
@@ -133,6 +134,7 @@ class State(object):
             result['current_stream'] = self.current_stream
         result['streams'] = [s.__dict__ for s in self.streams]
         return singer.StateMessage(value=result)
+
 
 def schema_for_column(c):
 
@@ -160,10 +162,13 @@ def schema_for_column(c):
         result['type'] = 'number'
 
     elif t == 'decimal':
-        # TODO: What about unsigned decimals?
         result['type'] = 'number'
         result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
         result['multipleOf'] = 10 ** (0 - c.numeric_scale)
+        if 'unsigned' in c.column_type:
+            result['minimum'] = 0
+        else:
+            result['exclusiveMinimum'] = -10 ** (c.numeric_precision - c.numeric_scale)
 
     elif t in STRING_TYPES:
         result['type'] = 'string'
@@ -249,7 +254,6 @@ def discover_schemas(connection):
                           'performance_schema',
                           'mysql')
             """)
-
 
         columns = []
         rec = cursor.fetchone()
@@ -348,7 +352,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected_but_unsupported = selected.intersection(unsupported)
     if selected_but_unsupported:
-        LOGGER.warning('For database %s, table %s, columns %s were selected but are not supported. Skipping them.', # pylint: disable=line-too-long
+        LOGGER.warning('For database %s, table %s, columns %s were selected but are not supported. Skipping them.',  # pylint: disable=line-too-long
                        database, table, selected_but_unsupported)
 
     selected_but_nonexistent = selected.difference(all_columns)
@@ -358,7 +362,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     not_selected_but_automatic = automatic.difference(selected)
     if not_selected_but_automatic:
-        LOGGER.warning('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.', # pylint: disable=line-too-long
+        LOGGER.warning('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.',  # pylint: disable=line-too-long
                        database, table, not_selected_but_automatic)
 
     keep = selected.intersection(available).union(automatic)
@@ -419,13 +423,17 @@ def sync_table(connection, db, table, columns, state):
         yield state.make_state_message()
 
 
-
 def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
-    for stream in raw_selections['streams']:
-        if not stream.get('selected'):
-            continue
+
+    streams = filter(lambda stream: stream.get('selected'), raw_selections['streams'])
+    if state.current_stream:
+        streams = dropwhile(lambda s: s['stream'] != state.current_stream, streams)
+
+    for stream in streams:
+        state.current_stream = stream['stream']
+        yield state.make_state_message()
 
         database = stream['database']
         table = stream['table']
@@ -450,6 +458,8 @@ def generate_messages(con, raw_selections, raw_state):
             key_properties=stream['key_properties'])
         for message in sync_table(con, database, table, columns, state):
             yield message
+    state.current_stream = None
+    yield state.make_state_message()
 
 
 def do_sync(con, raw_selections, raw_state):
