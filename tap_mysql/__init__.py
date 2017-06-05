@@ -370,6 +370,11 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
     for col in remove:
         del indexed_schema[database][table][col]
 
+def escape(string):
+    if '`' in string:
+        raise Exception("Can't escape identifier {} because it contains a backtick"
+                        .format(string))
+    return '`' + string + '`'
 
 def sync_table(connection, db, table, columns, state):
     if not columns:
@@ -378,7 +383,13 @@ def sync_table(connection, db, table, columns, state):
 
     with connection.cursor() as cursor:
         # TODO: escape column names
-        select = 'SELECT {} FROM {}.{}'.format(','.join(columns), db, table)
+        escaped_db = escape(db)
+        escaped_table = escape(table)
+        escaped_columns = [escape(c) for c in columns]
+        select = 'SELECT {} FROM {}.{}'.format(
+            ','.join(escaped_columns),
+            escaped_db,
+            escaped_table)
         params = {}
         stream_state = state.get_stream_state(table)
         if stream_state and stream_state.replication_key_value is not None:

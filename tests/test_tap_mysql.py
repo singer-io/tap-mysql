@@ -336,6 +336,30 @@ class TestViews(unittest.TestCase):
 
         messages = list(tap_mysql.generate_messages(self.con, discovered, {}))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
-
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
+
+        
+
+class TestEscaping(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute('CREATE TABLE a (`b c` int)')
+            cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()        
+
+    def test_escape_succeeds(self):
+        selections = tap_mysql.discover_schemas(self.con)
+        selections['streams'][0]['stream'] = 'some_stream_name'
+        selections['streams'][0]['selected'] = True
+        selections['streams'][0]['key_properties'] = []
+        selections['streams'][0]['schema']['properties']['b c']['selected'] = True
+        messages = tap_mysql.generate_messages(self.con, selections, {})
+        record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
+        self.assertTrue(isinstance(record_message, singer.RecordMessage))
+        self.assertEqual(record_message.record, {'b c': 1})
