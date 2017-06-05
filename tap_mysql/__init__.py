@@ -466,8 +466,8 @@ def log_server_params(con):
                     'max_allowed_packet: %s, ' +
                     'interactive_timeout: %s',
                     *row)
-    
-    
+
+
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
