@@ -468,11 +468,28 @@ def do_sync(con, raw_selections, raw_state):
     for message in generate_messages(con, raw_selections, raw_state):
         singer.write_message(message)
 
+def log_server_params(con):
+    with con.cursor() as cur:
+        cur.execute('''
+            SELECT VERSION() as version,
+                   @@SESSION.wait_timeout as wait_timeout,
+                   @@SESSION.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+                   @@SESSION.max_allowed_packet as max_allowed_packet,
+                   @@SESSION.interactive_timeout as interactive_timeout''')
+        row = cur.fetchone()
+        LOGGER.info('Server Parameters: ' +
+                    'version: %s, ' +
+                    'wait_timeout: %s, ' +
+                    'innodb_lock_wait_timeout: %s, ' +
+                    'max_allowed_packet: %s, ' +
+                    'interactive_timeout: %s',
+                    *row)
+
 
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
-
+    log_server_params(connection)
     if args.discover:
         do_discover(connection)
     elif args.properties:
