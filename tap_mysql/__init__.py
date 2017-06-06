@@ -171,7 +171,7 @@ class StreamMeta(object):
 
 def load_selections(raw):
     selections = []
-    for stream in raw:
+    for stream in raw['streams']:
         selections.append(
             StreamMeta(
                 replication_key=stream.get('replication_key'),
@@ -333,7 +333,7 @@ def discover_schemas(connection):
 
 def do_discover(connection):
     data = [stream_meta.to_json() for stream_meta in discover_schemas(connection)]
-    json.dump(data, sys.stdout, indent=2)
+    json.dump({'streams': data}, sys.stdout, indent=2)
 
 
 def primary_key_columns(connection, db, table):
