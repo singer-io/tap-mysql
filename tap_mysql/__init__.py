@@ -135,7 +135,7 @@ class State(object):
             result['current_stream'] = self.current_stream
         result['streams'] = [s.__dict__ for s in self.streams]
         return singer.StateMessage(value=result)
-            
+
 
 @attr.s
 class StreamMeta(object):
@@ -146,12 +146,13 @@ class StreamMeta(object):
     database = attr.ib(default=None)
     table = attr.ib(default=None)
     stream = attr.ib(default=None)
+    row_count = attr.ib(default=None)
 
     def is_selected(self):
-        result = self.schema.get('selected', False)
+        result = self.schema.get('selected', False)  # pylint: disable=no-member
         LOGGER.info('Selected is %s from %s', result, self.schema)
-        return self.schema.get('selected', False)
-    
+        return self.schema.get('selected', False)  # pylint: disable=no-member
+
     def to_json(self):
         result = {
             'database': self.database,
@@ -178,7 +179,7 @@ def load_selections(raw):
                 replication_key=stream.get('replication_key'),
                 key_properties=stream.get('key_properties'),
                 database=stream.get('database'),
-                table=stream.get('table'),                
+                table=stream.get('table'),
                 schema=stream.get('schema'),
                 is_view=stream.get('is_view')))
     return selections
@@ -313,8 +314,8 @@ def discover_schemas(connection):
             cols = list(cols)
             (table_schema, table_name) = k
             schema = {
-                    'type': 'object',
-                    'properties': {c.column_name: schema_for_column(c) for c in cols}
+                'type': 'object',
+                'properties': {c.column_name: schema_for_column(c) for c in cols}
             }
             stream = StreamMeta(
                 database=table_schema,
@@ -514,6 +515,7 @@ def do_sync(con, raw_selections, raw_state):
         cur.execute('SET time_zone="+0:00"')
     for message in generate_messages(con, raw_selections, raw_state):
         singer.write_message(message)
+
 
 def log_server_params(con):
     with con.cursor() as cur:
