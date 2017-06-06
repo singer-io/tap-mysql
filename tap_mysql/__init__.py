@@ -80,6 +80,8 @@ class InputException(Exception):
 
 @attr.s
 class StreamState(object):
+    database = attr.ib()
+    table = attr.ib()
     stream = attr.ib()
     replication_key = attr.ib()
     replication_key_value = attr.ib()
@@ -90,10 +92,9 @@ class StreamState(object):
 
 def replication_key_by_table(raw_selections):
     result = {}
-    for stream in raw_selections['streams']:
-        key = stream.get('replication_key')
-        if key is not None:
-            result[stream['stream']] = key
+    for stream in raw_selections.streams:
+        if stream.replication_key is not None:
+            result[stream.stream] = stream.replication_key
     return result
 
 
@@ -105,11 +106,10 @@ class State(object):
         current_stream = state.get('current_stream')
         if current_stream:
             self.current_stream = current_stream
-
-        for selected_stream in selections['streams']:
-            selected_rep_key = selected_stream.get('replication_key')
+        for selected_stream in selections.streams:
+            selected_rep_key = selected_stream.replication_key
             if selected_rep_key:
-                selected_stream_name = selected_stream['stream']
+                selected_stream_name = selected_stream.stream
                 stored_stream_state = None
                 value = None
                 for s in state.get('streams', []):
@@ -184,6 +184,53 @@ def schema_for_column(c):
 
     return result
 
+
+@attr.s
+class StreamInfo(object):
+    replication_key = attr.ib(default=None)
+    key_properties = attr.ib(default=None)
+    schema = attr.ib(default=None)
+    is_view = attr.ib(default=None)
+    database = attr.ib(default=None)
+    table = attr.ib(default=None)
+    stream = attr.ib(default=None)
+    is_selected = attr.ib(default=None)
+
+    def to_json(self):
+        result = {
+            'database': self.database,
+            'table': self.table,
+        }
+        if self.replication_key is not None:
+            result['replication_key'] = self.replication_key
+        if self.key_properties is not None:
+            result['key_properties'] = self.key_properties
+        if self.schema is not None:
+            result['schema'] = self.schema
+        if self.is_view is not None:
+            result['is_view'] = self.is_view
+        if self.stream is not None:
+            result['stream'] = self.stream
+        return result
+
+@attr.s()
+class Selections(object):
+
+    streams = attr.ib(default=[])
+
+    def to_json(self):
+        return {'streams': [stream.to_json() for stream in self.streams]}
+
+def load_selections(raw):
+    selections = Selections()
+    for stream in raw['streams']:
+        selections.streams.append(
+            StreamInfo(
+                replication_key=stream.get('replication_key'),
+                key_properties=stream.get('key_properties'),
+                schema=stream.get('schema'),
+                is_view=stream.get('is_view')))
+    return selections
 
 def discover_schemas(connection):
 
@@ -265,28 +312,28 @@ def discover_schemas(connection):
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
-            stream = {
-                'database': table_schema,
-                'table': table_name,
-                'schema': {
+            schema = {
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
-                },
             }
+            stream = StreamInfo(
+                database=table_schema,
+                table=table_name,
+                schema=schema)
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
             if key_properties:
-                stream['key_properties'] = key_properties
+                stream.key_properties = key_properties
 
             if table_schema in table_info and table_name in table_info[table_schema]:
-                stream['row_count'] = table_info[table_schema][table_name]['row_count']
-                stream['is_view'] = table_info[table_schema][table_name]['is_view']
+                stream.row_count = table_info[table_schema][table_name]['row_count']
+                stream.is_view = table_info[table_schema][table_name]['is_view']
             streams.append(stream)
 
-        return {'streams': streams}
+        return Selections(streams=streams)
 
 
 def do_discover(connection):
-    json.dump(discover_schemas(connection), sys.stdout, indent=2)
+    json.dump(discover_schemas(connection).to_json(), sys.stdout, indent=2)
 
 
 def primary_key_columns(connection, db, table):
@@ -304,7 +351,7 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-def index_schema(schemas):
+def index_schema(selections):
     '''Turns the discovered stream schemas into a nested map of column schemas
     indexed by database, table, and column name.
 
@@ -316,16 +363,13 @@ def index_schema(schemas):
 
     result = {}
 
-    for stream in schemas['streams']:
+    for stream in selections.streams:
+        if stream.database not in result:
+            result[stream.database] = {}
+        result[stream.database][stream.table] = {}
 
-        database = stream['database']
-        table = stream['table']
-        if database not in result:
-            result[database] = {}
-        result[database][table] = {}
-
-        for col_name, col_schema in stream['schema']['properties'].items():
-            result[database][table][col_name] = col_schema
+        for col_name, col_schema in stream.schema['properties'].items():
+            result[stream.database][stream.table][col_name] = col_schema
 
     return result
 
@@ -427,16 +471,16 @@ def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
 
-    streams = filter(lambda stream: stream.get('selected'), raw_selections['streams'])
+    streams = filter(lambda stream: stream.is_selected, raw_selections.streams)
     if state.current_stream:
-        streams = dropwhile(lambda s: s['stream'] != state.current_stream, streams)
+        streams = dropwhile(lambda s: s.stream != state.current_stream, streams)
 
     for stream in streams:
-        state.current_stream = stream['stream']
+        state.current_stream = stream.stream
         yield state.make_state_message()
 
-        database = stream['database']
-        table = stream['table']
+        database = stream.database
+        table = stream.table
 
         # TODO: How to handle a table that's missing
         if database not in indexed_schema:
@@ -444,7 +488,7 @@ def generate_messages(con, raw_selections, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in stream['schema']['properties'].items() if v.get('selected')]
+        selected = [k for k, v in stream.schema['properties'].items() if v.get('selected')]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
         schema = {
@@ -455,7 +499,7 @@ def generate_messages(con, raw_selections, raw_state):
         yield singer.SchemaMessage(
             stream=table,
             schema=schema,
-            key_properties=stream['key_properties'])
+            key_properties=stream.key_properties)
         for message in sync_table(con, database, table, columns, state):
             yield message
     state.current_stream = None
@@ -493,6 +537,6 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.properties:
-        do_sync(connection, args.properties, args.state)
+        do_sync(connection, load_selections(args.properties), args.state)
     else:
         LOGGER.info("No properties were selected")
