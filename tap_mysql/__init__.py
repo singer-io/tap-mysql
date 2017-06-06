@@ -92,9 +92,9 @@ class StreamState(object):
 
 def replication_key_by_table(raw_selections):
     result = {}
-    for stream in raw_selections.streams:
-        if stream.replication_key is not None:
-            result[stream.stream] = stream.replication_key
+    for stream_meta in raw_selections:
+        if stream_meta.replication_key is not None:
+            result[stream_meta.stream] = stream_meta.replication_key
     return result
 
 
@@ -106,7 +106,8 @@ class State(object):
         current_stream = state.get('current_stream')
         if current_stream:
             self.current_stream = current_stream
-        for selected_stream in selections.streams:
+        for selected_stream in selections:
+
             selected_rep_key = selected_stream.replication_key
             if selected_rep_key:
                 selected_stream_name = selected_stream.stream
@@ -134,7 +135,53 @@ class State(object):
             result['current_stream'] = self.current_stream
         result['streams'] = [s.__dict__ for s in self.streams]
         return singer.StateMessage(value=result)
+            
 
+@attr.s
+class StreamMeta(object):
+    replication_key = attr.ib(default=None)
+    key_properties = attr.ib(default=None)
+    schema = attr.ib(default=None)
+    is_view = attr.ib(default=None)
+    database = attr.ib(default=None)
+    table = attr.ib(default=None)
+    stream = attr.ib(default=None)
+
+    def is_selected(self):
+        result = self.schema.get('selected', False)
+        LOGGER.info('Selected is %s from %s', result, self.schema)
+        return self.schema.get('selected', False)
+    
+    def to_json(self):
+        result = {
+            'database': self.database,
+            'table': self.table,
+        }
+        if self.replication_key is not None:
+            result['replication_key'] = self.replication_key
+        if self.key_properties is not None:
+            result['key_properties'] = self.key_properties
+        if self.schema is not None:
+            result['schema'] = self.schema
+        if self.is_view is not None:
+            result['is_view'] = self.is_view
+        if self.stream is not None:
+            result['stream'] = self.stream
+        return result
+
+
+def load_selections(raw):
+    selections = []
+    for stream in raw:
+        selections.append(
+            StreamMeta(
+                replication_key=stream.get('replication_key'),
+                key_properties=stream.get('key_properties'),
+                database=stream.get('database'),
+                table=stream.get('table'),                
+                schema=stream.get('schema'),
+                is_view=stream.get('is_view')))
+    return selections
 
 def schema_for_column(c):
 
@@ -184,53 +231,6 @@ def schema_for_column(c):
 
     return result
 
-
-@attr.s
-class StreamInfo(object):
-    replication_key = attr.ib(default=None)
-    key_properties = attr.ib(default=None)
-    schema = attr.ib(default=None)
-    is_view = attr.ib(default=None)
-    database = attr.ib(default=None)
-    table = attr.ib(default=None)
-    stream = attr.ib(default=None)
-    is_selected = attr.ib(default=None)
-
-    def to_json(self):
-        result = {
-            'database': self.database,
-            'table': self.table,
-        }
-        if self.replication_key is not None:
-            result['replication_key'] = self.replication_key
-        if self.key_properties is not None:
-            result['key_properties'] = self.key_properties
-        if self.schema is not None:
-            result['schema'] = self.schema
-        if self.is_view is not None:
-            result['is_view'] = self.is_view
-        if self.stream is not None:
-            result['stream'] = self.stream
-        return result
-
-@attr.s()
-class Selections(object):
-
-    streams = attr.ib(default=[])
-
-    def to_json(self):
-        return {'streams': [stream.to_json() for stream in self.streams]}
-
-def load_selections(raw):
-    selections = Selections()
-    for stream in raw['streams']:
-        selections.streams.append(
-            StreamInfo(
-                replication_key=stream.get('replication_key'),
-                key_properties=stream.get('key_properties'),
-                schema=stream.get('schema'),
-                is_view=stream.get('is_view')))
-    return selections
 
 def discover_schemas(connection):
 
@@ -316,7 +316,7 @@ def discover_schemas(connection):
                     'type': 'object',
                     'properties': {c.column_name: schema_for_column(c) for c in cols}
             }
-            stream = StreamInfo(
+            stream = StreamMeta(
                 database=table_schema,
                 table=table_name,
                 schema=schema)
@@ -329,11 +329,12 @@ def discover_schemas(connection):
                 stream.is_view = table_info[table_schema][table_name]['is_view']
             streams.append(stream)
 
-        return Selections(streams=streams)
+        return streams
 
 
 def do_discover(connection):
-    json.dump(discover_schemas(connection).to_json(), sys.stdout, indent=2)
+    data = [stream_meta.to_json() for stream_meta in discover_schemas(connection)]
+    json.dump(data, sys.stdout, indent=2)
 
 
 def primary_key_columns(connection, db, table):
@@ -351,7 +352,7 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-def index_schema(selections):
+def index_schema(streams):
     '''Turns the discovered stream schemas into a nested map of column schemas
     indexed by database, table, and column name.
 
@@ -363,7 +364,7 @@ def index_schema(selections):
 
     result = {}
 
-    for stream in selections.streams:
+    for stream in streams:
         if stream.database not in result:
             result[stream.database] = {}
         result[stream.database][stream.table] = {}
@@ -471,7 +472,9 @@ def generate_messages(con, raw_selections, raw_state):
     indexed_schema = index_schema(discover_schemas(con))
     state = State(raw_state, raw_selections)
 
-    streams = filter(lambda stream: stream.is_selected, raw_selections.streams)
+    streams = list(filter(lambda stream: stream.is_selected(), raw_selections))
+    LOGGER.info('%d streams total, %d are selected', len(raw_selections), len(streams))
+    LOGGER.info('Raw selections %s', raw_selections)
     if state.current_stream:
         streams = dropwhile(lambda s: s.stream != state.current_stream, streams)
 

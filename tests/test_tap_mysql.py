@@ -56,8 +56,8 @@ class TestTypeMapping(unittest.TestCase):
             c_bit BIT(4)
             )''')
 
-            discovered = tap_mysql.discover_schemas(con)
-            cls.schema = discovered.streams[0].schema
+            streams = tap_mysql.discover_schemas(con)
+            cls.schema = streams[0].schema
 
 
     def test_decimal(self):
@@ -164,15 +164,15 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-                self.discovered = tap_mysql.discover_schemas(con)
+                self.streams = tap_mysql.discover_schemas(con)
         finally:
             con.close()
 
     def runTest(self):
-        discovered = copy.deepcopy(self.discovered)
-        print(tap_mysql.index_schema(discovered))
+        streams = copy.deepcopy(self.streams)
+        print(tap_mysql.index_schema(streams))
         self.assertEqual(
-            tap_mysql.index_schema(discovered),
+            tap_mysql.index_schema(streams),
             {
                 "tap_mysql_test": {
                     "tab": {
@@ -232,9 +232,9 @@ class TestSchemaMessages(unittest.TestCase):
                 ''')
 
             selections = tap_mysql.discover_schemas(con)
-            selections.streams[0].stream = 'tab'
-            selections.streams[0].is_selected = True
-            selections.streams[0].schema['properties']['a']['selected'] = True
+            selections[0].stream = 'tab'
+            selections[0].schema['selected'] = True
+            selections[0].schema['properties']['a']['selected'] = True
             messages = list(tap_mysql.generate_messages(con, selections, {}))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
@@ -259,13 +259,13 @@ class TestCurrentStream(unittest.TestCase):
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
 
-        discovered = tap_mysql.discover_schemas(self.con)
-        for stream in discovered.streams:
-            stream.is_selected = True
+        streams = tap_mysql.discover_schemas(self.con)
+        for stream in streams:
+            stream.schema['selected'] = True
             stream.key_properties = []
             stream.schema['properties']['val']['selected'] = True
             stream.stream = stream.table
-        self.selections = discovered
+        self.selections = streams
     def tearDown(self):
         if self.con:
             self.con.close()
@@ -301,22 +301,19 @@ class TestViews(unittest.TestCase):
             self.con.close()
 
     def test_discovery_sets_is_view(self):
-        discovered = tap_mysql.discover_schemas(self.con)
+        streams = tap_mysql.discover_schemas(self.con)
 
-        is_view = {
-            s.table: s.is_view
-            for s in discovered.streams
-        }
+        is_view = {s.table: s.is_view for s in streams}
         self.assertEqual(
             is_view,
             {'a_table': False,
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        discovered = tap_mysql.discover_schemas(self.con)
+        streams = tap_mysql.discover_schemas(self.con)
         discovered_key_properties = {
             s.table: s.key_properties
-            for s in discovered.streams
+            for s in streams
         }
         self.assertEqual(
             discovered_key_properties,
@@ -324,16 +321,16 @@ class TestViews(unittest.TestCase):
              'a_view': None})
 
     def test_can_set_key_properties_for_view(self):
-        discovered = tap_mysql.discover_schemas(self.con)
-        for stream in discovered.streams:
+        streams = tap_mysql.discover_schemas(self.con)
+        for stream in streams:
             stream.stream = stream.table
 
             if stream.table == 'a_view':
                 stream.key_properties = ['id']
-                stream.is_selected = True
+                stream.schema['selected'] = True
                 stream.schema['properties']['a']['selected'] = True
 
-        messages = list(tap_mysql.generate_messages(self.con, discovered, {}))
+        messages = list(tap_mysql.generate_messages(self.con, streams, {}))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
@@ -354,10 +351,10 @@ class TestEscaping(unittest.TestCase):
 
     def test_escape_succeeds(self):
         selections = tap_mysql.discover_schemas(self.con)
-        selections.streams[0].stream = 'some_stream_name'
-        selections.streams[0].is_selected = True
-        selections.streams[0].key_properties = []
-        selections.streams[0].schema['properties']['b c']['selected'] = True
+        selections[0].stream = 'some_stream_name'
+        selections[0].schema['selected'] = True
+        selections[0].key_properties = []
+        selections[0].schema['properties']['b c']['selected'] = True
         messages = tap_mysql.generate_messages(self.con, selections, {})
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
