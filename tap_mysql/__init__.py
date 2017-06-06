@@ -166,6 +166,8 @@ class StreamMeta(object):
             result['is_view'] = self.is_view
         if self.stream is not None:
             result['stream'] = self.stream
+        if self.row_count is not None:
+            result['row_count'] = self.row_count
         return result
 
 
