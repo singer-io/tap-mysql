@@ -80,8 +80,6 @@ class InputException(Exception):
 
 @attr.s
 class StreamState(object):
-    database = attr.ib()
-    table = attr.ib()
     stream = attr.ib()
     replication_key = attr.ib()
     replication_key_value = attr.ib()
