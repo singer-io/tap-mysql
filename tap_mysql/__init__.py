@@ -182,6 +182,7 @@ class Schema(object):
     exclusiveMinimum = attr.ib(default=None)
     exclusiveMaximum = attr.ib(default=None)
     multipleOf = attr.ib(default=None)
+    maxLength = attr.ib(default=None)
     
     def __str__(self):
         return json.dumps(self.to_json())
