@@ -16,6 +16,12 @@ STANDARD_KEYS = [
 
 @attr.s
 class Schema(object):
+    '''Object model for JSON Schema.
+
+    Tap and Target authors may find this to be more convenient than
+    working directly with JSON Schema data structures.
+
+    '''
 
     type = attr.ib(default=None)
     properties = attr.ib(default={})
@@ -35,6 +41,7 @@ class Schema(object):
         return json.dumps(self.to_json())
     
     def to_json(self):
+        '''Return the raw JSON Schema as a (possibly nested) dict.'''
         result = {}
         if self.properties:
             result['properties'] = {
@@ -50,7 +57,7 @@ class Schema(object):
         return result
 
 def load_schema(raw):
-
+    '''Initialize a Schema object based on the raw JSON Schema data structure.'''
     kwargs = {}
     if 'properties' in raw:
         kwargs['properties'] = {

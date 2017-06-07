@@ -193,6 +193,8 @@ def schema_for_column(c):
         inclusion = 'available'
 
     result = Schema(inclusion=inclusion)
+    result.sql_datatype = c.column_type
+    
     if t in BYTES_FOR_INTEGER_TYPE:
         result.type = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
