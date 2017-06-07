@@ -147,9 +147,7 @@ class StreamMeta(object):
     row_count = attr.ib(default=None)
 
     def is_selected(self):
-        result = self.schema.get('selected', False)  # pylint: disable=no-member
-        LOGGER.info('Selected is %s from %s', result, self.schema)
-        return self.schema.get('selected', False)  # pylint: disable=no-member
+        return self.schema.selected  # pylint: disable=no-member
 
     def to_json(self):
         result = {
@@ -161,7 +159,7 @@ class StreamMeta(object):
         if self.key_properties is not None:
             result['key_properties'] = self.key_properties
         if self.schema is not None:
-            result['schema'] = self.schema
+            result['schema'] = self.schema.to_json()
         if self.is_view is not None:
             result['is_view'] = self.is_view
         if self.stream is not None:
@@ -170,7 +168,40 @@ class StreamMeta(object):
             result['row_count'] = self.row_count
         return result
 
+@attr.s
+class Schema(object):
 
+    type = attr.ib()
+    properties = attr.ib(default={})
+    sql_datatype = attr.ib(default=None)
+    selected = attr.ib(default=None)
+    inclusion = attr.ib(default=None)
+    description = attr.ib(default=None)
+    minimum = attr.ib(default=None)
+    maximum = attr.ib(default=None)
+    
+    def __str__(self):
+        return json.dumps(self.to_json())
+    
+    def to_json(self):
+        result = {}
+        if self.properties:
+            result['properties'] = {
+                k: v.to_json() for k, v in self.properties.items()
+            }
+        if self.type:
+            result['type'] = self.type
+        else:
+            raise ValueError("Type is required")
+        if self.sql_datatype:
+            result['sql_datatype'] = self.sql_datatype
+        if self.selected is not None:
+            result['selected'] = self.selected
+        if self.inclusion:
+            result['inclusion'] = self.inclusion
+        return result
+
+    
 def load_selections(raw):
     selections = []
     for stream in raw['streams']:
@@ -180,7 +211,7 @@ def load_selections(raw):
                 key_properties=stream.get('key_properties'),
                 database=stream.get('database'),
                 table=stream.get('table'),
-                schema=stream.get('schema'),
+                schema=Schema(stream.get('schema')),
                 is_view=stream.get('is_view')))
     return selections
 
@@ -188,49 +219,47 @@ def schema_for_column(c):
 
     t = c.data_type
 
-    result = {}
-
     # We want to automatically include all primary key columns
     if c.column_key == 'PRI':
-        result['inclusion'] = 'automatic'
+        inclusion = 'automatic'
     else:
-        result['inclusion'] = 'available'
+        inclusion = 'available'
 
     if t in BYTES_FOR_INTEGER_TYPE:
-        result['type'] = 'integer'
+        result = Schema('integer', inclusion=inclusion)
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
         if 'unsigned' in c.column_type:
-            result['minimum'] = 0
-            result['maximum'] = 2 ** bits
+            result.minimum = 0
+            result.maximum = 2 ** bits
         else:
-            result['minimum'] = 0 - 2 ** (bits - 1)
-            result['maximum'] = 2 ** (bits - 1) - 1
-
+            result.minimum = 0 - 2 ** (bits - 1)
+            result.maximum = 2 ** (bits - 1) - 1
+        return result
+    
     elif t in FLOAT_TYPES:
-        result['type'] = 'number'
+        return Schema('number', inclusion=inclusion)
 
     elif t == 'decimal':
-        result['type'] = 'number'
-        result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
-        result['multipleOf'] = 10 ** (0 - c.numeric_scale)
+        result = Schema('number', inclusion=inclusion)
+        result.exclusiveMaximum = 10 ** (c.numeric_precision - c.numeric_scale)
+        result.multipleOf = 10 ** (0 - c.numeric_scale)
         if 'unsigned' in c.column_type:
-            result['minimum'] = 0
+            result.minimum = 0
         else:
-            result['exclusiveMinimum'] = -10 ** (c.numeric_precision - c.numeric_scale)
+            result.exclusiveMinimum = -10 ** (c.numeric_precision - c.numeric_scale)
+        return result
 
     elif t in STRING_TYPES:
-        result['type'] = 'string'
-        result['maxLength'] = c.character_maximum_length
+        return Schema('string', inclusion=inclusion, maxLength=c.character_maximum_length)
 
     elif t in DATETIME_TYPES:
-        result['type'] = 'string'
-        result['format'] = 'date-time'
+        return Schema('string',  inclusion='inclusion', format='date-time')
 
     else:
-        result['inclusion'] = 'unsupported'
-        result['description'] = 'Unsupported column type {}'.format(c.column_type)
+        return Schema(None,
+                      inclusion='unsupported',
+                      description='Unsupported column type {}'.format(c.column_type))
 
-    return result
 
 
 def discover_schemas(connection):
@@ -313,10 +342,8 @@ def discover_schemas(connection):
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
-            schema = {
-                'type': 'object',
-                'properties': {c.column_name: schema_for_column(c) for c in cols}
-            }
+            schema = Schema(type='object',
+                            properties={c.column_name: schema_for_column(c) for c in cols})
             stream = StreamMeta(
                 database=table_schema,
                 table=table_name,
@@ -370,7 +397,7 @@ def index_schema(streams):
             result[stream.database] = {}
         result[stream.database][stream.table] = {}
 
-        for col_name, col_schema in stream.schema['properties'].items():
+        for col_name, col_schema in stream.schema.properties.items():
             result[stream.database][stream.table][col_name] = col_schema
 
     return result
@@ -386,7 +413,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     for column, column_schema in indexed_schema[database][table].items():
         all_columns.add(column)
-        inclusion = column_schema['inclusion']
+        inclusion = column_schema.inclusion
         if inclusion == 'automatic':
             automatic.add(column)
         elif inclusion == 'available':
@@ -492,14 +519,13 @@ def generate_messages(con, raw_selections, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in stream.schema['properties'].items() if v.get('selected')]
+        selected = [k for k, v in stream.schema.properties.items() if v.selected]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
-        schema = {
-            'type': 'object',
-            'properties': indexed_schema[database][table]
-        }
-        columns = schema['properties'].keys()
+        schema = Schema(
+            type='object',
+            properties=indexed_schema[database][table])
+        columns = schema.properties.keys()
         yield singer.SchemaMessage(
             stream=table,
             schema=schema,
