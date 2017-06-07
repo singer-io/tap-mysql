@@ -19,7 +19,7 @@ import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 import singer
 import singer.stats
 from singer import utils
-from tap_mysql.schema import Schema
+from tap_mysql.schema import Schema, load_schema
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -178,7 +178,7 @@ def load_selections(raw):
                 key_properties=stream.get('key_properties'),
                 database=stream.get('database'),
                 table=stream.get('table'),
-                schema=Schema(stream.get('schema')),
+                schema=load_schema(stream.get('schema')),
                 is_view=stream.get('is_view')))
     return selections
 
@@ -220,7 +220,7 @@ def schema_for_column(c):
         return Schema('string', inclusion=inclusion, maxLength=c.character_maximum_length)
 
     elif t in DATETIME_TYPES:
-        return Schema('string',  inclusion='inclusion', format='date-time')
+        return Schema('string',  inclusion=inclusion, format='date-time')
 
     else:
         return Schema(None,
@@ -495,7 +495,7 @@ def generate_messages(con, raw_selections, raw_state):
         columns = schema.properties.keys()
         yield singer.SchemaMessage(
             stream=table,
-            schema=schema,
+            schema=schema.to_json(),
             key_properties=stream.key_properties)
         for message in sync_table(con, database, table, columns, state):
             yield message

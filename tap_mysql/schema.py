@@ -1,9 +1,23 @@
 import attr
 
+STANDARD_KEYS = [
+    'sql_datatype',
+    'selected',
+    'inclusion',
+    'description',
+    'minimum',
+    'maximum',
+    'exclusiveMinimum',
+    'exclusiveMaximum',
+    'multipleOf',
+    'maxLength',
+    'format'
+] 
+
 @attr.s
 class Schema(object):
 
-    type = attr.ib()
+    type = attr.ib(default=None)
     properties = attr.ib(default={})
     sql_datatype = attr.ib(default=None)
     selected = attr.ib(default=None)
@@ -26,18 +40,23 @@ class Schema(object):
             result['properties'] = {
                 k: v.to_json() for k, v in self.properties.items()
             }
-        if self.type:
-            result['type'] = self.type
-        else:
+        if not self.type:
             raise ValueError("Type is required")
 
-        keys = ['sql_datatype', 'selected', 'inclusion', 'description',
-                'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
-                'multipleOf', 'maxLength', 'format']
-        
-        for key in keys:
+        for key in STANDARD_KEYS:
             if self.__dict__[key] is not None:
                 result[key] = self.__dict__[key]
 
         return result
 
+def load_schema(raw):
+
+    kwargs = {}
+    if 'properties' in raw:
+        kwargs['properties'] = {
+            k: load_schema(v) for k, v in raw['properties'].items()
+        }
+    for key in STANDARD_KEYS:
+        if key in raw:
+            kwargs[key] = raw[key]
+    return Schema(**kwargs)
