@@ -179,6 +179,9 @@ class Schema(object):
     description = attr.ib(default=None)
     minimum = attr.ib(default=None)
     maximum = attr.ib(default=None)
+    exclusiveMinimum = attr.ib(default=None)
+    exclusiveMaximum = attr.ib(default=None)
+    multipleOf = attr.ib(default=None)
     
     def __str__(self):
         return json.dumps(self.to_json())
