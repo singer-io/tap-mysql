@@ -192,8 +192,9 @@ def schema_for_column(c):
     else:
         inclusion = 'available'
 
+    result = Schema(inclusion=inclusion)
     if t in BYTES_FOR_INTEGER_TYPE:
-        result = Schema('integer', inclusion=inclusion)
+        result.type = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
         if 'unsigned' in c.column_type:
             result.minimum = 0
@@ -201,13 +202,12 @@ def schema_for_column(c):
         else:
             result.minimum = 0 - 2 ** (bits - 1)
             result.maximum = 2 ** (bits - 1) - 1
-        return result
     
     elif t in FLOAT_TYPES:
-        return Schema('number', inclusion=inclusion)
+        result.type = 'number'
 
     elif t == 'decimal':
-        result = Schema('number', inclusion=inclusion)
+        result.type = 'number'
         result.exclusiveMaximum = 10 ** (c.numeric_precision - c.numeric_scale)
         result.multipleOf = 10 ** (0 - c.numeric_scale)
         if 'unsigned' in c.column_type:
@@ -217,15 +217,18 @@ def schema_for_column(c):
         return result
 
     elif t in STRING_TYPES:
-        return Schema('string', inclusion=inclusion, maxLength=c.character_maximum_length)
+        result.type = 'string'
+        result.maxLength = c.character_maximum_length
 
     elif t in DATETIME_TYPES:
-        return Schema('string',  inclusion=inclusion, format='date-time')
+        result.type = 'string'
+        result.format = 'date-time'
 
     else:
-        return Schema(None,
-                      inclusion='unsupported',
-                      description='Unsupported column type {}'.format(c.column_type))
+        result = Schema(None,
+                        inclusion='unsupported',
+                        description='Unsupported column type {}'.format(c.column_type))
+    return result
 
 
 

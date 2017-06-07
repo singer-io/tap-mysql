@@ -223,7 +223,7 @@ class TestSchemaMessages(unittest.TestCase):
             messages = list(tap_mysql.generate_messages(con, selections, {}))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-            self.assertEqual(schema_message.schema.properties.keys(), set(['id', 'a']))
+            self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
 
         finally:
             con.close()
