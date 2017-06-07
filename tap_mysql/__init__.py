@@ -19,7 +19,7 @@ import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 import singer
 import singer.stats
 from singer import utils
-
+from tap_mysql.schema import Schema
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -166,43 +166,6 @@ class StreamMeta(object):
             result['stream'] = self.stream
         if self.row_count is not None:
             result['row_count'] = self.row_count
-        return result
-
-@attr.s
-class Schema(object):
-
-    type = attr.ib()
-    properties = attr.ib(default={})
-    sql_datatype = attr.ib(default=None)
-    selected = attr.ib(default=None)
-    inclusion = attr.ib(default=None)
-    description = attr.ib(default=None)
-    minimum = attr.ib(default=None)
-    maximum = attr.ib(default=None)
-    exclusiveMinimum = attr.ib(default=None)
-    exclusiveMaximum = attr.ib(default=None)
-    multipleOf = attr.ib(default=None)
-    maxLength = attr.ib(default=None)
-    
-    def __str__(self):
-        return json.dumps(self.to_json())
-    
-    def to_json(self):
-        result = {}
-        if self.properties:
-            result['properties'] = {
-                k: v.to_json() for k, v in self.properties.items()
-            }
-        if self.type:
-            result['type'] = self.type
-        else:
-            raise ValueError("Type is required")
-        if self.sql_datatype:
-            result['sql_datatype'] = self.sql_datatype
-        if self.selected is not None:
-            result['selected'] = self.selected
-        if self.inclusion:
-            result['inclusion'] = self.inclusion
         return result
 
     
