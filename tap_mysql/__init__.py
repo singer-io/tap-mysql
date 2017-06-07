@@ -147,8 +147,6 @@ class StreamMeta(object):
     row_count = attr.ib(default=None)
 
     def is_selected(self):
-        result = self.schema.get('selected', False)  # pylint: disable=no-member
-        LOGGER.info('Selected is %s from %s', result, self.schema)
         return self.schema.get('selected', False)  # pylint: disable=no-member
 
     def to_json(self):
