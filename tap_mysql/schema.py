@@ -16,7 +16,7 @@ STANDARD_KEYS = [
     'format'
 ]
 
-@attr.s
+@attr.s # pylint: disable=too-many-instance-attributes
 class Schema(object):
     '''Object model for JSON Schema.
 
