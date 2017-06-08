@@ -168,7 +168,7 @@ class StreamMeta(object):
             result['row_count'] = self.row_count
         return result
 
-    
+
 def load_selections(raw):
     selections = []
     for stream in raw['streams']:
@@ -194,7 +194,7 @@ def schema_for_column(c):
 
     result = Schema(inclusion=inclusion)
     result.sql_datatype = c.column_type
-    
+
     if t in BYTES_FOR_INTEGER_TYPE:
         result.type = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
@@ -204,7 +204,7 @@ def schema_for_column(c):
         else:
             result.minimum = 0 - 2 ** (bits - 1)
             result.maximum = 2 ** (bits - 1) - 1
-    
+
     elif t in FLOAT_TYPES:
         result.type = 'number'
 

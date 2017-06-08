@@ -63,22 +63,25 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal(self):
         self.assertEqual(self.schema.properties['c_decimal'],
                          tap_mysql.Schema('number',
+                                          sql_datatype='decimal(10,0)',
                                           inclusion='available',
                                           exclusiveMaximum=10000000000,
-                                          exclusiveMinimum=-10000000000,            
+                                          exclusiveMinimum=-10000000000,
                                           multipleOf=1))
 
     def test_decimal_unsigned(self):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
                          tap_mysql.Schema('number',
+                                          sql_datatype='decimal(5,2) unsigned',
                                           inclusion='available',
-                                          exclusiveMaximum=1000,         
+                                          exclusiveMaximum=1000,
                                           minimum=0,
                                           multipleOf=0.01))
 
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema.properties['c_decimal_2'],
                          tap_mysql.Schema('number',
+                                          sql_datatype='decimal(11,2)',
                                           inclusion='available',
                                           exclusiveMaximum=1000000000,
                                           exclusiveMinimum=-1000000000,
@@ -87,12 +90,14 @@ class TestTypeMapping(unittest.TestCase):
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
                          tap_mysql.Schema('integer',
+                                          sql_datatype='tinyint(4)',
                                           inclusion='available', minimum=-128,
                                           maximum=127))
 
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
                          tap_mysql.Schema('integer',
+                                          sql_datatype='smallint(6)',
                                           inclusion='available',
                                           minimum=-32768,
                                           maximum=32767))
@@ -100,6 +105,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
                          tap_mysql.Schema('integer',
+                                          sql_datatype='mediumint(9)',
                                           inclusion='available',
                                           minimum=-8388608,
                                           maximum=8388607))
@@ -108,6 +114,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
                          tap_mysql.Schema('integer',
+                                          sql_datatype='int(11)',
                                           inclusion='available',
                                           minimum=-2147483648,
                                           maximum=2147483647))
@@ -115,18 +122,23 @@ class TestTypeMapping(unittest.TestCase):
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
                          tap_mysql.Schema('integer',
+                                          sql_datatype='bigint(20)',
                                           inclusion='available',
                                           minimum=-9223372036854775808,
                                           maximum=9223372036854775807))
 
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],
-                         tap_mysql.Schema('number', inclusion='available'))
+                         tap_mysql.Schema('number',
+                                          inclusion='available',
+                                          sql_datatype='float'))
 
 
     def test_double(self):
         self.assertEqual(self.schema.properties['c_double'],
-                         tap_mysql.Schema('number', inclusion='available'))
+                         tap_mysql.Schema('number',
+                                          inclusion='available',
+                                          sql_datatype='double'))
 
     def test_bit(self):
         self.assertEqual(self.schema.properties['c_bit'].inclusion,
@@ -165,17 +177,20 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
                     "tab": {
                         "b": tap_mysql.Schema(
                             'integer',
+                            sql_datatype='int(11)',
                             inclusion="available",
                             maximum=2147483647,
                             minimum=-2147483648),
                         "a": tap_mysql.Schema(
                             'integer',
+                            sql_datatype='int(11)',
                             inclusion="available",
                             maximum=2147483647,
                             minimum=-2147483648),
                     }
                 }
             },
+
             'makes nested structure from flat discovered schemas')
 
 
@@ -320,7 +335,7 @@ class TestViews(unittest.TestCase):
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
 
-        
+
 
 class TestEscaping(unittest.TestCase):
 
@@ -332,7 +347,7 @@ class TestEscaping(unittest.TestCase):
 
     def tearDown(self):
         if self.con:
-            self.con.close()        
+            self.con.close()
 
     def test_escape_succeeds(self):
         selections = tap_mysql.discover_schemas(self.con)
