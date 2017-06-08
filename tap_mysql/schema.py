@@ -1,4 +1,5 @@
 import attr
+import json
 
 STANDARD_KEYS = [
     'sql_datatype',
@@ -45,7 +46,7 @@ class Schema(object):
         result = {}
         if self.properties:
             result['properties'] = {
-                k: v.to_json() for k, v in self.properties.items()
+                k: v.to_json() for k, v in self.properties.items() # pylint: disable=no-member
             }
         if not self.type:
             raise ValueError("Type is required")

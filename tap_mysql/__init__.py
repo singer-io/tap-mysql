@@ -159,7 +159,7 @@ class StreamMeta(object):
         if self.key_properties is not None:
             result['key_properties'] = self.key_properties
         if self.schema is not None:
-            result['schema'] = self.schema.to_json()
+            result['schema'] = self.schema.to_json() # pylint: disable=no-member
         if self.is_view is not None:
             result['is_view'] = self.is_view
         if self.stream is not None:
@@ -427,7 +427,6 @@ def sync_table(connection, db, table, columns, state):
         return
 
     with connection.cursor() as cursor:
-        # TODO: escape column names
         escaped_db = escape(db)
         escaped_table = escape(table)
         escaped_columns = [escape(c) for c in columns]
@@ -497,7 +496,7 @@ def generate_messages(con, raw_selections, raw_state):
         schema = Schema(
             type='object',
             properties=indexed_schema[database][table])
-        columns = schema.properties.keys()
+        columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
             stream=table,
             schema=schema.to_json(),
