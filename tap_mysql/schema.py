@@ -1,5 +1,6 @@
-import attr
 import json
+
+import attr
 
 STANDARD_KEYS = [
     'sql_datatype',
@@ -13,7 +14,7 @@ STANDARD_KEYS = [
     'multipleOf',
     'maxLength',
     'format'
-] 
+]
 
 @attr.s
 class Schema(object):
@@ -37,10 +38,10 @@ class Schema(object):
     multipleOf = attr.ib(default=None)
     maxLength = attr.ib(default=None)
     format = attr.ib(default=None)
-    
+
     def __str__(self):
         return json.dumps(self.to_json())
-    
+
     def to_json(self):
         '''Return the raw JSON Schema as a (possibly nested) dict.'''
         result = {}
