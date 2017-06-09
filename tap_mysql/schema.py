@@ -3,7 +3,7 @@ import json
 import attr
 
 STANDARD_KEYS = [
-    'sql_datatype',
+    'sqlDatatype',
     'selected',
     'inclusion',
     'description',
@@ -27,7 +27,7 @@ class Schema(object):
 
     type = attr.ib(default=None)
     properties = attr.ib(default={})
-    sql_datatype = attr.ib(default=None)
+    sqlDatatype = attr.ib(default=None)
     selected = attr.ib(default=None)
     inclusion = attr.ib(default=None)
     description = attr.ib(default=None)
