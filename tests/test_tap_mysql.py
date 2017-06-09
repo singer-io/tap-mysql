@@ -61,93 +61,92 @@ class TestTypeMapping(unittest.TestCase):
 
 
     def test_decimal(self):
-        self.assertEqual(self.schema['properties']['c_decimal'], {
-            'type': 'number',
-            'inclusion': 'available',
-            'exclusiveMaximum': 10000000000,
-            'exclusiveMinimum': -10000000000,            
-            'multipleOf': 1
-        })
+        self.assertEqual(self.schema.properties['c_decimal'],
+                         tap_mysql.Schema('number',
+                                          sqlDatatype='decimal(10,0)',
+                                          inclusion='available',
+                                          exclusiveMaximum=10000000000,
+                                          exclusiveMinimum=-10000000000,
+                                          multipleOf=1))
 
     def test_decimal_unsigned(self):
-        self.assertEqual(self.schema['properties']['c_decimal_2_unsigned'], {
-            'type': 'number',
-            'inclusion': 'available',
-            'exclusiveMaximum': 1000,            
-            'minimum': 0,
-            'multipleOf': 0.01
-        })        
+        self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
+                         tap_mysql.Schema('number',
+                                          sqlDatatype='decimal(5,2) unsigned',
+                                          inclusion='available',
+                                          exclusiveMaximum=1000,
+                                          minimum=0,
+                                          multipleOf=0.01))
 
     def test_decimal_with_defined_scale_and_precision(self):
-        self.assertEqual(self.schema['properties']['c_decimal_2'], {
-            'type': 'number',
-            'inclusion': 'available',
-            'exclusiveMaximum': 1000000000,
-            'exclusiveMinimum': -1000000000,
-            'multipleOf': 0.01})
+        self.assertEqual(self.schema.properties['c_decimal_2'],
+                         tap_mysql.Schema('number',
+                                          sqlDatatype='decimal(11,2)',
+                                          inclusion='available',
+                                          exclusiveMaximum=1000000000,
+                                          exclusiveMinimum=-1000000000,
+                                          multipleOf=0.01))
 
     def test_tinyint(self):
-        self.assertEqual(self.schema['properties']['c_tinyint'], {
-            'type': 'integer',
-            'inclusion': 'available',
-            'minimum': -128,
-            'maximum': 127
-        })
+        self.assertEqual(self.schema.properties['c_tinyint'],
+                         tap_mysql.Schema('integer',
+                                          sqlDatatype='tinyint(4)',
+                                          inclusion='available', minimum=-128,
+                                          maximum=127))
 
     def test_smallint(self):
-        self.assertEqual(self.schema['properties']['c_smallint'], {
-            'type': 'integer',
-            'inclusion': 'available',
-            'minimum': -32768,
-            'maximum':  32767
-        })
+        self.assertEqual(self.schema.properties['c_smallint'],
+                         tap_mysql.Schema('integer',
+                                          sqlDatatype='smallint(6)',
+                                          inclusion='available',
+                                          minimum=-32768,
+                                          maximum=32767))
 
     def test_mediumint(self):
-        self.assertEqual(self.schema['properties']['c_mediumint'], {
-            'type': 'integer',
-            'inclusion': 'available',
-            'minimum': -8388608,
-            'maximum':  8388607
-        })
+        self.assertEqual(self.schema.properties['c_mediumint'],
+                         tap_mysql.Schema('integer',
+                                          sqlDatatype='mediumint(9)',
+                                          inclusion='available',
+                                          minimum=-8388608,
+                                          maximum=8388607))
+
 
     def test_int(self):
-        self.assertEqual(self.schema['properties']['c_int'], {
-            'type': 'integer',
-            'inclusion': 'available',
-            'minimum': -2147483648,
-            'maximum': 2147483647
-        })
+        self.assertEqual(self.schema.properties['c_int'],
+                         tap_mysql.Schema('integer',
+                                          sqlDatatype='int(11)',
+                                          inclusion='available',
+                                          minimum=-2147483648,
+                                          maximum=2147483647))
 
     def test_bigint(self):
-        self.assertEqual(self.schema['properties']['c_bigint'], {
-            'type': 'integer',
-            'inclusion': 'available',
-            'minimum': -9223372036854775808,
-            'maximum':  9223372036854775807
-        })
+        self.assertEqual(self.schema.properties['c_bigint'],
+                         tap_mysql.Schema('integer',
+                                          sqlDatatype='bigint(20)',
+                                          inclusion='available',
+                                          minimum=-9223372036854775808,
+                                          maximum=9223372036854775807))
 
     def test_float(self):
-        self.assertEqual(self.schema['properties']['c_float'], {
-            'type': 'number',
-            'inclusion': 'available',
-        })
+        self.assertEqual(self.schema.properties['c_float'],
+                         tap_mysql.Schema('number',
+                                          inclusion='available',
+                                          sqlDatatype='float'))
 
 
     def test_double(self):
-        self.assertEqual(self.schema['properties']['c_double'], {
-            'type': 'number',
-            'inclusion': 'available',
-        })
+        self.assertEqual(self.schema.properties['c_double'],
+                         tap_mysql.Schema('number',
+                                          inclusion='available',
+                                          sqlDatatype='double'))
 
     def test_bit(self):
-        self.assertEqual(self.schema['properties']['c_bit'], {
-            'inclusion': 'unsupported',
-            'description': 'Unsupported column type bit(4)',
-        })
+        self.assertEqual(self.schema.properties['c_bit'].inclusion,
+                         'unsupported')
 
     def test_pk(self):
         self.assertEqual(
-            self.schema['properties']['c_pk']['inclusion'],
+            self.schema.properties['c_pk'].inclusion,
             'automatic')
 
 
@@ -176,21 +175,22 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
             {
                 "tap_mysql_test": {
                     "tab": {
-                        "b": {
-                            "inclusion": "available",
-                            "type": "integer",
-                            "maximum": 2147483647,
-                            "minimum": -2147483648
-                        },
-                        "a": {
-                            "inclusion": "available",
-                            "type": "integer",
-                            "maximum": 2147483647,
-                            "minimum": -2147483648
-                        }
+                        "b": tap_mysql.Schema(
+                            'integer',
+                            sqlDatatype='int(11)',
+                            inclusion="available",
+                            maximum=2147483647,
+                            minimum=-2147483648),
+                        "a": tap_mysql.Schema(
+                            'integer',
+                            sqlDatatype='int(11)',
+                            inclusion="available",
+                            maximum=2147483647,
+                            minimum=-2147483648),
                     }
                 }
             },
+
             'makes nested structure from flat discovered schemas')
 
 
@@ -200,14 +200,14 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
         selected_cols = ['a', 'b', 'd']
         indexed_schema = {'some_db':
                           {'some_table':
-                           {'a': {'inclusion': 'available'},
-                            'b': {'inclusion': 'unsupported'},
-                            'c': {'inclusion': 'automatic'}}}}
+                           {'a': tap_mysql.Schema(None, inclusion='available'),
+                            'b': tap_mysql.Schema(None, inclusion='unsupported'),
+                            'c': tap_mysql.Schema(None, inclusion='automatic')}}}
 
         expected_pruned_schema = {'some_db':
                                   {'some_table':
-                                   {'a': {'inclusion': 'available'},
-                                    'c': {'inclusion': 'automatic'}}}}
+                                   {'a': tap_mysql.Schema(None, inclusion='available'),
+                                    'c': tap_mysql.Schema(None, inclusion='automatic'),}}}
 
         tap_mysql.remove_unwanted_columns(selected_cols,
                                           indexed_schema,
@@ -233,8 +233,8 @@ class TestSchemaMessages(unittest.TestCase):
 
             selections = tap_mysql.discover_schemas(con)
             selections[0].stream = 'tab'
-            selections[0].schema['selected'] = True
-            selections[0].schema['properties']['a']['selected'] = True
+            selections[0].schema.selected = True
+            selections[0].schema.properties['a'].selected = True
             messages = list(tap_mysql.generate_messages(con, selections, {}))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
@@ -261,9 +261,9 @@ class TestCurrentStream(unittest.TestCase):
 
         streams = tap_mysql.discover_schemas(self.con)
         for stream in streams:
-            stream.schema['selected'] = True
+            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema['properties']['val']['selected'] = True
+            stream.schema.properties['val'].selected = True
             stream.stream = stream.table
         self.selections = streams
     def tearDown(self):
@@ -327,15 +327,15 @@ class TestViews(unittest.TestCase):
 
             if stream.table == 'a_view':
                 stream.key_properties = ['id']
-                stream.schema['selected'] = True
-                stream.schema['properties']['a']['selected'] = True
+                stream.schema.selected = True
+                stream.schema.properties['a'].selected = True
 
         messages = list(tap_mysql.generate_messages(self.con, streams, {}))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
 
-        
+
 
 class TestEscaping(unittest.TestCase):
 
@@ -347,14 +347,14 @@ class TestEscaping(unittest.TestCase):
 
     def tearDown(self):
         if self.con:
-            self.con.close()        
+            self.con.close()
 
     def test_escape_succeeds(self):
         selections = tap_mysql.discover_schemas(self.con)
         selections[0].stream = 'some_stream_name'
-        selections[0].schema['selected'] = True
+        selections[0].schema.selected = True
         selections[0].key_properties = []
-        selections[0].schema['properties']['b c']['selected'] = True
+        selections[0].schema.properties['b c'].selected = True
         messages = tap_mysql.generate_messages(self.con, selections, {})
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
         self.assertTrue(isinstance(record_message, singer.RecordMessage))

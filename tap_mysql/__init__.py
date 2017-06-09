@@ -19,7 +19,7 @@ import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 import singer
 import singer.stats
 from singer import utils
-
+from tap_mysql.schema import Schema, load_schema
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -147,7 +147,7 @@ class StreamMeta(object):
     row_count = attr.ib(default=None)
 
     def is_selected(self):
-        return self.schema.get('selected', False)  # pylint: disable=no-member
+        return self.schema.selected  # pylint: disable=no-member
 
     def to_json(self):
         result = {
@@ -159,7 +159,7 @@ class StreamMeta(object):
         if self.key_properties is not None:
             result['key_properties'] = self.key_properties
         if self.schema is not None:
-            result['schema'] = self.schema
+            result['schema'] = self.schema.to_json() # pylint: disable=no-member
         if self.is_view is not None:
             result['is_view'] = self.is_view
         if self.stream is not None:
@@ -178,7 +178,7 @@ def load_selections(raw):
                 key_properties=stream.get('key_properties'),
                 database=stream.get('database'),
                 table=stream.get('table'),
-                schema=stream.get('schema'),
+                schema=load_schema(stream.get('schema')),
                 is_view=stream.get('is_view')))
     return selections
 
@@ -186,49 +186,52 @@ def schema_for_column(c):
 
     t = c.data_type
 
-    result = {}
-
     # We want to automatically include all primary key columns
     if c.column_key == 'PRI':
-        result['inclusion'] = 'automatic'
+        inclusion = 'automatic'
     else:
-        result['inclusion'] = 'available'
+        inclusion = 'available'
+
+    result = Schema(inclusion=inclusion)
+    result.sqlDatatype = c.column_type
 
     if t in BYTES_FOR_INTEGER_TYPE:
-        result['type'] = 'integer'
+        result.type = 'integer'
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
         if 'unsigned' in c.column_type:
-            result['minimum'] = 0
-            result['maximum'] = 2 ** bits
+            result.minimum = 0
+            result.maximum = 2 ** bits
         else:
-            result['minimum'] = 0 - 2 ** (bits - 1)
-            result['maximum'] = 2 ** (bits - 1) - 1
+            result.minimum = 0 - 2 ** (bits - 1)
+            result.maximum = 2 ** (bits - 1) - 1
 
     elif t in FLOAT_TYPES:
-        result['type'] = 'number'
+        result.type = 'number'
 
     elif t == 'decimal':
-        result['type'] = 'number'
-        result['exclusiveMaximum'] = 10 ** (c.numeric_precision - c.numeric_scale)
-        result['multipleOf'] = 10 ** (0 - c.numeric_scale)
+        result.type = 'number'
+        result.exclusiveMaximum = 10 ** (c.numeric_precision - c.numeric_scale)
+        result.multipleOf = 10 ** (0 - c.numeric_scale)
         if 'unsigned' in c.column_type:
-            result['minimum'] = 0
+            result.minimum = 0
         else:
-            result['exclusiveMinimum'] = -10 ** (c.numeric_precision - c.numeric_scale)
+            result.exclusiveMinimum = -10 ** (c.numeric_precision - c.numeric_scale)
+        return result
 
     elif t in STRING_TYPES:
-        result['type'] = 'string'
-        result['maxLength'] = c.character_maximum_length
+        result.type = 'string'
+        result.maxLength = c.character_maximum_length
 
     elif t in DATETIME_TYPES:
-        result['type'] = 'string'
-        result['format'] = 'date-time'
+        result.type = 'string'
+        result.format = 'date-time'
 
     else:
-        result['inclusion'] = 'unsupported'
-        result['description'] = 'Unsupported column type {}'.format(c.column_type)
-
+        result = Schema(None,
+                        inclusion='unsupported',
+                        description='Unsupported column type {}'.format(c.column_type))
     return result
+
 
 
 def discover_schemas(connection):
@@ -311,10 +314,8 @@ def discover_schemas(connection):
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
-            schema = {
-                'type': 'object',
-                'properties': {c.column_name: schema_for_column(c) for c in cols}
-            }
+            schema = Schema(type='object',
+                            properties={c.column_name: schema_for_column(c) for c in cols})
             stream = StreamMeta(
                 database=table_schema,
                 table=table_name,
@@ -368,7 +369,7 @@ def index_schema(streams):
             result[stream.database] = {}
         result[stream.database][stream.table] = {}
 
-        for col_name, col_schema in stream.schema['properties'].items():
+        for col_name, col_schema in stream.schema.properties.items():
             result[stream.database][stream.table][col_name] = col_schema
 
     return result
@@ -384,7 +385,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     for column, column_schema in indexed_schema[database][table].items():
         all_columns.add(column)
-        inclusion = column_schema['inclusion']
+        inclusion = column_schema.inclusion
         if inclusion == 'automatic':
             automatic.add(column)
         elif inclusion == 'available':
@@ -426,7 +427,6 @@ def sync_table(connection, db, table, columns, state):
         return
 
     with connection.cursor() as cursor:
-        # TODO: escape column names
         escaped_db = escape(db)
         escaped_table = escape(table)
         escaped_columns = [escape(c) for c in columns]
@@ -490,17 +490,16 @@ def generate_messages(con, raw_selections, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in stream.schema['properties'].items() if v.get('selected')]
+        selected = [k for k, v in stream.schema.properties.items() if v.selected]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
-        schema = {
-            'type': 'object',
-            'properties': indexed_schema[database][table]
-        }
-        columns = schema['properties'].keys()
+        schema = Schema(
+            type='object',
+            properties=indexed_schema[database][table])
+        columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
             stream=table,
-            schema=schema,
+            schema=schema.to_json(),
             key_properties=stream.key_properties)
         for message in sync_table(con, database, table, columns, state):
             yield message
