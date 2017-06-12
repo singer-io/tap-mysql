@@ -13,7 +13,8 @@ STANDARD_KEYS = [
     'exclusiveMaximum',
     'multipleOf',
     'maxLength',
-    'format'
+    'format',
+    'type'
 ]
 
 @attr.s # pylint: disable=too-many-instance-attributes
