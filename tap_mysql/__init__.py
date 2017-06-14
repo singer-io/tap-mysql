@@ -151,8 +151,9 @@ class StreamMeta(object):
 
     def to_json(self):
         result = {
-            'database': self.database,
-            'table': self.table,
+            'database_name': self.database,
+            'table_name': self.table,
+            'tap_stream_id': self.database + '-' + self.table,
         }
         if self.replication_key is not None:
             result['replication_key'] = self.replication_key
@@ -176,8 +177,9 @@ def load_selections(raw):
             StreamMeta(
                 replication_key=stream.get('replication_key'),
                 key_properties=stream.get('key_properties'),
-                database=stream.get('database'),
-                table=stream.get('table'),
+                database=stream.get('database_name'),
+                table=stream.get('table_name'),
+                stream=stream.get('table_name'),
                 schema=load_schema(stream.get('schema')),
                 is_view=stream.get('is_view')))
     return selections
