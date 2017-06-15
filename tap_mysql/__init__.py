@@ -17,7 +17,7 @@ import pymysql
 import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
 import singer
-import singer.stats
+import singer.metrics as metrics
 from singer import utils
 from tap_mysql.schema import Schema, load_schema
 
@@ -448,22 +448,27 @@ def sync_table(connection, db, table, columns, state):
         LOGGER.info('Running %s', select)
         cursor.execute(select, params)
         row = cursor.fetchone()
-        counter = 0
-        while row:
-            counter += 1
-            row_to_persist = ()
-            for elem in row:
-                if isinstance(elem, datetime.datetime):
-                    row_to_persist += (pendulum.instance(elem).to_iso8601_string(),)
-                else:
-                    row_to_persist += (elem,)
-            rec = dict(zip(columns, row_to_persist))
-            if stream_state:
-                stream_state.update(rec)
-            yield singer.RecordMessage(stream=table, record=rec)
-            if counter % 1000 == 0:
-                yield state.make_state_message()
-            row = cursor.fetchone()
+        rows_saved = 0
+
+        with metrics.record_counter(None) as counter:
+            counter.tags['database'] = db
+            counter.tags['table'] = table
+            while row:
+                counter.increment()
+                rows_saved += 1
+                row_to_persist = ()
+                for elem in row:
+                    if isinstance(elem, datetime.datetime):
+                        row_to_persist += (pendulum.instance(elem).to_iso8601_string(),)
+                    else:
+                        row_to_persist += (elem,)
+                rec = dict(zip(columns, row_to_persist))
+                if stream_state:
+                    stream_state.update(rec)
+                yield singer.RecordMessage(stream=table, record=rec)
+                if rows_saved % 1000 == 0:
+                    yield state.make_state_message()
+                row = cursor.fetchone()
         yield state.make_state_message()
 
 
@@ -501,8 +506,11 @@ def generate_messages(con, raw_selections, raw_state):
             stream=table,
             schema=schema.to_json(),
             key_properties=stream.key_properties)
-        for message in sync_table(con, database, table, columns, state):
-            yield message
+        with metrics.job_timer('sync_table') as timer:
+            timer.tags['database'] = database
+            timer.tags['table'] = table
+            for message in sync_table(con, database, table, columns, state):
+                yield message
     state.current_stream = None
     yield state.make_state_message()
 
