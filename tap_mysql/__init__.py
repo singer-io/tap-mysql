@@ -198,7 +198,7 @@ def schema_for_column(c):
     result.sqlDatatype = c.column_type
 
     if t in BYTES_FOR_INTEGER_TYPE:
-        result.type = 'integer'
+        result.type = ['null', 'integer']
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
         if 'unsigned' in c.column_type:
             result.minimum = 0
@@ -208,10 +208,10 @@ def schema_for_column(c):
             result.maximum = 2 ** (bits - 1) - 1
 
     elif t in FLOAT_TYPES:
-        result.type = 'number'
+        result.type = ['null', 'number']
 
     elif t == 'decimal':
-        result.type = 'number'
+        result.type = ['null', 'number']
         result.exclusiveMaximum = 10 ** (c.numeric_precision - c.numeric_scale)
         result.multipleOf = 10 ** (0 - c.numeric_scale)
         if 'unsigned' in c.column_type:
@@ -221,11 +221,11 @@ def schema_for_column(c):
         return result
 
     elif t in STRING_TYPES:
-        result.type = 'string'
+        result.type = ['null', 'string']
         result.maxLength = c.character_maximum_length
 
     elif t in DATETIME_TYPES:
-        result.type = 'string'
+        result.type = ['null', 'string']
         result.format = 'date-time'
 
     else:
