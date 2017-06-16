@@ -50,8 +50,6 @@ class Schema(object):
             result['properties'] = {
                 k: v.to_json() for k, v in self.properties.items() # pylint: disable=no-member
             }
-        if not self.type:
-            raise ValueError("Type is required")
 
         for key in STANDARD_KEYS:
             if self.__dict__[key] is not None:

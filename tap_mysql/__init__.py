@@ -37,20 +37,20 @@ REQUIRED_CONFIG_KEYS = [
     'host',
     'port',
     'user',
-    'password',
-    'database'
+    'password'
 ]
 
 LOGGER = singer.get_logger()
 
 
 def open_connection(config):
-    return pymysql.connect(
-        host=config['host'],
-        user=config['user'],
-        password=config['password'],
-        database=config['database'],
-    )
+    connection_args = {'host': config['host'],
+                       'user': config['user'],
+                       'password': config['password']}
+    database = config.get('database')
+    if database:
+        connection_args['database'] = database
+    return pymysql.connect(**connection_args)
 
 STRING_TYPES = set([
     'char',
@@ -231,6 +231,7 @@ def schema_for_column(c):
     else:
         result = Schema(None,
                         inclusion='unsupported',
+                        sqlDatatype=c.column_type,
                         description='Unsupported column type {}'.format(c.column_type))
     return result
 
