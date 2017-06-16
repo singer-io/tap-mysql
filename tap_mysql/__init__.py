@@ -100,14 +100,14 @@ def replication_key_by_table(raw_selections):
 
 
 class State(object):
-    def __init__(self, state, selections):
+    def __init__(self, state, catalog):
         self.current_stream = None
         self.streams = []
 
         current_stream = state.get('current_stream')
         if current_stream:
             self.current_stream = current_stream
-        for selected_stream in selections:
+        for selected_stream in catalog.streams:
 
             selected_rep_key = selected_stream.replication_key
             if selected_rep_key:
@@ -284,7 +284,7 @@ def discover_catalog(connection):
             if table_schema in table_info and table_name in table_info[table_schema]:
                 entry.row_count = table_info[table_schema][table_name]['row_count']
                 entry.is_view = table_info[table_schema][table_name]['is_view']
-            entries.append(stream)
+            entries.append(entry)
 
         return Catalog(entries)
 
@@ -307,7 +307,7 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-def index_schema(streams):
+def index_catalog(catalog):
     '''Turns the discovered stream schemas into a nested map of column schemas
     indexed by database, table, and column name.
 
@@ -319,7 +319,7 @@ def index_schema(streams):
 
     result = {}
 
-    for stream in streams:
+    for stream in catalog.streams:
         if stream.database not in result:
             result[stream.database] = {}
         result[stream.database][stream.table] = {}
@@ -427,13 +427,12 @@ def sync_table(connection, db, table, columns, state):
         yield state.make_state_message()
 
 
-def generate_messages(con, raw_selections, raw_state):
-    indexed_schema = index_schema(discover_schemas(con))
-    state = State(raw_state, raw_selections)
+def generate_messages(con, catalog, raw_state):
+    indexed_schema = index_catalog(discover_catalog(con))
+    state = State(raw_state, catalog)
 
-    streams = list(filter(lambda stream: stream.is_selected(), raw_selections))
-    LOGGER.info('%d streams total, %d are selected', len(raw_selections), len(streams))
-    LOGGER.info('Raw selections %s', raw_selections)
+    streams = list(filter(lambda stream: stream.is_selected(), catalog.streams))
+    LOGGER.info('%d streams total, %d are selected', len(catalog.streams), len(streams))
     if state.current_stream:
         streams = dropwhile(lambda s: s.stream != state.current_stream, streams)
 
@@ -459,7 +458,7 @@ def generate_messages(con, raw_selections, raw_state):
         columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
             stream=table,
-            schema=schema.to_json(),
+            schema=schema.to_dict(),
             key_properties=stream.key_properties)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database

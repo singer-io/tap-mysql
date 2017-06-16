@@ -5,6 +5,8 @@ import copy
 import singer
 import os
 
+from singer.schema import Schema
+
 DB_NAME='tap_mysql_test'
 
 def get_test_connection():
@@ -56,13 +58,13 @@ class TestTypeMapping(unittest.TestCase):
             c_bit BIT(4)
             )''')
 
-            streams = tap_mysql.discover_schemas(con)
-            cls.schema = streams[0].schema
+            catalog = tap_mysql.discover_catalog(con)
+            cls.schema = catalog.streams[0].schema
 
 
     def test_decimal(self):
         self.assertEqual(self.schema.properties['c_decimal'],
-                         tap_mysql.Schema(['null', 'number'],
+                         Schema(['null', 'number'],
                                           sqlDatatype='decimal(10,0)',
                                           inclusion='available',
                                           exclusiveMaximum=10000000000,
@@ -71,7 +73,7 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_decimal_unsigned(self):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
-                         tap_mysql.Schema(['null', 'number'],
+                         Schema(['null', 'number'],
                                           sqlDatatype='decimal(5,2) unsigned',
                                           inclusion='available',
                                           exclusiveMaximum=1000,
@@ -80,7 +82,7 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema.properties['c_decimal_2'],
-                         tap_mysql.Schema(['null', 'number'],
+                         Schema(['null', 'number'],
                                           sqlDatatype='decimal(11,2)',
                                           inclusion='available',
                                           exclusiveMaximum=1000000000,
@@ -89,14 +91,14 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
-                         tap_mysql.Schema(['null', 'integer'],
+                         Schema(['null', 'integer'],
                                           sqlDatatype='tinyint(4)',
                                           inclusion='available', minimum=-128,
                                           maximum=127))
 
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
-                         tap_mysql.Schema(['null', 'integer'],
+                         Schema(['null', 'integer'],
                                           sqlDatatype='smallint(6)',
                                           inclusion='available',
                                           minimum=-32768,
@@ -104,7 +106,7 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
-                         tap_mysql.Schema(['null', 'integer'],
+                         Schema(['null', 'integer'],
                                           sqlDatatype='mediumint(9)',
                                           inclusion='available',
                                           minimum=-8388608,
@@ -113,7 +115,7 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
-                         tap_mysql.Schema(['null', 'integer'],
+                         Schema(['null', 'integer'],
                                           sqlDatatype='int(11)',
                                           inclusion='available',
                                           minimum=-2147483648,
@@ -121,7 +123,7 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
-                         tap_mysql.Schema(['null', 'integer'],
+                         Schema(['null', 'integer'],
                                           sqlDatatype='bigint(20)',
                                           inclusion='available',
                                           minimum=-9223372036854775808,
@@ -129,14 +131,14 @@ class TestTypeMapping(unittest.TestCase):
 
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],
-                         tap_mysql.Schema(['null', 'number'],
+                         Schema(['null', 'number'],
                                           inclusion='available',
                                           sqlDatatype='float'))
 
 
     def test_double(self):
         self.assertEqual(self.schema.properties['c_double'],
-                         tap_mysql.Schema(['null', 'number'],
+                         Schema(['null', 'number'],
                                           inclusion='available',
                                           sqlDatatype='double'))
 
@@ -163,25 +165,25 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-                self.streams = tap_mysql.discover_schemas(con)
+                self.catalog = tap_mysql.discover_catalog(con)
         finally:
             con.close()
 
     def runTest(self):
-        streams = copy.deepcopy(self.streams)
-        print(tap_mysql.index_schema(streams))
+        catalog = copy.deepcopy(self.catalog)
+        print(tap_mysql.index_catalog(catalog))
         self.assertEqual(
-            tap_mysql.index_schema(streams),
+            tap_mysql.index_catalog(catalog),
             {
                 "tap_mysql_test": {
                     "tab": {
-                        "b": tap_mysql.Schema(
+                        "b": Schema(
                             ['null', 'integer'],
                             sqlDatatype='int(11)',
                             inclusion="available",
                             maximum=2147483647,
                             minimum=-2147483648),
-                        "a": tap_mysql.Schema(
+                        "a": Schema(
                             ['null', 'integer'],
                             sqlDatatype='int(11)',
                             inclusion="available",
@@ -200,14 +202,14 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
         selected_cols = ['a', 'b', 'd']
         indexed_schema = {'some_db':
                           {'some_table':
-                           {'a': tap_mysql.Schema(None, inclusion='available'),
-                            'b': tap_mysql.Schema(None, inclusion='unsupported'),
-                            'c': tap_mysql.Schema(None, inclusion='automatic')}}}
+                           {'a': Schema(None, inclusion='available'),
+                            'b': Schema(None, inclusion='unsupported'),
+                            'c': Schema(None, inclusion='automatic')}}}
 
         expected_pruned_schema = {'some_db':
                                   {'some_table':
-                                   {'a': tap_mysql.Schema(None, inclusion='available'),
-                                    'c': tap_mysql.Schema(None, inclusion='automatic'),}}}
+                                   {'a': Schema(None, inclusion='available'),
+                                    'c': Schema(None, inclusion='automatic'),}}}
 
         tap_mysql.remove_unwanted_columns(selected_cols,
                                           indexed_schema,
@@ -231,11 +233,11 @@ class TestSchemaMessages(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-            selections = tap_mysql.discover_schemas(con)
-            selections[0].stream = 'tab'
-            selections[0].schema.selected = True
-            selections[0].schema.properties['a'].selected = True
-            messages = list(tap_mysql.generate_messages(con, selections, {}))
+            catalog = tap_mysql.discover_catalog(con)
+            catalog.streams[0].stream = 'tab'
+            catalog.streams[0].schema.selected = True
+            catalog.streams[0].schema.properties['a'].selected = True
+            messages = list(tap_mysql.generate_messages(con, catalog, {}))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
             self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
@@ -251,6 +253,7 @@ def current_stream_seq(messages):
     )
 
 class TestCurrentStream(unittest.TestCase):
+
     def setUp(self):
         self.con = get_test_connection()
         with self.con.cursor() as cursor:
@@ -259,24 +262,24 @@ class TestCurrentStream(unittest.TestCase):
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
 
-        streams = tap_mysql.discover_schemas(self.con)
-        for stream in streams:
+        self.catalog = tap_mysql.discover_catalog(self.con)
+        for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-        self.selections = streams
+
     def tearDown(self):
         if self.con:
             self.con.close()
     def test_emit_current_stream(self):
         state = {}
-        messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
+        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^a+b+_+')
 
     def test_start_at_current_stream(self):
         state = {'current_stream': 'b'}
-        messages = list(tap_mysql.generate_messages(self.con, self.selections, state))
+        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
 
 class TestViews(unittest.TestCase):
@@ -301,19 +304,19 @@ class TestViews(unittest.TestCase):
             self.con.close()
 
     def test_discovery_sets_is_view(self):
-        streams = tap_mysql.discover_schemas(self.con)
+        catalog = tap_mysql.discover_catalog(self.con)
 
-        is_view = {s.table: s.is_view for s in streams}
+        is_view = {s.table: s.is_view for s in catalog.streams}
         self.assertEqual(
             is_view,
             {'a_table': False,
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        streams = tap_mysql.discover_schemas(self.con)
+        catalog = tap_mysql.discover_catalog(self.con)
         discovered_key_properties = {
             s.table: s.key_properties
-            for s in streams
+            for s in catalog.streams
         }
         self.assertEqual(
             discovered_key_properties,
@@ -321,8 +324,8 @@ class TestViews(unittest.TestCase):
              'a_view': None})
 
     def test_can_set_key_properties_for_view(self):
-        streams = tap_mysql.discover_schemas(self.con)
-        for stream in streams:
+        catalog = tap_mysql.discover_catalog(self.con)
+        for stream in catalog.streams:
             stream.stream = stream.table
 
             if stream.table == 'a_view':
@@ -330,7 +333,7 @@ class TestViews(unittest.TestCase):
                 stream.schema.selected = True
                 stream.schema.properties['a'].selected = True
 
-        messages = list(tap_mysql.generate_messages(self.con, streams, {}))
+        messages = list(tap_mysql.generate_messages(self.con, catalog, {}))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
@@ -350,12 +353,12 @@ class TestEscaping(unittest.TestCase):
             self.con.close()
 
     def test_escape_succeeds(self):
-        selections = tap_mysql.discover_schemas(self.con)
-        selections[0].stream = 'some_stream_name'
-        selections[0].schema.selected = True
-        selections[0].key_properties = []
-        selections[0].schema.properties['b c'].selected = True
-        messages = tap_mysql.generate_messages(self.con, selections, {})
+        catalog = tap_mysql.discover_catalog(self.con)
+        catalog.streams[0].stream = 'some_stream_name'
+        catalog.streams[0].schema.selected = True
+        catalog.streams[0].key_properties = []
+        catalog.streams[0].schema.properties['b c'].selected = True
+        messages = tap_mysql.generate_messages(self.con, catalog, {})
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
         self.assertEqual(record_message.record, {'b c': 1})
