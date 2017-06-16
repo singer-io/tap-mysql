@@ -500,7 +500,7 @@ def main():
     log_server_params(connection)
     if args.discover:
         do_discover(connection)
-    elif args.properties:
-        do_sync(connection, load_selections(args.properties), args.state)
+    elif args.catalog:
+        do_sync(connection, args.catalog, args.state)
     else:
         LOGGER.info("No properties were selected")
