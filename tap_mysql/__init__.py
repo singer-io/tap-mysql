@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 
 import datetime
@@ -18,8 +19,10 @@ import pymysql.constants.FIELD_TYPE as FIELD_TYPE
 
 import singer
 import singer.metrics as metrics
+import singer.schema
 from singer import utils
-from tap_mysql.schema import Schema, load_schema
+from singer.schema import Schema
+from singer.catalog import Catalog, CatalogEntry
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -135,53 +138,6 @@ class State(object):
         return singer.StateMessage(value=result)
 
 
-@attr.s
-class StreamMeta(object):
-    replication_key = attr.ib(default=None)
-    key_properties = attr.ib(default=None)
-    schema = attr.ib(default=None)
-    is_view = attr.ib(default=None)
-    database = attr.ib(default=None)
-    table = attr.ib(default=None)
-    stream = attr.ib(default=None)
-    row_count = attr.ib(default=None)
-
-    def is_selected(self):
-        return self.schema.selected  # pylint: disable=no-member
-
-    def to_json(self):
-        result = {
-            'database': self.database,
-            'table': self.table,
-        }
-        if self.replication_key is not None:
-            result['replication_key'] = self.replication_key
-        if self.key_properties is not None:
-            result['key_properties'] = self.key_properties
-        if self.schema is not None:
-            result['schema'] = self.schema.to_json() # pylint: disable=no-member
-        if self.is_view is not None:
-            result['is_view'] = self.is_view
-        if self.stream is not None:
-            result['stream'] = self.stream
-        if self.row_count is not None:
-            result['row_count'] = self.row_count
-        return result
-
-
-def load_selections(raw):
-    selections = []
-    for stream in raw['streams']:
-        selections.append(
-            StreamMeta(
-                replication_key=stream.get('replication_key'),
-                key_properties=stream.get('key_properties'),
-                database=stream.get('database'),
-                table=stream.get('table'),
-                schema=load_schema(stream.get('schema')),
-                is_view=stream.get('is_view')))
-    return selections
-
 def schema_for_column(c):
 
     t = c.data_type
@@ -234,7 +190,7 @@ def schema_for_column(c):
 
 
 
-def discover_schemas(connection):
+def discover_catalog(connection):
 
     with connection.cursor() as cursor:
         if connection.db:
@@ -310,32 +266,30 @@ def discover_schemas(connection):
             columns.append(Column(*rec))
             rec = cursor.fetchone()
 
-        streams = []
+        entries = []
         for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
             cols = list(cols)
             (table_schema, table_name) = k
             schema = Schema(type='object',
                             properties={c.column_name: schema_for_column(c) for c in cols})
-            stream = StreamMeta(
+            entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
                 schema=schema)
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
             if key_properties:
-                stream.key_properties = key_properties
+                entry.key_properties = key_properties
 
             if table_schema in table_info and table_name in table_info[table_schema]:
-                stream.row_count = table_info[table_schema][table_name]['row_count']
-                stream.is_view = table_info[table_schema][table_name]['is_view']
-            streams.append(stream)
+                entry.row_count = table_info[table_schema][table_name]['row_count']
+                entry.is_view = table_info[table_schema][table_name]['is_view']
+            entries.append(stream)
 
-        return streams
+        return Catalog(entries)
 
 
 def do_discover(connection):
-    data = [stream_meta.to_json() for stream_meta in discover_schemas(connection)]
-    json.dump({'streams': data}, sys.stdout, indent=2)
-
+    discover_catalog(connection).dump()
 
 def primary_key_columns(connection, db, table):
     '''Return a list of names of columns that are primary keys in the given
