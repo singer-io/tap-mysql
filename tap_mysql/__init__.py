@@ -502,5 +502,7 @@ def main():
         do_discover(connection)
     elif args.catalog:
         do_sync(connection, args.catalog, args.state)
+    elif args.properties:
+        do_sync(connection, Catalog.from_dict(args.properties), args.state)
     else:
         LOGGER.info("No properties were selected")
