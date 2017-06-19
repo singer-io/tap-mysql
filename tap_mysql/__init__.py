@@ -273,6 +273,7 @@ def discover_catalog(connection):
             entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
+                tap_stream_id = table_schema + '-' + table_name,
                 schema=schema)
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
             if key_properties:
