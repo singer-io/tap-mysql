@@ -32,7 +32,6 @@ Column = collections.namedtuple('Column', [
     "character_maximum_length",
     "numeric_precision",
     "numeric_scale",
-    "datetime_precision",
     "column_type",
     "column_key"])
 
@@ -236,7 +235,6 @@ def discover_catalog(connection):
                        character_maximum_length,
                        numeric_precision,
                        numeric_scale,
-                       datetime_precision,
                        column_type,
                        column_key
                   FROM information_schema.columns
@@ -251,7 +249,6 @@ def discover_catalog(connection):
                        character_maximum_length,
                        numeric_precision,
                        numeric_scale,
-                       datetime_precision,
                        column_type,
                        column_key
                   FROM information_schema.columns
