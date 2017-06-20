@@ -282,6 +282,56 @@ class TestCurrentStream(unittest.TestCase):
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
 
+class TestStreamVersion(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute('CREATE TABLE full_table (val int)')
+            cursor.execute('INSERT INTO full_table (val) VALUES (1)')
+
+            cursor.execute('CREATE TABLE incremental (val int, updated datetime)')
+            cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
+            cursor.execute('INSERT INTO incremental (val, updated) VALUES (2, \'2017-06-20\')')
+        self.catalog = tap_mysql.discover_catalog(self.con)
+        for stream in self.catalog.streams:
+            stream.schema.selected = True
+            stream.key_properties = []
+            stream.schema.properties['val'].selected = True
+            stream.stream = stream.table
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+    def messages(self, state):
+        raw = tap_mysql.generate_messages(self.con, self.catalog, state)
+        messages = []
+        for message in raw:
+            t = type(message)
+            if t in set([singer.RecordMessage, singer.ActivateVersionMessage]):
+                messages.append((t.__name__, message.version))
+        return messages
+            
+    def test_full_table(self):
+        state = {}
+        messages = self.messages(state)
+        
+        self.assertEqual(
+            [('RecordMessage', 1),
+             ('ActivateVersionMessage', 1)],
+            messages)
+
+
+    def test_incremental(self):
+        state = {}
+        messages = self.messages(state)
+        self.assertEqual(
+            [('ActivateVersionMessage', 1),
+             ('RecordMessage', 1)],
+            messages)
+             
+        
 class TestViews(unittest.TestCase):
     def setUp(self):
         self.con = get_test_connection()
