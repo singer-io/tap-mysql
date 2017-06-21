@@ -107,10 +107,11 @@ def replication_key_by_table(raw_selections):
     return result
 
 
+@attr.s
 class State(object):
-    def __init__(self, current_stream, streams):
-        self.current_stream = current_stream
-        self.streams = streams
+
+    current_stream = attr.ib()
+    streams = attr.ib()
 
     @classmethod
     def from_dict(cls, raw, catalog):
