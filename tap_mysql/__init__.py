@@ -92,7 +92,7 @@ class StreamState(object):
       * replication_key_value (optional, string or int) - current value of
         the bookmark
       * version (optional, int) - the version number of the stream.
-    
+
     Use StreamState.from_dict(raw, catalog_entry) to build a StreamState
     based on the raw dict and the singer.catalog.CatalogEntry for the
     stream.
