@@ -110,7 +110,7 @@ class State(object):
 
             selected_rep_key = selected_stream.replication_key
             if selected_rep_key:
-                selected_stream_name = selected_stream.stream
+                selected_stream_name = selected_stream.table
                 stored_stream_state = None
                 value = None
                 for s in state.get('streams', []):
@@ -165,12 +165,14 @@ def schema_for_column(c):
 
     elif t == 'decimal':
         result.type = ['null', 'number']
-        result.exclusiveMaximum = 10 ** (c.numeric_precision - c.numeric_scale)
+        result.exclusiveMaximum = True
+        result.maximum = 10 ** (c.numeric_precision - c.numeric_scale)
         result.multipleOf = 10 ** (0 - c.numeric_scale)
         if 'unsigned' in c.column_type:
             result.minimum = 0
         else:
-            result.exclusiveMinimum = -10 ** (c.numeric_precision - c.numeric_scale)
+            result.exclusiveMinimum = True
+            result.minimum = -10 ** (c.numeric_precision - c.numeric_scale)
         return result
 
     elif t in STRING_TYPES:

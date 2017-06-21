@@ -65,82 +65,87 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal(self):
         self.assertEqual(self.schema.properties['c_decimal'],
                          Schema(['null', 'number'],
-                                          sqlDatatype='decimal(10,0)',
-                                          inclusion='available',
-                                          exclusiveMaximum=10000000000,
-                                          exclusiveMinimum=-10000000000,
-                                          multipleOf=1))
+                                sqlDatatype='decimal(10,0)',
+                                inclusion='available',
+                                maximum=10000000000,
+                                exclusiveMaximum=True,
+                                minimum=-10000000000,
+                                exclusiveMinimum=True,
+                                multipleOf=1))
 
     def test_decimal_unsigned(self):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
                          Schema(['null', 'number'],
-                                          sqlDatatype='decimal(5,2) unsigned',
-                                          inclusion='available',
-                                          exclusiveMaximum=1000,
-                                          minimum=0,
-                                          multipleOf=0.01))
+                                sqlDatatype='decimal(5,2) unsigned',
+                                inclusion='available',
+                                maximum=1000,
+                                exclusiveMaximum=True,
+                                minimum=0,
+                                multipleOf=0.01))
 
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema.properties['c_decimal_2'],
                          Schema(['null', 'number'],
-                                          sqlDatatype='decimal(11,2)',
-                                          inclusion='available',
-                                          exclusiveMaximum=1000000000,
-                                          exclusiveMinimum=-1000000000,
-                                          multipleOf=0.01))
+                                sqlDatatype='decimal(11,2)',
+                                inclusion='available',
+                                maximum=1000000000,
+                                exclusiveMaximum=True,
+                                minimum=-1000000000,
+                                exclusiveMinimum=True,
+                                multipleOf=0.01))
 
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
                          Schema(['null', 'integer'],
-                                          sqlDatatype='tinyint(4)',
-                                          inclusion='available', minimum=-128,
-                                          maximum=127))
+                                sqlDatatype='tinyint(4)',
+                                inclusion='available', minimum=-128,
+                                maximum=127))
 
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
                          Schema(['null', 'integer'],
-                                          sqlDatatype='smallint(6)',
-                                          inclusion='available',
-                                          minimum=-32768,
-                                          maximum=32767))
+                                sqlDatatype='smallint(6)',
+                                inclusion='available',
+                                minimum=-32768,
+                                maximum=32767))
 
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
                          Schema(['null', 'integer'],
-                                          sqlDatatype='mediumint(9)',
-                                          inclusion='available',
-                                          minimum=-8388608,
-                                          maximum=8388607))
+                                sqlDatatype='mediumint(9)',
+                                inclusion='available',
+                                minimum=-8388608,
+                                maximum=8388607))
 
 
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
                          Schema(['null', 'integer'],
-                                          sqlDatatype='int(11)',
-                                          inclusion='available',
-                                          minimum=-2147483648,
-                                          maximum=2147483647))
+                                sqlDatatype='int(11)',
+                                inclusion='available',
+                                minimum=-2147483648,
+                                maximum=2147483647))
 
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
                          Schema(['null', 'integer'],
-                                          sqlDatatype='bigint(20)',
-                                          inclusion='available',
-                                          minimum=-9223372036854775808,
-                                          maximum=9223372036854775807))
+                                sqlDatatype='bigint(20)',
+                                inclusion='available',
+                                minimum=-9223372036854775808,
+                                maximum=9223372036854775807))
 
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],
                          Schema(['null', 'number'],
-                                          inclusion='available',
-                                          sqlDatatype='float'))
+                                inclusion='available',
+                                sqlDatatype='float'))
 
 
     def test_double(self):
         self.assertEqual(self.schema.properties['c_double'],
                          Schema(['null', 'number'],
-                                          inclusion='available',
-                                          sqlDatatype='double'))
+                                inclusion='available',
+                                sqlDatatype='double'))
 
     def test_bit(self):
         self.assertEqual(self.schema.properties['c_bit'].inclusion,
