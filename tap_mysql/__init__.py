@@ -85,19 +85,29 @@ class StreamState(object):
     tap_stream_id = attr.ib()
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
-
+    table_version = attr.ib(default=None)
+    
     def update(self, record):
         self.replication_key_value = record[self.replication_key]
 
     @classmethod
     def from_dict(cls, raw, catalog_entry):
+        '''Builds a StreamState from a raw dictionary containing the entry for
+        this stream in the state file, as well as a CatalogEntry.'''
+        
         result = StreamState(catalog_entry.tap_stream_id)
         if catalog_entry.replication_key:
             result.replication_key = catalog_entry.replication_key
-            if raw and raw['replication_key'] == catalog_entry.replication_key:
+            if raw and raw.get('replication_key') == catalog_entry.replication_key:
                 result.replication_key_value = raw['replication_key_value']
+        if raw and 'version' in raw:
+            result.version = raw['version']
+        else:
+            result.version = int(time.time()) * 1000
         return result
-                    
+
+    def is_incremental():
+        return self.replication_key is not None
         
 def replication_key_by_table(raw_selections):
     result = {}
@@ -411,6 +421,17 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
         row = cursor.fetchone()
         rows_saved = 0
 
+        activate_version_message = singer.ActivateVersionMessage(
+            stream=catalog_entry.stream,
+            version=stream_state.version
+        )
+        
+        # If there's a replication key, we want to emit an
+        # ACTIVATE_VERSION message at the beginning so the records show up
+        # right away.
+        if stream_state.replication_key:
+            yield activate_version_message
+        
         with metrics.record_counter(None) as counter:
             counter.tags['database'] = db
             counter.tags['table'] = table
@@ -426,12 +447,16 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
                 rec = dict(zip(columns, row_to_persist))
                 if stream_state.replication_key is not None:
                     stream_state.update(rec)
-                yield singer.RecordMessage(stream=table, record=rec)
+                yield singer.RecordMessage(stream=table, record=rec, version=stream_state.version)
                 if rows_saved % 1000 == 0:
                     yield state.make_state_message()
                 row = cursor.fetchone()
         yield state.make_state_message()
 
+        # If there is no replication key, we're doing "full table"
+        # replication, and we need to activate this version at the end.
+        if not stream_state.replication_key:
+            yield activate_version_message
 
 def generate_messages(con, catalog, raw_state):
     indexed_schema = index_catalog(discover_catalog(con))
@@ -456,7 +481,7 @@ def generate_messages(con, catalog, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in catalog_entry.schema.properties.items() if v.selected]
+        selected = [k for k, v in catalog_entry.schema.properties.items() if v.selected or k == catalog_entry.replication_key]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
         schema = Schema(
