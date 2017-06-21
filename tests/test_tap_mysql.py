@@ -313,7 +313,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-        
+
     def tearDown(self):
         if self.con:
             self.con.close()
@@ -335,10 +335,10 @@ class TestStreamVersionFullTable(unittest.TestCase):
         }
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
-        
+
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertEqual(versions, [1, 1])
-        
+
 
 class TestStreamVersionIncremental(unittest.TestCase):
 
@@ -356,16 +356,16 @@ class TestStreamVersionIncremental(unittest.TestCase):
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
             stream.replication_key = 'updated'
-        
+
     def tearDown(self):
         if self.con:
             self.con.close()
 
-            
+
     def test_with_no_state(self):
         state = {}
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))        
+            tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
             ['ActivateVersionMessage', 'RecordMessage', 'RecordMessage'],
             message_types)
@@ -380,13 +380,13 @@ class TestStreamVersionIncremental(unittest.TestCase):
                 'version': 1}]
         }
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))        
+            tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
             ['ActivateVersionMessage', 'RecordMessage', 'RecordMessage'],
             message_types)
         self.assertTrue(isinstance(versions[0], int))
-        self.assertEqual(versions[0], versions[1])        
-        
+        self.assertEqual(versions[0], versions[1])
+
 class TestViews(unittest.TestCase):
     def setUp(self):
         self.con = get_test_connection()
