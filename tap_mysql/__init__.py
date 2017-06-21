@@ -82,6 +82,22 @@ class InputException(Exception):
 
 @attr.s
 class StreamState(object):
+    '''Represents the state for a single stream.
+
+    The state for a stream consists of four properties:
+
+      * tap_stream_id - the identifier for the stream
+      * replication_key (optional, string) - name of the field used for
+        bookmarking
+      * replication_key_value (optional, string or int) - current value of
+        the bookmark
+      * version (optional, int) - the version number of the stream.
+    
+    Use StreamState.from_dict(raw, catalog_entry) to build a StreamState
+    based on the raw dict and the singer.catalog.CatalogEntry for the
+    stream.
+
+    '''
     tap_stream_id = attr.ib()
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
@@ -94,8 +110,9 @@ class StreamState(object):
     @classmethod
     def from_dict(cls, raw, catalog_entry):
         '''Builds a StreamState from a raw dictionary containing the entry for
-        this stream in the state file, as well as a CatalogEntry.'''
+        this stream in the state file, as well as a CatalogEntry.
 
+        '''
         result = StreamState(catalog_entry.tap_stream_id)
         if catalog_entry.replication_key:
             result.replication_key = catalog_entry.replication_key
@@ -116,9 +133,22 @@ def replication_key_by_table(raw_selections):
     return result
 
 
+# TODO: Use tap_stream_id for current stream
 @attr.s
 class State(object):
+    '''Represents the full state.
 
+    Two properties:
+
+      * current_stream - When the tap is in the middle of syncing a
+        stream, this will be set to the tap_stream_id for that stream.
+      * streams - List of StreamState objects, one for each selected
+        stream.
+
+    Use State.from_dict(raw, catalog) to build a StreamState based
+    on the raw dict and the singer.catalog.Catalog.
+
+    '''
     current_stream = attr.ib()
     streams = attr.ib()
 
@@ -308,6 +338,7 @@ def do_discover(connection):
     discover_catalog(connection).dump()
 
 def primary_key_columns(connection, db, table):
+
     '''Return a list of names of columns that are primary keys in the given
     table in the given db.'''
     with connection.cursor() as cur:
