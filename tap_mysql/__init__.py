@@ -83,13 +83,30 @@ class InputException(Exception):
 @attr.s
 class StreamState(object):
     stream = attr.ib()
-    replication_key = attr.ib()
-    replication_key_value = attr.ib()
+    replication_key = attr.ib(default=None)
+    replication_key_value = attr.ib(default=None)
 
     def update(self, record):
         self.replication_key_value = record[self.replication_key]
 
+    @classmethod
+    def from_dict(cls, raw, catalog_entry):
 
+        if catalog_entry.replication_key:
+            value = None
+            if raw and raw['replication_key'] == catalog_entry.replication_key:
+                return StreamState(
+                    stream=catalog_entry.tap_stream_id,
+                    replication_key=selected_rep_key,
+                    replication_key_value=raw['replication_key_value'])
+            else:
+                return StreamState(
+                    stream=catalog_entry.tap_stream_id,
+                    replication_key=catalog_entry.replication_key)
+        else:
+            return StreamState(stream=catalog_entry.tap_stream_id)
+                    
+        
 def replication_key_by_table(raw_selections):
     result = {}
     for stream_meta in raw_selections:
@@ -106,28 +123,19 @@ class State(object):
         current_stream = state.get('current_stream')
         if current_stream:
             self.current_stream = current_stream
-        for selected_stream in catalog.streams:
+        for catalog_entry in catalog.streams:
+            raw = None
+            for s in state.get('streams', []):
+                if s['stream'] == selected_stream_name:
+                    raw = s
+            self.streams.append(StreamState.from_dict(raw, catalog_entry))
 
-            selected_rep_key = selected_stream.replication_key
-            if selected_rep_key:
-                selected_stream_name = selected_stream.table
-                stored_stream_state = None
-                value = None
-                for s in state.get('streams', []):
-                    if s['stream'] == selected_stream_name:
-                        stored_stream_state = s
-                if stored_stream_state and stored_stream_state['replication_key'] == selected_rep_key:  # pylint: disable=line-too-long
-                    value = stored_stream_state['replication_key_value']
-                stream_state = StreamState(
-                    stream=selected_stream_name,
-                    replication_key=selected_rep_key,
-                    replication_key_value=value)
-                self.streams.append(stream_state)
 
-    def get_stream_state(self, stream):
+    def get_stream_state(self, tap_stream_id):
         for stream_state in self.streams:
-            if stream_state.stream == stream:
+            if stream_state.stream == tap_stream_id:
                 return stream_state
+        raise Exception('No state for stream {}'.format(stream))
 
     def make_state_message(self):
         result = {}
@@ -376,10 +384,12 @@ def escape(string):
                         .format(string))
     return '`' + string + '`'
 
-def sync_table(connection, db, table, columns, state):
+def sync_table(connection, db, table, columns, catalog_entry, state):
     if not columns:
         LOGGER.warning('There are no columns selected for table %s, skipping it', table)
         return
+
+    stream_state = state.get_stream_state(catalog_entry.tap_stream_id)
 
     with connection.cursor() as cursor:
         escaped_db = escape(db)
@@ -390,13 +400,12 @@ def sync_table(connection, db, table, columns, state):
             escaped_db,
             escaped_table)
         params = {}
-        stream_state = state.get_stream_state(table)
-        if stream_state and stream_state.replication_key_value is not None:
+        if stream_state.replication_key_value is not None:
             key = stream_state.replication_key
             value = stream_state.replication_key_value
             select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
             params['replication_key_value'] = value
-        elif stream_state:
+        elif  stream_state.replication_key is not None:
             key = stream_state.replication_key
             select += ' ORDER BY `{}` ASC'.format(key)
 
@@ -418,7 +427,7 @@ def sync_table(connection, db, table, columns, state):
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
-                if stream_state:
+                if stream_state.replication_key is not None:
                     stream_state.update(rec)
                 yield singer.RecordMessage(stream=table, record=rec)
                 if rows_saved % 1000 == 0:
@@ -433,15 +442,16 @@ def generate_messages(con, catalog, raw_state):
 
     streams = list(filter(lambda stream: stream.is_selected(), catalog.streams))
     LOGGER.info('%d streams total, %d are selected', len(catalog.streams), len(streams))
+    LOGGER.info('State is %s', state.make_state_message())
     if state.current_stream:
         streams = dropwhile(lambda s: s.stream != state.current_stream, streams)
 
-    for stream in streams:
-        state.current_stream = stream.stream
+    for catalog_entry in streams:
+        state.current_stream = catalog_entry.stream
         yield state.make_state_message()
 
-        database = stream.database
-        table = stream.table
+        database = catalog_entry.database
+        table = catalog_entry.table
 
         # TODO: How to handle a table that's missing
         if database not in indexed_schema:
@@ -449,7 +459,7 @@ def generate_messages(con, catalog, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in stream.schema.properties.items() if v.selected]
+        selected = [k for k, v in catalog_entry.schema.properties.items() if v.selected]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
         schema = Schema(
@@ -459,11 +469,11 @@ def generate_messages(con, catalog, raw_state):
         yield singer.SchemaMessage(
             stream=table,
             schema=schema.to_dict(),
-            key_properties=stream.key_properties)
+            key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database
             timer.tags['table'] = table
-            for message in sync_table(con, database, table, columns, state):
+            for message in sync_table(con, database, table, columns, catalog_entry, state):
                 yield message
     state.current_stream = None
     yield state.make_state_message()
