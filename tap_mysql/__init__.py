@@ -86,8 +86,8 @@ class StreamState(object):
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
     version = attr.ib(default=None)
-    
-    
+
+
     def update(self, record):
         self.replication_key_value = record[self.replication_key]
 
