@@ -82,7 +82,7 @@ class InputException(Exception):
 
 @attr.s
 class StreamState(object):
-    stream = attr.ib()
+    tap_stream_id = attr.ib()
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
 
@@ -91,20 +91,12 @@ class StreamState(object):
 
     @classmethod
     def from_dict(cls, raw, catalog_entry):
-
+        result = StreamState(catalog_entry.tap_stream_id)
         if catalog_entry.replication_key:
-            value = None
+            result.replication_key = catalog_entry.replication_key
             if raw and raw['replication_key'] == catalog_entry.replication_key:
-                return StreamState(
-                    stream=catalog_entry.tap_stream_id,
-                    replication_key=selected_rep_key,
-                    replication_key_value=raw['replication_key_value'])
-            else:
-                return StreamState(
-                    stream=catalog_entry.tap_stream_id,
-                    replication_key=catalog_entry.replication_key)
-        else:
-            return StreamState(stream=catalog_entry.tap_stream_id)
+                result.replication_key_value = raw['replication_key_value']
+        return result
                     
         
 def replication_key_by_table(raw_selections):
@@ -116,26 +108,30 @@ def replication_key_by_table(raw_selections):
 
 
 class State(object):
-    def __init__(self, state, catalog):
-        self.current_stream = None
-        self.streams = []
+    def __init__(self, current_stream, streams):
+        self.current_stream = current_stream
+        self.streams = streams
 
-        current_stream = state.get('current_stream')
-        if current_stream:
-            self.current_stream = current_stream
+    @classmethod
+    def from_dict(cls, raw, catalog):
+        current_stream = raw.get('current_stream')
+
+        LOGGER.info('Building State from raw %s and catalog %s', raw, catalog.to_dict())
+        stream_states = []
         for catalog_entry in catalog.streams:
-            raw = None
-            for s in state.get('streams', []):
-                if s['stream'] == selected_stream_name:
-                    raw = s
-            self.streams.append(StreamState.from_dict(raw, catalog_entry))
-
+            raw_stream_state = None
+            for s in raw.get('streams', []):
+                if s['tap_stream_id'] == catalog_entry.tap_stream_id:
+                    raw_stream_state = s
+            stream_states.append(StreamState.from_dict(raw_stream_state, catalog_entry))
+        return State(current_stream, stream_states)
 
     def get_stream_state(self, tap_stream_id):
         for stream_state in self.streams:
-            if stream_state.stream == tap_stream_id:
+            if stream_state.tap_stream_id == tap_stream_id:
                 return stream_state
-        raise Exception('No state for stream {}'.format(stream))
+        msg = 'No state for stream {}, states are {}'.format(tap_stream_id, [s.tap_stream_id for s in self.streams])
+        raise Exception(msg)
 
     def make_state_message(self):
         result = {}
@@ -438,7 +434,7 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
 
 def generate_messages(con, catalog, raw_state):
     indexed_schema = index_catalog(discover_catalog(con))
-    state = State(raw_state, catalog)
+    state = State.from_dict(raw_state, catalog)
 
     streams = list(filter(lambda stream: stream.is_selected(), catalog.streams))
     LOGGER.info('%d streams total, %d are selected', len(catalog.streams), len(streams))
