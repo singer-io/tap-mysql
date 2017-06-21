@@ -1,5 +1,5 @@
-
 #!/usr/bin/env python3
+# pylint: disable=missing-docstring,not-an-iterable,too-many-locals,too-many-arguments,invalid-name
 
 import datetime
 import json
@@ -86,7 +86,7 @@ class StreamState(object):
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
     table_version = attr.ib(default=None)
-    
+
     def update(self, record):
         self.replication_key_value = record[self.replication_key]
 
@@ -94,7 +94,7 @@ class StreamState(object):
     def from_dict(cls, raw, catalog_entry):
         '''Builds a StreamState from a raw dictionary containing the entry for
         this stream in the state file, as well as a CatalogEntry.'''
-        
+
         result = StreamState(catalog_entry.tap_stream_id)
         if catalog_entry.replication_key:
             result.replication_key = catalog_entry.replication_key
@@ -106,9 +106,7 @@ class StreamState(object):
             result.version = int(time.time()) * 1000
         return result
 
-    def is_incremental():
-        return self.replication_key is not None
-        
+
 def replication_key_by_table(raw_selections):
     result = {}
     for stream_meta in raw_selections:
@@ -131,9 +129,9 @@ class State(object):
         stream_states = []
         for catalog_entry in catalog.streams:
             raw_stream_state = None
-            for s in raw.get('streams', []):
-                if s['tap_stream_id'] == catalog_entry.tap_stream_id:
-                    raw_stream_state = s
+            for raw_stream in raw.get('streams', []):
+                if raw_stream['tap_stream_id'] == catalog_entry.tap_stream_id:
+                    raw_stream_state = raw_stream
             stream_states.append(StreamState.from_dict(raw_stream_state, catalog_entry))
         return State(current_stream, stream_states)
 
@@ -141,7 +139,8 @@ class State(object):
         for stream_state in self.streams:
             if stream_state.tap_stream_id == tap_stream_id:
                 return stream_state
-        msg = 'No state for stream {}, states are {}'.format(tap_stream_id, [s.tap_stream_id for s in self.streams])
+        msg = 'No state for stream {}, states are {}'.format(
+            tap_stream_id, [s.tap_stream_id for s in self.streams])
         raise Exception(msg)
 
     def make_state_message(self):
@@ -425,13 +424,13 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
             stream=catalog_entry.stream,
             version=stream_state.version
         )
-        
+
         # If there's a replication key, we want to emit an
         # ACTIVATE_VERSION message at the beginning so the records show up
         # right away.
         if stream_state.replication_key:
             yield activate_version_message
-        
+
         with metrics.record_counter(None) as counter:
             counter.tags['database'] = db
             counter.tags['table'] = table
@@ -481,7 +480,8 @@ def generate_messages(con, catalog, raw_state):
         if table not in indexed_schema[database]:
             raise Exception('No table called {} in database {}'.format(table, database))
 
-        selected = [k for k, v in catalog_entry.schema.properties.items() if v.selected or k == catalog_entry.replication_key]
+        selected = [k for k, v in catalog_entry.schema.properties.items()
+                    if v.selected or k == catalog_entry.replication_key]
 
         remove_unwanted_columns(selected, indexed_schema, database, table)
         schema = Schema(
