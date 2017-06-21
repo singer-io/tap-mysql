@@ -273,6 +273,7 @@ class TestCurrentStream(unittest.TestCase):
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
+            stream.tap_stream_id = stream.table
 
     def tearDown(self):
         if self.con:

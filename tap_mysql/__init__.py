@@ -497,10 +497,10 @@ def generate_messages(con, catalog, raw_state):
     LOGGER.info('%d streams total, %d are selected', len(catalog.streams), len(streams))
     LOGGER.info('State is %s', state.make_state_message())
     if state.current_stream:
-        streams = dropwhile(lambda s: s.stream != state.current_stream, streams)
+        streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
 
     for catalog_entry in streams:
-        state.current_stream = catalog_entry.stream
+        state.current_stream = catalog_entry.tap_stream_id
         yield state.make_state_message()
 
         database = catalog_entry.database
