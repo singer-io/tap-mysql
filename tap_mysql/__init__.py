@@ -356,31 +356,6 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-# TODO: Generalize this or make it unnecessary by adding a
-# Catalog.find_entry(tap_stream_id) method
-def index_catalog(catalog):
-    '''Turns the discovered stream schemas into a nested map of column schemas
-    indexed by database, table, and column name.
-
-      schemas['streams'][i]['schema']['schemas']['column'] { the column schema }
-
-    to
-
-      result[db][table][column] { the column schema }'''
-
-    result = {}
-
-    for stream in catalog.streams:
-        if stream.tap_stream_id in result:
-            raise Exception(
-                'Duplicate tap_stream_id {}'.format(stream.tap_stream_id))
-        result[stream.tap_stream_id] = {}
-        for col_name, col_schema in stream.schema.properties.items():
-            result[stream.tap_stream_id][col_name] = col_schema
-
-    return result
-
-
 # TODO: Generalize this. Use tap_stream_id rather than database and table.
 # Maybe make it a method on Catalog or CatalogEntry.
 def remove_unwanted_columns(selected, column_schemas):
@@ -426,11 +401,13 @@ def remove_unwanted_columns(selected, column_schemas):
     for col in remove:
         del column_schemas[col]
 
+
 def escape(string):
     if '`' in string:
         raise Exception("Can't escape identifier {} because it contains a backtick"
                         .format(string))
     return '`' + string + '`'
+
 
 def sync_table(connection, db, table, columns, catalog_entry, state):
     if not columns:
@@ -503,7 +480,7 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
             yield activate_version_message
 
 def generate_messages(con, catalog, raw_state):
-    indexed_schema = index_catalog(discover_catalog(con))
+    discovered_catalog = discover_catalog(con)
     state = State.from_dict(raw_state, catalog)
 
     streams = list(filter(lambda stream: stream.is_selected(), catalog.streams))
@@ -521,18 +498,17 @@ def generate_messages(con, catalog, raw_state):
         database = catalog_entry.database
         table = catalog_entry.table
 
-        # TODO: How to handle a table that's missing
-        # if database not in indexed_schema:
-        #     raise Exception('No database called {}'.format(database))
-        # if table not in indexed_schema[database]:
-        #     raise Exception('No table called {} in database {}'.format(table, database))
-        column_schemas = indexed_schema[catalog_entry.tap_stream_id]
-
+        discovered_table = discovered_catalog.get_stream(catalog_entry.tap_stream_id)
+        if not discovered_table:
+            LOGGER.warning('Database %s table %s was selected but does not exist',
+                           catalog_entry.database, catalog_entry.table)
+        discovered_column_schemas = discovered_table.schema.properties
+        
         selected = [k for k, v in catalog_entry.schema.properties.items()
                     if v.selected or k == catalog_entry.replication_key]
 
-        remove_unwanted_columns(selected, column_schemas)
-        schema = Schema(type='object', properties=column_schemas)
+        remove_unwanted_columns(selected, discovered_column_schemas)
+        schema = Schema(type='object', properties=discovered_column_schemas)
         columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,

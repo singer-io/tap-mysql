@@ -167,50 +167,6 @@ class TestTypeMapping(unittest.TestCase):
             'automatic')
 
 
-class TestIndexDiscoveredSchema(unittest.TestCase):
-
-    def setUp(self):
-        con = get_test_connection()
-
-        try:
-            with con.cursor() as cur:
-                cur.execute('''
-                    CREATE TABLE tab (
-                      a INTEGER,
-                      b INTEGER)
-                ''')
-
-                self.catalog = tap_mysql.discover_catalog(con)
-        finally:
-            con.close()
-
-    def runTest(self):
-        catalog = copy.deepcopy(self.catalog)
-        print(tap_mysql.index_catalog(catalog))
-        self.assertEqual(
-            tap_mysql.index_catalog(catalog),
-            {
-                "tap_mysql_test-tab": {
-                    "b": Schema(
-                        ['null', 'integer'],
-                        selected=False,
-                        sqlDatatype='int(11)',
-                        inclusion="available",
-                        maximum=2147483647,
-                        minimum=-2147483648),
-                    "a": Schema(
-                        ['null', 'integer'],
-                        selected=False,
-                        sqlDatatype='int(11)',
-                        inclusion="available",
-                        maximum=2147483647,
-                        minimum=-2147483648),
-                }
-            },
-
-            'makes nested structure from flat discovered schemas')
-
-
 class TestSelectsAppropriateColumns(unittest.TestCase):
 
     def runTest(self):
