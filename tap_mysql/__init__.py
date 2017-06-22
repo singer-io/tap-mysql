@@ -480,7 +480,10 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
                 rec = dict(zip(columns, row_to_persist))
                 if stream_state.replication_key is not None:
                     stream_state.update(rec)
-                yield singer.RecordMessage(stream=catalog_entry.stream, record=rec, version=stream_state.version)
+                yield singer.RecordMessage(
+                    stream=catalog_entry.stream,
+                    record=rec,
+                    version=stream_state.version)
                 if rows_saved % 1000 == 0:
                     yield state.make_state_message()
                 row = cursor.fetchone()
