@@ -383,7 +383,7 @@ def index_catalog(catalog):
 
 # TODO: Generalize this. Use tap_stream_id rather than database and table.
 # Maybe make it a method on Catalog or CatalogEntry.
-def remove_unwanted_columns(selected, indexed_schema, database, table):
+def remove_unwanted_columns(selected, column_schemas):
 
     selected = set(selected)
     all_columns = set()
@@ -391,7 +391,7 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
     automatic = set()
     unsupported = set()
 
-    for column, column_schema in indexed_schema[database][table].items():
+    for column, column_schema in column_schemas.items():
         all_columns.add(column)
         inclusion = column_schema.inclusion
         if inclusion == 'automatic':
@@ -405,23 +405,23 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected_but_unsupported = selected.intersection(unsupported)
     if selected_but_unsupported:
-        LOGGER.warning('For database %s, table %s, columns %s were selected but are not supported. Skipping them.',  # pylint: disable=line-too-long
-                       database, table, selected_but_unsupported)
+        LOGGER.warning('Columns %s were selected but are not supported. Skipping them.',  # pylint: disable=line-too-long
+                       selected_but_unsupported)
 
     selected_but_nonexistent = selected.difference(all_columns)
     if selected_but_nonexistent:
-        LOGGER.warning('For databasee %s, table %s, columns %s were selected but do not exist.',
-                       database, table, selected_but_nonexistent)
+        LOGGER.warning('Columns %s were selected but do not exist.',
+                       selected_but_nonexistent)
 
     not_selected_but_automatic = automatic.difference(selected)
     if not_selected_but_automatic:
-        LOGGER.warning('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.',  # pylint: disable=line-too-long
-                       database, table, not_selected_but_automatic)
+        LOGGER.warning('Columns %s are primary keys but were not selected. Automatically adding them.',  # pylint: disable=line-too-long
+                       not_selected_but_automatic)
 
     keep = selected.intersection(available).union(automatic)
     remove = all_columns.difference(keep)
     for col in remove:
-        del indexed_schema[database][table][col]
+        del column_schemas[col]
 
 def escape(string):
     if '`' in string:
@@ -525,7 +525,7 @@ def generate_messages(con, catalog, raw_state):
         selected = [k for k, v in catalog_entry.schema.properties.items()
                     if v.selected or k == catalog_entry.replication_key]
 
-        remove_unwanted_columns(selected, indexed_schema, database, table)
+        remove_unwanted_columns(selected, indexed_schema[database][table])
         schema = Schema(
             type='object',
             properties=indexed_schema[database][table])

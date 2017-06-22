@@ -229,9 +229,7 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
                                     'c': Schema(None, inclusion='automatic'),}}}
 
         tap_mysql.remove_unwanted_columns(selected_cols,
-                                          indexed_schema,
-                                          'some_db',
-                                          'some_table')
+                                          indexed_schema['some_db']['some_table'])
 
         self.assertEqual(indexed_schema,
                          expected_pruned_schema,
