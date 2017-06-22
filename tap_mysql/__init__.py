@@ -360,7 +360,6 @@ def primary_key_columns(connection, db, table):
 # Maybe make it a method on Catalog or CatalogEntry.
 def desired_columns(selected, column_schemas):
 
-    selected = set(selected)
     all_columns = set()
     available = set()
     automatic = set()
@@ -501,19 +500,17 @@ def generate_messages(con, catalog, raw_state):
                            catalog_entry.database, catalog_entry.table)
         discovered_column_schemas = discovered_table.schema.properties
         
-        selected = [k for k, v in catalog_entry.schema.properties.items()
-                    if v.selected or k == catalog_entry.replication_key]
+        selected = set([k for k, v in catalog_entry.schema.properties.items()
+                        if v.selected or k == catalog_entry.replication_key])
 
         columns = desired_columns(selected, discovered_column_schemas)
-        schema = Schema(
+        out_schema = Schema(
             type='object',
             properties={col: discovered_column_schemas[col]
                         for col in columns})
-
-
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
-            schema=schema.to_dict(),
+            schema=out_schema.to_dict(),
             key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database

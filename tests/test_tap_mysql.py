@@ -170,7 +170,7 @@ class TestTypeMapping(unittest.TestCase):
 class TestSelectsAppropriateColumns(unittest.TestCase):
 
     def runTest(self):
-        selected_cols = ['a', 'b', 'd']
+        selected_cols = set(['a', 'b', 'd'])
         indexed_schema = {'some_db':
                           {'some_table':
                            {'a': Schema(None, inclusion='available'),
