@@ -65,6 +65,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal(self):
         self.assertEqual(self.schema.properties['c_decimal'],
                          Schema(['null', 'number'],
+                                selected=False,
                                 sqlDatatype='decimal(10,0)',
                                 inclusion='available',
                                 maximum=10000000000,
@@ -76,6 +77,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal_unsigned(self):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
                          Schema(['null', 'number'],
+                                selected=False,
                                 sqlDatatype='decimal(5,2) unsigned',
                                 inclusion='available',
                                 maximum=1000,
@@ -86,6 +88,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema.properties['c_decimal_2'],
                          Schema(['null', 'number'],
+                                selected=False,
                                 sqlDatatype='decimal(11,2)',
                                 inclusion='available',
                                 maximum=1000000000,
@@ -97,6 +100,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
                          Schema(['null', 'integer'],
+                                selected=False,
                                 sqlDatatype='tinyint(4)',
                                 inclusion='available', minimum=-128,
                                 maximum=127))
@@ -104,6 +108,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
                          Schema(['null', 'integer'],
+                                selected=False,
                                 sqlDatatype='smallint(6)',
                                 inclusion='available',
                                 minimum=-32768,
@@ -112,6 +117,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
                          Schema(['null', 'integer'],
+                                selected=False,
                                 sqlDatatype='mediumint(9)',
                                 inclusion='available',
                                 minimum=-8388608,
@@ -121,6 +127,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
                          Schema(['null', 'integer'],
+                                selected=False,
                                 sqlDatatype='int(11)',
                                 inclusion='available',
                                 minimum=-2147483648,
@@ -129,6 +136,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
                          Schema(['null', 'integer'],
+                                selected=False,
                                 sqlDatatype='bigint(20)',
                                 inclusion='available',
                                 minimum=-9223372036854775808,
@@ -137,6 +145,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],
                          Schema(['null', 'number'],
+                                selected=False,
                                 inclusion='available',
                                 sqlDatatype='float'))
 
@@ -144,6 +153,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_double(self):
         self.assertEqual(self.schema.properties['c_double'],
                          Schema(['null', 'number'],
+                                selected=False,
                                 inclusion='available',
                                 sqlDatatype='double'))
 
@@ -184,12 +194,14 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
                     "tab": {
                         "b": Schema(
                             ['null', 'integer'],
+                            selected=False,
                             sqlDatatype='int(11)',
                             inclusion="available",
                             maximum=2147483647,
                             minimum=-2147483648),
                         "a": Schema(
                             ['null', 'integer'],
+                            selected=False,
                             sqlDatatype='int(11)',
                             inclusion="available",
                             maximum=2147483647,
