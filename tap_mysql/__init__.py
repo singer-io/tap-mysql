@@ -410,7 +410,8 @@ def escape(string):
     return '`' + string + '`'
 
 
-def sync_table(connection, columns, catalog_entry, state):
+def sync_table(connection, catalog_entry, state):
+    columns = list(catalog_entry.schema.properties.keys())
     if not columns:
         LOGGER.warning(
             'There are no columns selected for table %s, skipping it',
@@ -531,7 +532,7 @@ def generate_messages(con, catalog, raw_state):
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
-            for message in sync_table(con, columns, catalog_entry, state):
+            for message in sync_table(con, catalog_entry, state):
                 yield message
     state.current_stream = None
     yield state.make_state_message()
