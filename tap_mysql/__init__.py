@@ -492,7 +492,7 @@ def generate_messages(con, catalog, raw_state):
     LOGGER.info('State is %s', state.make_state_message())
     if state.current_stream:
         streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
-
+ 
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
     for catalog_entry in streams:
@@ -503,12 +503,16 @@ def generate_messages(con, catalog, raw_state):
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
                            catalog_entry.database, catalog_entry.table)
-
+        
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == catalog_entry.replication_key])
 
         columns = desired_columns(selected, discovered_table.schema)
-        yield schema_message(catalog_entry, discovered_table)
+        out_schema = Schema(
+            type='object',
+            properties={col: discovered_table.schema.properties[col]
+                        for col in columns})
+        yield singer.SchemaMessage(stream=catalog_entry.stream, schema=out_schema.to_dict(), key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
