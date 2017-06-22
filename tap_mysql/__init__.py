@@ -405,16 +405,16 @@ def escape(string):
     return '`' + string + '`'
 
 
-def sync_table(connection, db, table, columns, catalog_entry, state):
+def sync_table(connection, columns, catalog_entry, state):
     if not columns:
-        LOGGER.warning('There are no columns selected for table %s, skipping it', table)
+        LOGGER.warning('There are no columns selected for table %s, skipping it', catalog_entry.table)
         return
 
     stream_state = state.get_stream_state(catalog_entry.tap_stream_id)
 
     with connection.cursor() as cursor:
-        escaped_db = escape(db)
-        escaped_table = escape(table)
+        escaped_db = escape(catalog_entry.database)
+        escaped_table = escape(catalog_entry.table)
         escaped_columns = [escape(c) for c in columns]
         select = 'SELECT {} FROM {}.{}'.format(
             ','.join(escaped_columns),
@@ -447,8 +447,8 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
             yield activate_version_message
 
         with metrics.record_counter(None) as counter:
-            counter.tags['database'] = db
-            counter.tags['table'] = table
+            counter.tags['database'] = catalog_entry.database
+            counter.tags['table'] = catalog_entry.table
             while row:
                 counter.increment()
                 rows_saved += 1
@@ -515,7 +515,7 @@ def generate_messages(con, catalog, raw_state):
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database
             timer.tags['table'] = table
-            for message in sync_table(con, database, table, columns, catalog_entry, state):
+            for message in sync_table(con, columns, catalog_entry, state):
                 yield message
     state.current_stream = None
     yield state.make_state_message()
