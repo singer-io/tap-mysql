@@ -91,7 +91,7 @@ class StreamState(object):
         bookmarking
       * replication_key_value (optional, string or int) - current value of
         the bookmark
-      * version (optional, int) - the version number of the stream.
+      * version (int) - the version number of the stream.
 
     Use StreamState.from_dict(raw, catalog_entry) to build a StreamState
     based on the raw dict and the singer.catalog.CatalogEntry for the
@@ -121,7 +121,7 @@ class StreamState(object):
         if raw and 'version' in raw:
             result.version = raw['version']
         else:
-            result.version = int(time.time()) * 1000
+            result.version = int(time.time() * 1000)
         return result
 
 
@@ -192,7 +192,7 @@ def schema_for_column(c):
     else:
         inclusion = 'available'
 
-    result = Schema(inclusion=inclusion)
+    result = Schema(inclusion=inclusion, selected=False)
     result.sqlDatatype = c.column_type
 
     if t in BYTES_FOR_INTEGER_TYPE:
@@ -316,10 +316,12 @@ def discover_catalog(connection):
             cols = list(cols)
             (table_schema, table_name) = k
             schema = Schema(type='object',
+                            selected=False,
                             properties={c.column_name: schema_for_column(c) for c in cols})
             entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
+                stream=table_name,
                 tap_stream_id=table_schema + '-' + table_name,
                 schema=schema)
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
@@ -443,7 +445,7 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
             value = stream_state.replication_key_value
             select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
             params['replication_key_value'] = value
-        elif  stream_state.replication_key is not None:
+        elif stream_state.replication_key is not None:
             key = stream_state.replication_key
             select += ' ORDER BY `{}` ASC'.format(key)
 
@@ -478,7 +480,7 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
                 rec = dict(zip(columns, row_to_persist))
                 if stream_state.replication_key is not None:
                     stream_state.update(rec)
-                yield singer.RecordMessage(stream=table, record=rec, version=stream_state.version)
+                yield singer.RecordMessage(stream=catalog_entry.stream, record=rec, version=stream_state.version)
                 if rows_saved % 1000 == 0:
                     yield state.make_state_message()
                 row = cursor.fetchone()
