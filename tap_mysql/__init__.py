@@ -528,10 +528,9 @@ def generate_messages(con, catalog, raw_state):
         selected = [k for k, v in catalog_entry.schema.properties.items()
                     if v.selected or k == catalog_entry.replication_key]
 
-        remove_unwanted_columns(selected, indexed_schema[database][table])
-        schema = Schema(
-            type='object',
-            properties=indexed_schema[database][table])
+        column_schemas = indexed_schema[database][table]
+        remove_unwanted_columns(selected, column_schemas)
+        schema = Schema(type='object', properties=column_schemas)
         columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
