@@ -190,23 +190,21 @@ class TestIndexDiscoveredSchema(unittest.TestCase):
         self.assertEqual(
             tap_mysql.index_catalog(catalog),
             {
-                "tap_mysql_test": {
-                    "tab": {
-                        "b": Schema(
-                            ['null', 'integer'],
-                            selected=False,
-                            sqlDatatype='int(11)',
-                            inclusion="available",
-                            maximum=2147483647,
-                            minimum=-2147483648),
-                        "a": Schema(
-                            ['null', 'integer'],
-                            selected=False,
-                            sqlDatatype='int(11)',
-                            inclusion="available",
-                            maximum=2147483647,
-                            minimum=-2147483648),
-                    }
+                "tap_mysql_test-tab": {
+                    "b": Schema(
+                        ['null', 'integer'],
+                        selected=False,
+                        sqlDatatype='int(11)',
+                        inclusion="available",
+                        maximum=2147483647,
+                        minimum=-2147483648),
+                    "a": Schema(
+                        ['null', 'integer'],
+                        selected=False,
+                        sqlDatatype='int(11)',
+                        inclusion="available",
+                        maximum=2147483647,
+                        minimum=-2147483648),
                 }
             },
 
@@ -262,7 +260,7 @@ class TestSchemaMessages(unittest.TestCase):
 
 def current_stream_seq(messages):
     return ''.join(
-        [m.value.get('current_stream', '_')
+        [m.value.get('current_stream', '_')[-1]
          for m in messages
          if isinstance(m, singer.StateMessage)]
     )
@@ -283,7 +281,6 @@ class TestCurrentStream(unittest.TestCase):
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            stream.tap_stream_id = stream.table
 
     def tearDown(self):
         if self.con:
@@ -294,7 +291,7 @@ class TestCurrentStream(unittest.TestCase):
         self.assertRegexpMatches(current_stream_seq(messages), '^a+b+_+')
 
     def test_start_at_current_stream(self):
-        state = {'current_stream': 'b'}
+        state = {'current_stream': 'tap_mysql_test-b'}
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
 

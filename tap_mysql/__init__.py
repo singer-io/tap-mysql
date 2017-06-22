@@ -371,12 +371,12 @@ def index_catalog(catalog):
     result = {}
 
     for stream in catalog.streams:
-        if stream.database not in result:
-            result[stream.database] = {}
-        result[stream.database][stream.table] = {}
-
+        if stream.tap_stream_id in result:
+            raise Exception(
+                'Duplicate tap_stream_id {}'.format(stream.tap_stream_id))
+        result[stream.tap_stream_id] = {}
         for col_name, col_schema in stream.schema.properties.items():
-            result[stream.database][stream.table][col_name] = col_schema
+            result[stream.tap_stream_id][col_name] = col_schema
 
     return result
 
@@ -511,7 +511,9 @@ def generate_messages(con, catalog, raw_state):
     LOGGER.info('State is %s', state.make_state_message())
     if state.current_stream:
         streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
-
+ 
+    # Iterate over the streams in the input catalog and match each one up
+    # with the same stream in the discovered catalog.
     for catalog_entry in streams:
         state.current_stream = catalog_entry.tap_stream_id
         yield state.make_state_message()
@@ -520,15 +522,15 @@ def generate_messages(con, catalog, raw_state):
         table = catalog_entry.table
 
         # TODO: How to handle a table that's missing
-        if database not in indexed_schema:
-            raise Exception('No database called {}'.format(database))
-        if table not in indexed_schema[database]:
-            raise Exception('No table called {} in database {}'.format(table, database))
+        # if database not in indexed_schema:
+        #     raise Exception('No database called {}'.format(database))
+        # if table not in indexed_schema[database]:
+        #     raise Exception('No table called {} in database {}'.format(table, database))
+        column_schemas = indexed_schema[catalog_entry.tap_stream_id]
 
         selected = [k for k, v in catalog_entry.schema.properties.items()
                     if v.selected or k == catalog_entry.replication_key]
 
-        column_schemas = indexed_schema[database][table]
         remove_unwanted_columns(selected, column_schemas)
         schema = Schema(type='object', properties=column_schemas)
         columns = schema.properties.keys() # pylint: disable=no-member
