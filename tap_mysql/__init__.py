@@ -405,17 +405,20 @@ def remove_unwanted_columns(selected, column_schemas):
 
     selected_but_unsupported = selected.intersection(unsupported)
     if selected_but_unsupported:
-        LOGGER.warning('Columns %s were selected but are not supported. Skipping them.',  # pylint: disable=line-too-long
-                       selected_but_unsupported)
+        LOGGER.warning(
+            'Columns %s were selected but are not supported. Skipping them.',
+            selected_but_unsupported)
 
     selected_but_nonexistent = selected.difference(all_columns)
     if selected_but_nonexistent:
-        LOGGER.warning('Columns %s were selected but do not exist.',
-                       selected_but_nonexistent)
+        LOGGER.warning(
+            'Columns %s were selected but do not exist.',
+            selected_but_nonexistent)
 
     not_selected_but_automatic = automatic.difference(selected)
     if not_selected_but_automatic:
-        LOGGER.warning('Columns %s are primary keys but were not selected. Automatically adding them.',  # pylint: disable=line-too-long
+        LOGGER.warning(
+            'Columns %s are primary keys but were not selected. Adding them.',
                        not_selected_but_automatic)
 
     keep = selected.intersection(available).union(automatic)
