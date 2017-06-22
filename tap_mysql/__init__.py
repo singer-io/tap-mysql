@@ -507,14 +507,26 @@ def generate_messages(con, catalog, raw_state):
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == catalog_entry.replication_key])
 
+        # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
-        out_schema = Schema(
-            type='object',
-            properties={col: discovered_table.schema.properties[col]
-                        for col in columns})
+
+        catalog_entry = CatalogEntry(
+            tap_stream_id=catalog_entry.tap_stream_id,
+            key_properties=catalog_entry.key_properties,
+            stream=catalog_entry.stream,
+            database=catalog_entry.database,
+            table=catalog_entry.table,
+            replication_key=catalog_entry.replication_key,
+            schema=Schema(
+                type='object',
+                properties={col: discovered_table.schema.properties[col]
+                            for col in columns}
+            )
+        )
+
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
-            schema=out_schema.to_dict(),
+            schema=catalog_entry.schema.to_dict(),
             key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
