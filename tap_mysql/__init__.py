@@ -491,9 +491,6 @@ def generate_messages(con, catalog, raw_state):
         state.current_stream = catalog_entry.tap_stream_id
         yield state.make_state_message()
 
-        database = catalog_entry.database
-        table = catalog_entry.table
-
         discovered_table = discovered_catalog.get_stream(catalog_entry.tap_stream_id)
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
@@ -513,8 +510,8 @@ def generate_messages(con, catalog, raw_state):
             schema=out_schema.to_dict(),
             key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
-            timer.tags['database'] = database
-            timer.tags['table'] = table
+            timer.tags['database'] = catalog_entry.database
+            timer.tags['table'] = catalog_entry.table
             for message in sync_table(con, columns, catalog_entry, state):
                 yield message
     state.current_stream = None
