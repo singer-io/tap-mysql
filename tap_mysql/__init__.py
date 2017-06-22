@@ -358,7 +358,7 @@ def primary_key_columns(connection, db, table):
 
 # TODO: Generalize this. Use tap_stream_id rather than database and table.
 # Maybe make it a method on Catalog or CatalogEntry.
-def remove_unwanted_columns(selected, column_schemas):
+def desired_columns(selected, column_schemas):
 
     selected = set(selected)
     all_columns = set()
@@ -396,10 +396,7 @@ def remove_unwanted_columns(selected, column_schemas):
             'Columns %s are primary keys but were not selected. Adding them.',
                        not_selected_but_automatic)
 
-    keep = selected.intersection(available).union(automatic)
-    remove = all_columns.difference(keep)
-    for col in remove:
-        del column_schemas[col]
+    return selected.intersection(available).union(automatic)
 
 
 def escape(string):
@@ -507,9 +504,13 @@ def generate_messages(con, catalog, raw_state):
         selected = [k for k, v in catalog_entry.schema.properties.items()
                     if v.selected or k == catalog_entry.replication_key]
 
-        remove_unwanted_columns(selected, discovered_column_schemas)
-        schema = Schema(type='object', properties=discovered_column_schemas)
-        columns = schema.properties.keys() # pylint: disable=no-member
+        columns = desired_columns(selected, discovered_column_schemas)
+        schema = Schema(
+            type='object',
+            properties={col: discovered_column_schemas[col]
+                        for col in columns})
+
+
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
             schema=schema.to_dict(),

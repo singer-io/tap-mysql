@@ -182,11 +182,12 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
                                    {'a': Schema(None, inclusion='available'),
                                     'c': Schema(None, inclusion='automatic'),}}}
 
-        tap_mysql.remove_unwanted_columns(selected_cols,
-                                          indexed_schema['some_db']['some_table'])
+        got_cols = tap_mysql.desired_columns(
+            selected_cols,
+            indexed_schema['some_db']['some_table'])
 
-        self.assertEqual(indexed_schema,
-                         expected_pruned_schema,
+        self.assertEqual(got_cols,
+                         set(['a', 'c']),
                          'Keep automatic as well as selected, available columns.')
 
 class TestSchemaMessages(unittest.TestCase):
