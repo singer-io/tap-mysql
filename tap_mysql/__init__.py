@@ -80,6 +80,7 @@ class InputException(Exception):
     pass
 
 
+# TODO: Maybe put in common library. Not singer-python. singer-db-utils?
 @attr.s
 class StreamState(object):
     '''Represents the state for a single stream.
@@ -133,7 +134,7 @@ def replication_key_by_table(raw_selections):
     return result
 
 
-# TODO: Use tap_stream_id for current stream
+# TODO: Maybe put in common library
 @attr.s
 class State(object):
     '''Represents the full state.
@@ -355,6 +356,8 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
+# TODO: Generalize this or make it unnecessary by adding a
+# Catalog.find_entry(tap_stream_id) method
 def index_catalog(catalog):
     '''Turns the discovered stream schemas into a nested map of column schemas
     indexed by database, table, and column name.
@@ -378,6 +381,8 @@ def index_catalog(catalog):
     return result
 
 
+# TODO: Generalize this. Use tap_stream_id rather than database and table.
+# Maybe make it a method on Catalog or CatalogEntry.
 def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected = set(selected)
@@ -526,7 +531,7 @@ def generate_messages(con, catalog, raw_state):
             properties=indexed_schema[database][table])
         columns = schema.properties.keys() # pylint: disable=no-member
         yield singer.SchemaMessage(
-            stream=table,
+            stream=catalog_entry.stream,
             schema=schema.to_dict(),
             key_properties=catalog_entry.key_properties)
         with metrics.job_timer('sync_table') as timer:
