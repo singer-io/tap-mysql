@@ -358,14 +358,19 @@ def primary_key_columns(connection, db, table):
 
 # TODO: Generalize this. Use tap_stream_id rather than database and table.
 # Maybe make it a method on Catalog or CatalogEntry.
-def desired_columns(selected, column_schemas):
+def desired_columns(selected, table_schema):
 
+    '''Return the set of column names we need to include in the SELECT.
+
+    selected - set of column names marked as selected in the input catalog
+    table_schema - the most recently discovered Schema for the table
+    '''
     all_columns = set()
     available = set()
     automatic = set()
     unsupported = set()
 
-    for column, column_schema in column_schemas.items():
+    for column, column_schema in table_schema.properties.items():
         all_columns.add(column)
         inclusion = column_schema.inclusion
         if inclusion == 'automatic':
@@ -393,7 +398,7 @@ def desired_columns(selected, column_schemas):
     if not_selected_but_automatic:
         LOGGER.warning(
             'Columns %s are primary keys but were not selected. Adding them.',
-                       not_selected_but_automatic)
+            not_selected_but_automatic)
 
     return selected.intersection(available).union(automatic)
 
@@ -407,7 +412,9 @@ def escape(string):
 
 def sync_table(connection, columns, catalog_entry, state):
     if not columns:
-        LOGGER.warning('There are no columns selected for table %s, skipping it', catalog_entry.table)
+        LOGGER.warning(
+            'There are no columns selected for table %s, skipping it',
+            catalog_entry.table)
         return
 
     stream_state = state.get_stream_state(catalog_entry.tap_stream_id)
@@ -475,6 +482,7 @@ def sync_table(connection, columns, catalog_entry, state):
         if not stream_state.replication_key:
             yield activate_version_message
 
+
 def generate_messages(con, catalog, raw_state):
     discovered_catalog = discover_catalog(con)
     state = State.from_dict(raw_state, catalog)
@@ -484,7 +492,7 @@ def generate_messages(con, catalog, raw_state):
     LOGGER.info('State is %s', state.make_state_message())
     if state.current_stream:
         streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
- 
+
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
     for catalog_entry in streams:
@@ -495,20 +503,12 @@ def generate_messages(con, catalog, raw_state):
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
                            catalog_entry.database, catalog_entry.table)
-        discovered_column_schemas = discovered_table.schema.properties
-        
+
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == catalog_entry.replication_key])
 
-        columns = desired_columns(selected, discovered_column_schemas)
-        out_schema = Schema(
-            type='object',
-            properties={col: discovered_column_schemas[col]
-                        for col in columns})
-        yield singer.SchemaMessage(
-            stream=catalog_entry.stream,
-            schema=out_schema.to_dict(),
-            key_properties=catalog_entry.key_properties)
+        columns = desired_columns(selected, discovered_table.schema)
+        yield schema_message(catalog_entry, discovered_table)
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table

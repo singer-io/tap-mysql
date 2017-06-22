@@ -171,20 +171,13 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
 
     def runTest(self):
         selected_cols = set(['a', 'b', 'd'])
-        indexed_schema = {'some_db':
-                          {'some_table':
-                           {'a': Schema(None, inclusion='available'),
-                            'b': Schema(None, inclusion='unsupported'),
-                            'c': Schema(None, inclusion='automatic')}}}
+        table_schema = Schema(type='object',
+                              properties={
+                                  'a': Schema(None, inclusion='available'),
+                                  'b': Schema(None, inclusion='unsupported'),
+                                  'c': Schema(None, inclusion='automatic')})
 
-        expected_pruned_schema = {'some_db':
-                                  {'some_table':
-                                   {'a': Schema(None, inclusion='available'),
-                                    'c': Schema(None, inclusion='automatic'),}}}
-
-        got_cols = tap_mysql.desired_columns(
-            selected_cols,
-            indexed_schema['some_db']['some_table'])
+        got_cols = tap_mysql.desired_columns(selected_cols, table_schema)
 
         self.assertEqual(got_cols,
                          set(['a', 'c']),
