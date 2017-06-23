@@ -484,7 +484,25 @@ def sync_table(connection, catalog_entry, state):
 
 
 def resolve_catalog(con, catalog, state):
+    '''Returns the Catalog of data we're going to sync.
 
+    Takes the Catalog we read from the input file and turns it into a
+    Catalog representing exactly which tables and columns we're going to
+    emit in this process. Compares the input Catalog to a freshly
+    discovered Catalog to determine the resulting Catalog. Returns a new
+    instance. The result may differ from the input Catalog in the
+    following ways:
+
+      * It will only include streams marked as "selected".
+      * We will remove any streams and columns that were selected but do
+        not actually exist in the database right now.
+      * If the state has a current_stream, we will skip to that stream and
+        drop all streams appearing before it in the catalog.
+      * We will add any columns that were not selected but should be
+        automatically included. For example, primary key columns and
+        columns used as replication keys.
+
+    '''
     discovered = discover_catalog(con)
 
     # Filter catalog to include only selected streams
@@ -530,23 +548,29 @@ def resolve_catalog(con, catalog, state):
 
         
 def generate_messages(con, catalog, raw_state):
-    state = State.from_dict(raw_state, catalog)
     catalog = resolve_catalog(con, catalog, state)
-    
-    # Iterate over the streams in the input catalog and match each one up
-    # with the same stream in the discovered catalog.
+
     for catalog_entry in catalog.streams:
         state.current_stream = catalog_entry.tap_stream_id
+
+        # Emit a STATE message to indicate that we've started this stream
         yield state.make_state_message()
+
+        # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
             schema=catalog_entry.schema.to_dict(),
             key_properties=catalog_entry.key_properties)
+
+        # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
             for message in sync_table(con, catalog_entry, state):
                 yield message
+
+    # If we get here, we've finished processing all the streams, so clear
+    # current_stream from the state and emit a STATE message.
     state.current_stream = None
     yield state.make_state_message()
 
@@ -560,7 +584,9 @@ def do_sync(con, raw_selections, raw_state):
 
 def log_server_params(con):
     with con.cursor() as cur:
-        cur.execute('''
+        cur.execute(
+
+    '''
             SELECT VERSION() as version,
                    @@SESSION.wait_timeout as wait_timeout,
                    @@SESSION.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
@@ -585,6 +611,8 @@ def main():
     elif args.catalog:
         do_sync(connection, args.catalog, args.state)
     elif args.properties:
-        do_sync(connection, Catalog.from_dict(args.properties), args.state)
+        do_sync(connection,
+                Catalog.from_dict(args.properties),
+                State.from_dict(args.state))
     else:
         LOGGER.info("No properties were selected")
