@@ -6,6 +6,7 @@ import singer
 import os
 
 from singer.schema import Schema
+from tap_mysql import State
 
 DB_NAME='tap_mysql_test'
 
@@ -200,7 +201,7 @@ class TestSchemaMessages(unittest.TestCase):
             catalog.streams[0].stream = 'tab'
             catalog.streams[0].schema.selected = True
             catalog.streams[0].schema.properties['a'].selected = True
-            messages = list(tap_mysql.generate_messages(con, catalog, {}))
+            messages = list(tap_mysql.generate_messages(con, catalog, State.from_dict({}, catalog)))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
             self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
@@ -236,12 +237,12 @@ class TestCurrentStream(unittest.TestCase):
         if self.con:
             self.con.close()
     def test_emit_current_stream(self):
-        state = {}
+        state = State.from_dict({}, self.catalog)
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^a+b+_+')
 
     def test_start_at_current_stream(self):
-        state = {'current_stream': 'tap_mysql_test-b'}
+        state = State.from_dict({'current_stream': 'tap_mysql_test-b'}, self.catalog)
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
 
@@ -276,7 +277,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             self.con.close()
 
     def test_with_no_state(self):
-        state = {}
+        state = State.from_dict({}, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
@@ -285,11 +286,12 @@ class TestStreamVersionFullTable(unittest.TestCase):
 
 
     def test_with_state(self):
-        state = {
+        state = State.from_dict({
             'streams': [{
                 'tap_stream_id': 'tap_mysql_test-full_table',
                 'version': 1}]
-        }
+        }, self.catalog)
+                                 
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
 
@@ -320,7 +322,7 @@ class TestStreamVersionIncremental(unittest.TestCase):
 
 
     def test_with_no_state(self):
-        state = {}
+        state = State.from_dict({}, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
@@ -331,11 +333,11 @@ class TestStreamVersionIncremental(unittest.TestCase):
 
 
     def test_with_state(self):
-        state = {
+        state = State.from_dict({
             'streams': [{
                 'tap_stream_id': 'tap_mysql_test-incremental',
                 'version': 1}]
-        }
+        }, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
@@ -395,7 +397,7 @@ class TestViews(unittest.TestCase):
                 stream.schema.selected = True
                 stream.schema.properties['a'].selected = True
 
-        messages = list(tap_mysql.generate_messages(self.con, catalog, {}))
+        messages = list(tap_mysql.generate_messages(self.con, catalog, State.from_dict({}, catalog)))
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
         self.assertEqual(schema_message.key_properties, ['id'])
@@ -414,13 +416,13 @@ class TestEscaping(unittest.TestCase):
         if self.con:
             self.con.close()
 
-    def test_escape_succeeds(self):
+    def runTest(self):
         catalog = tap_mysql.discover_catalog(self.con)
         catalog.streams[0].stream = 'some_stream_name'
         catalog.streams[0].schema.selected = True
         catalog.streams[0].key_properties = []
         catalog.streams[0].schema.properties['b c'].selected = True
-        messages = tap_mysql.generate_messages(self.con, catalog, {})
+        messages = tap_mysql.generate_messages(self.con, catalog, State.from_dict({}, catalog))
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
         self.assertEqual(record_message.record, {'b c': 1})
