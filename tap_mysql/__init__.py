@@ -80,7 +80,7 @@ class InputException(Exception):
     pass
 
 
-# TODO: Maybe put in common library. Not singer-python. singer-db-utils?
+# TODO: Maybe put in a singer-db-utils library.
 @attr.s
 class StreamState(object):
     '''Represents the state for a single stream.
@@ -134,7 +134,7 @@ def replication_key_by_table(raw_selections):
     return result
 
 
-# TODO: Maybe put in common library
+# TODO: Maybe put in a singer-db-utils library.
 @attr.s
 class State(object):
     '''Represents the full state.
@@ -356,7 +356,7 @@ def primary_key_columns(connection, db, table):
         return set([c[0] for c in cur.fetchall()])
 
 
-# TODO: Move this into a common library.
+# TODO: Maybe put in a singer-db-utils library.
 def desired_columns(selected, table_schema):
 
     '''Return the set of column names we need to include in the SELECT.
@@ -482,7 +482,7 @@ def sync_table(connection, catalog_entry, state):
         if not stream_state.replication_key:
             yield activate_version_message
 
-
+# TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, state):
     '''Returns the Catalog of data we're going to sync.
 
