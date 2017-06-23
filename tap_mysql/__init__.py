@@ -229,7 +229,7 @@ def schema_for_column(c):
 
 def discover_catalog(connection):
     '''Returns a Catalog describing the structure of the database.'''
-    
+
     with connection.cursor() as cursor:
         if connection.db:
             cursor.execute("""
