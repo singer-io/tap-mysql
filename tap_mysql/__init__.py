@@ -46,6 +46,7 @@ LOGGER = singer.get_logger()
 
 
 def open_connection(config):
+    '''Returns an open connection to the database based on the config.'''
     connection_args = {'host': config['host'],
                        'user': config['user'],
                        'password': config['password']}
@@ -76,10 +77,6 @@ FLOAT_TYPES = set(['float', 'double'])
 DATETIME_TYPES = set(['datetime', 'timestamp'])
 
 
-class InputException(Exception):
-    pass
-
-
 # TODO: Maybe put in a singer-db-utils library.
 @attr.s
 class StreamState(object):
@@ -106,6 +103,7 @@ class StreamState(object):
 
 
     def update(self, record):
+        '''Updates replication key value based on the value in the record.'''
         self.replication_key_value = record[self.replication_key]
 
     @classmethod
@@ -124,14 +122,6 @@ class StreamState(object):
         else:
             result.version = int(time.time() * 1000)
         return result
-
-
-def replication_key_by_table(raw_selections):
-    result = {}
-    for stream_meta in raw_selections:
-        if stream_meta.replication_key is not None:
-            result[stream_meta.stream] = stream_meta.replication_key
-    return result
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -184,7 +174,7 @@ class State(object):
 
 
 def schema_for_column(c):
-
+    '''Returns the Schema object for the given Column.'''
     t = c.data_type
 
     # We want to automatically include all primary key columns
@@ -237,9 +227,9 @@ def schema_for_column(c):
     return result
 
 
-
 def discover_catalog(connection):
-
+    '''Returns a Catalog describing the structure of the database.'''
+    
     with connection.cursor() as cursor:
         if connection.db:
             cursor.execute("""
@@ -339,21 +329,6 @@ def discover_catalog(connection):
 
 def do_discover(connection):
     discover_catalog(connection).dump()
-
-def primary_key_columns(connection, db, table):
-
-    '''Return a list of names of columns that are primary keys in the given
-    table in the given db.'''
-    with connection.cursor() as cur:
-        select = """
-            SELECT column_name
-              FROM information_schema.columns
-             WHERE column_key = 'pri'
-              AND table_schema = %s
-              AND table_name = %s
-        """
-        cur.execute(select, (db, table))
-        return set([c[0] for c in cur.fetchall()])
 
 
 # TODO: Maybe put in a singer-db-utils library.
