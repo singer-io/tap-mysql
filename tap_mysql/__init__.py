@@ -550,10 +550,10 @@ def generate_messages(con, catalog, state):
     yield state.make_state_message()
 
 
-def do_sync(con, raw_selections, raw_state):
+def do_sync(con, catalog, state):
     with con.cursor() as cur:
         cur.execute('SET time_zone="+0:00"')
-    for message in generate_messages(con, raw_selections, raw_state):
+    for message in generate_messages(con, catalog, state):
         singer.write_message(message)
 
 
@@ -582,7 +582,8 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        do_sync(connection, args.catalog, args.state)
+        state = State.from_dict(args.state, args.catalog)
+        do_sync(connection, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
         state = State.from_dict(args.state, catalog)
