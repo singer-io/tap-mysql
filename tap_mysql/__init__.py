@@ -511,10 +511,10 @@ def resolve_catalog(con, catalog, state):
     # If the state says we were in the middle of processing a stream, skip
     # to that stream.
     if state.current_stream:
-        streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)    
+        streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
 
     result = Catalog(streams=[])
-        
+
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
     for catalog_entry in streams:
@@ -523,7 +523,7 @@ def resolve_catalog(con, catalog, state):
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
                            catalog_entry.database, catalog_entry.table)
-            next
+            continue
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == catalog_entry.replication_key])
 
@@ -546,8 +546,8 @@ def resolve_catalog(con, catalog, state):
 
     return result
 
-        
-def generate_messages(con, catalog, raw_state):
+
+def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
@@ -584,9 +584,7 @@ def do_sync(con, raw_selections, raw_state):
 
 def log_server_params(con):
     with con.cursor() as cur:
-        cur.execute(
-
-    '''
+        cur.execute('''
             SELECT VERSION() as version,
                    @@SESSION.wait_timeout as wait_timeout,
                    @@SESSION.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
@@ -611,8 +609,8 @@ def main():
     elif args.catalog:
         do_sync(connection, args.catalog, args.state)
     elif args.properties:
-        do_sync(connection,
-                Catalog.from_dict(args.properties),
-                State.from_dict(args.state))
+        catalog = Catalog.from_dict(args.properties)
+        state = State.from_dict(args.state, catalog)
+        do_sync(connection, catalog, state)
     else:
         LOGGER.info("No properties were selected")
