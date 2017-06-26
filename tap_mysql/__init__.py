@@ -46,6 +46,7 @@ LOGGER = singer.get_logger()
 
 
 def open_connection(config):
+    '''Returns an open connection to the database based on the config.'''
     connection_args = {'host': config['host'],
                        'user': config['user'],
                        'password': config['password']}
@@ -76,11 +77,7 @@ FLOAT_TYPES = set(['float', 'double'])
 DATETIME_TYPES = set(['datetime', 'timestamp'])
 
 
-class InputException(Exception):
-    pass
-
-
-# TODO: Maybe put in common library. Not singer-python. singer-db-utils?
+# TODO: Maybe put in a singer-db-utils library.
 @attr.s
 class StreamState(object):
     '''Represents the state for a single stream.
@@ -106,6 +103,7 @@ class StreamState(object):
 
 
     def update(self, record):
+        '''Updates replication key value based on the value in the record.'''
         self.replication_key_value = record[self.replication_key]
 
     @classmethod
@@ -126,15 +124,7 @@ class StreamState(object):
         return result
 
 
-def replication_key_by_table(raw_selections):
-    result = {}
-    for stream_meta in raw_selections:
-        if stream_meta.replication_key is not None:
-            result[stream_meta.stream] = stream_meta.replication_key
-    return result
-
-
-# TODO: Maybe put in common library
+# TODO: Maybe put in a singer-db-utils library.
 @attr.s
 class State(object):
     '''Represents the full state.
@@ -184,7 +174,7 @@ class State(object):
 
 
 def schema_for_column(c):
-
+    '''Returns the Schema object for the given Column.'''
     t = c.data_type
 
     # We want to automatically include all primary key columns
@@ -237,8 +227,8 @@ def schema_for_column(c):
     return result
 
 
-
 def discover_catalog(connection):
+    '''Returns a Catalog describing the structure of the database.'''
 
     with connection.cursor() as cursor:
         if connection.db:
@@ -340,58 +330,21 @@ def discover_catalog(connection):
 def do_discover(connection):
     discover_catalog(connection).dump()
 
-def primary_key_columns(connection, db, table):
 
-    '''Return a list of names of columns that are primary keys in the given
-    table in the given db.'''
-    with connection.cursor() as cur:
-        select = """
-            SELECT column_name
-              FROM information_schema.columns
-             WHERE column_key = 'pri'
-              AND table_schema = %s
-              AND table_name = %s
-        """
-        cur.execute(select, (db, table))
-        return set([c[0] for c in cur.fetchall()])
+# TODO: Maybe put in a singer-db-utils library.
+def desired_columns(selected, table_schema):
 
+    '''Return the set of column names we need to include in the SELECT.
 
-# TODO: Generalize this or make it unnecessary by adding a
-# Catalog.find_entry(tap_stream_id) method
-def index_catalog(catalog):
-    '''Turns the discovered stream schemas into a nested map of column schemas
-    indexed by database, table, and column name.
-
-      schemas['streams'][i]['schema']['schemas']['column'] { the column schema }
-
-    to
-
-      result[db][table][column] { the column schema }'''
-
-    result = {}
-
-    for stream in catalog.streams:
-        if stream.database not in result:
-            result[stream.database] = {}
-        result[stream.database][stream.table] = {}
-
-        for col_name, col_schema in stream.schema.properties.items():
-            result[stream.database][stream.table][col_name] = col_schema
-
-    return result
-
-
-# TODO: Generalize this. Use tap_stream_id rather than database and table.
-# Maybe make it a method on Catalog or CatalogEntry.
-def remove_unwanted_columns(selected, indexed_schema, database, table):
-
-    selected = set(selected)
+    selected - set of column names marked as selected in the input catalog
+    table_schema - the most recently discovered Schema for the table
+    '''
     all_columns = set()
     available = set()
     automatic = set()
     unsupported = set()
 
-    for column, column_schema in indexed_schema[database][table].items():
+    for column, column_schema in table_schema.properties.items():
         all_columns.add(column)
         inclusion = column_schema.inclusion
         if inclusion == 'automatic':
@@ -405,23 +358,24 @@ def remove_unwanted_columns(selected, indexed_schema, database, table):
 
     selected_but_unsupported = selected.intersection(unsupported)
     if selected_but_unsupported:
-        LOGGER.warning('For database %s, table %s, columns %s were selected but are not supported. Skipping them.',  # pylint: disable=line-too-long
-                       database, table, selected_but_unsupported)
+        LOGGER.warning(
+            'Columns %s were selected but are not supported. Skipping them.',
+            selected_but_unsupported)
 
     selected_but_nonexistent = selected.difference(all_columns)
     if selected_but_nonexistent:
-        LOGGER.warning('For databasee %s, table %s, columns %s were selected but do not exist.',
-                       database, table, selected_but_nonexistent)
+        LOGGER.warning(
+            'Columns %s were selected but do not exist.',
+            selected_but_nonexistent)
 
     not_selected_but_automatic = automatic.difference(selected)
     if not_selected_but_automatic:
-        LOGGER.warning('For database %s, table %s, columns %s are primary keys but were not selected. Automatically adding them.',  # pylint: disable=line-too-long
-                       database, table, not_selected_but_automatic)
+        LOGGER.warning(
+            'Columns %s are primary keys but were not selected. Adding them.',
+            not_selected_but_automatic)
 
-    keep = selected.intersection(available).union(automatic)
-    remove = all_columns.difference(keep)
-    for col in remove:
-        del indexed_schema[database][table][col]
+    return selected.intersection(available).union(automatic)
+
 
 def escape(string):
     if '`' in string:
@@ -429,16 +383,20 @@ def escape(string):
                         .format(string))
     return '`' + string + '`'
 
-def sync_table(connection, db, table, columns, catalog_entry, state):
+
+def sync_table(connection, catalog_entry, state):
+    columns = list(catalog_entry.schema.properties.keys())
     if not columns:
-        LOGGER.warning('There are no columns selected for table %s, skipping it', table)
+        LOGGER.warning(
+            'There are no columns selected for table %s, skipping it',
+            catalog_entry.table)
         return
 
     stream_state = state.get_stream_state(catalog_entry.tap_stream_id)
 
     with connection.cursor() as cursor:
-        escaped_db = escape(db)
-        escaped_table = escape(table)
+        escaped_db = escape(catalog_entry.database)
+        escaped_table = escape(catalog_entry.table)
         escaped_columns = [escape(c) for c in columns]
         select = 'SELECT {} FROM {}.{}'.format(
             ','.join(escaped_columns),
@@ -471,8 +429,8 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
             yield activate_version_message
 
         with metrics.record_counter(None) as counter:
-            counter.tags['database'] = db
-            counter.tags['table'] = table
+            counter.tags['database'] = catalog_entry.database
+            counter.tags['table'] = catalog_entry.table
             while row:
                 counter.increment()
                 rows_saved += 1
@@ -499,54 +457,103 @@ def sync_table(connection, db, table, columns, catalog_entry, state):
         if not stream_state.replication_key:
             yield activate_version_message
 
-def generate_messages(con, catalog, raw_state):
-    indexed_schema = index_catalog(discover_catalog(con))
-    state = State.from_dict(raw_state, catalog)
+# TODO: Maybe put in a singer-db-utils library.
+def resolve_catalog(con, catalog, state):
+    '''Returns the Catalog of data we're going to sync.
 
+    Takes the Catalog we read from the input file and turns it into a
+    Catalog representing exactly which tables and columns we're going to
+    emit in this process. Compares the input Catalog to a freshly
+    discovered Catalog to determine the resulting Catalog. Returns a new
+    instance. The result may differ from the input Catalog in the
+    following ways:
+
+      * It will only include streams marked as "selected".
+      * We will remove any streams and columns that were selected but do
+        not actually exist in the database right now.
+      * If the state has a current_stream, we will skip to that stream and
+        drop all streams appearing before it in the catalog.
+      * We will add any columns that were not selected but should be
+        automatically included. For example, primary key columns and
+        columns used as replication keys.
+
+    '''
+    discovered = discover_catalog(con)
+
+    # Filter catalog to include only selected streams
     streams = list(filter(lambda stream: stream.is_selected(), catalog.streams))
-    LOGGER.info('%d streams total, %d are selected', len(catalog.streams), len(streams))
-    LOGGER.info('State is %s', state.make_state_message())
+
+    # If the state says we were in the middle of processing a stream, skip
+    # to that stream.
     if state.current_stream:
         streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
 
+    result = Catalog(streams=[])
+
+    # Iterate over the streams in the input catalog and match each one up
+    # with the same stream in the discovered catalog.
     for catalog_entry in streams:
+
+        discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
+        if not discovered_table:
+            LOGGER.warning('Database %s table %s was selected but does not exist',
+                           catalog_entry.database, catalog_entry.table)
+            continue
+        selected = set([k for k, v in catalog_entry.schema.properties.items()
+                        if v.selected or k == catalog_entry.replication_key])
+
+        # These are the columns we need to select
+        columns = desired_columns(selected, discovered_table.schema)
+
+        result.streams.append(CatalogEntry(
+            tap_stream_id=catalog_entry.tap_stream_id,
+            key_properties=catalog_entry.key_properties,
+            stream=catalog_entry.stream,
+            database=catalog_entry.database,
+            table=catalog_entry.table,
+            replication_key=catalog_entry.replication_key,
+            schema=Schema(
+                type='object',
+                properties={col: discovered_table.schema.properties[col]
+                            for col in columns}
+            )
+        ))
+
+    return result
+
+
+def generate_messages(con, catalog, state):
+    catalog = resolve_catalog(con, catalog, state)
+
+    for catalog_entry in catalog.streams:
         state.current_stream = catalog_entry.tap_stream_id
+
+        # Emit a STATE message to indicate that we've started this stream
         yield state.make_state_message()
 
-        database = catalog_entry.database
-        table = catalog_entry.table
-
-        # TODO: How to handle a table that's missing
-        if database not in indexed_schema:
-            raise Exception('No database called {}'.format(database))
-        if table not in indexed_schema[database]:
-            raise Exception('No table called {} in database {}'.format(table, database))
-
-        selected = [k for k, v in catalog_entry.schema.properties.items()
-                    if v.selected or k == catalog_entry.replication_key]
-
-        remove_unwanted_columns(selected, indexed_schema, database, table)
-        schema = Schema(
-            type='object',
-            properties=indexed_schema[database][table])
-        columns = schema.properties.keys() # pylint: disable=no-member
+        # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
-            schema=schema.to_dict(),
+            schema=catalog_entry.schema.to_dict(),
             key_properties=catalog_entry.key_properties)
+
+        # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
-            timer.tags['database'] = database
-            timer.tags['table'] = table
-            for message in sync_table(con, database, table, columns, catalog_entry, state):
+            timer.tags['database'] = catalog_entry.database
+            timer.tags['table'] = catalog_entry.table
+            for message in sync_table(con, catalog_entry, state):
                 yield message
+
+    # If we get here, we've finished processing all the streams, so clear
+    # current_stream from the state and emit a STATE message.
     state.current_stream = None
     yield state.make_state_message()
 
 
-def do_sync(con, raw_selections, raw_state):
+def do_sync(con, catalog, state):
     with con.cursor() as cur:
         cur.execute('SET time_zone="+0:00"')
-    for message in generate_messages(con, raw_selections, raw_state):
+    for message in generate_messages(con, catalog, state):
         singer.write_message(message)
 
 
@@ -575,8 +582,11 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        do_sync(connection, args.catalog, args.state)
+        state = State.from_dict(args.state, args.catalog)
+        do_sync(connection, args.catalog, state)
     elif args.properties:
-        do_sync(connection, Catalog.from_dict(args.properties), args.state)
+        catalog = Catalog.from_dict(args.properties)
+        state = State.from_dict(args.state, catalog)
+        do_sync(connection, catalog, state)
     else:
         LOGGER.info("No properties were selected")
