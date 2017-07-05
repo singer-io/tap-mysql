@@ -156,7 +156,7 @@ class State:
     def get_stream_state(self, tap_stream_id):
         if tap_stream_id not in self.bookmarks: # pylint: disable=unsupported-membership-test
             raise Exception('No state for stream {}, states are {}'.format(
-                tap_stream_id, self.bookmarks.keys()))
+                tap_stream_id, self.bookmarks.keys())) #pylint: disable=no-member
 
         return self.bookmarks[tap_stream_id] # pylint: disable=unsubscriptable-object
 
