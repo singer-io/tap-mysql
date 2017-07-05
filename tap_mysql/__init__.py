@@ -139,7 +139,7 @@ class State:
     on the raw dict and the singer.catalog.Catalog.
     '''
     current_stream = attr.ib()
-    bookmarks = attr.ib()
+    bookmarks = attr.ib(default={})
 
     @classmethod
     def from_dict(cls, raw, catalog):
@@ -156,7 +156,7 @@ class State:
     def get_stream_state(self, tap_stream_id):
         if tap_stream_id not in self.bookmarks:
             raise Exception('No state for stream {}, states are {}'.format(
-                tap_stream_id, [s.tap_stream_id for s in self.streams]))
+                tap_stream_id, s.bookmarks.keys()))
 
         return self.bookmarks[tap_stream_id]
 
