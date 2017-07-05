@@ -77,9 +77,8 @@ FLOAT_TYPES = set(['float', 'double'])
 DATETIME_TYPES = set(['datetime', 'timestamp'])
 
 
-# TODO: Maybe put in a singer-db-utils library.
 @attr.s
-class StreamState(object):
+class StreamState:
     '''Represents the state for a single stream.
 
     The state for a stream consists of four properties:
@@ -94,82 +93,81 @@ class StreamState(object):
     Use StreamState.from_dict(raw, catalog_entry) to build a StreamState
     based on the raw dict and the singer.catalog.CatalogEntry for the
     stream.
-
     '''
     tap_stream_id = attr.ib()
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
     version = attr.ib(default=None)
 
-
-    def update(self, record):
-        '''Updates replication key value based on the value in the record.'''
-        self.replication_key_value = record[self.replication_key]
-
     @classmethod
     def from_dict(cls, raw, catalog_entry):
-        '''Builds a StreamState from a raw dictionary containing the entry for
-        this stream in the state file, as well as a CatalogEntry.
-
-        '''
-        result = StreamState(catalog_entry.tap_stream_id)
+        result = cls(catalog_entry.tap_stream_id)
         if catalog_entry.replication_key:
             result.replication_key = catalog_entry.replication_key
             if raw and raw.get('replication_key') == catalog_entry.replication_key:
                 result.replication_key_value = raw['replication_key_value']
+
         if raw and 'version' in raw:
             result.version = raw['version']
         else:
             result.version = int(time.time() * 1000)
+
         return result
 
+    def update(self, record):
+        self.replication_key_value = record[self.replication_key]
 
-# TODO: Maybe put in a singer-db-utils library.
+    def as_dict(self):
+        return {
+            "replication_key": self.replication_key,
+            "replication_key_value": self.replication_key_value,
+            "version": self.version,
+        }
+
+
 @attr.s
-class State(object):
+class State:
     '''Represents the full state.
 
     Two properties:
 
       * current_stream - When the tap is in the middle of syncing a
         stream, this will be set to the tap_stream_id for that stream.
-      * streams - List of StreamState objects, one for each selected
-        stream.
+      * bookmarks - Map of tap_stream_ids to StreamState objects.
 
     Use State.from_dict(raw, catalog) to build a StreamState based
     on the raw dict and the singer.catalog.Catalog.
-
     '''
     current_stream = attr.ib()
-    streams = attr.ib()
+    bookmarks = attr.ib()
 
     @classmethod
     def from_dict(cls, raw, catalog):
+        LOGGER.info('Building State from raw %s and catalog %s', raw, catalog.to_dict())
+
         current_stream = raw.get('current_stream')
 
-        LOGGER.info('Building State from raw %s and catalog %s', raw, catalog.to_dict())
-        stream_states = []
-        for catalog_entry in catalog.streams:
-            raw_stream_state = None
-            for raw_stream in raw.get('streams', []):
-                if raw_stream['tap_stream_id'] == catalog_entry.tap_stream_id:
-                    raw_stream_state = raw_stream
-            stream_states.append(StreamState.from_dict(raw_stream_state, catalog_entry))
-        return State(current_stream, stream_states)
+        bms = raw.get('bookmarks', {})
+        bookmarks = {c.tap_stream_id: StreamState.from_dict(bms.get(c.tap_stream_id), c)
+                     for c in catalog.streams}
+
+        return cls(current_stream, bookmarks)
 
     def get_stream_state(self, tap_stream_id):
-        for stream_state in self.streams:
-            if stream_state.tap_stream_id == tap_stream_id:
-                return stream_state
-        msg = 'No state for stream {}, states are {}'.format(
-            tap_stream_id, [s.tap_stream_id for s in self.streams])
-        raise Exception(msg)
+        if tap_stream_id not in self.bookmarks:
+            raise Exception('No state for stream {}, states are {}'.format(
+                tap_stream_id, [s.tap_stream_id for s in self.streams]))
+
+        return self.bookmarks[tap_stream_id]
 
     def make_state_message(self):
         result = {}
         if self.current_stream:
             result['current_stream'] = self.current_stream
-        result['streams'] = [s.__dict__ for s in self.streams]
+
+        result['bookmarks'] = {s.tap_stream_id: s.as_dict()
+                               for s in self.bookmarks.values()}
+
         return singer.StateMessage(value=result)
 
 
