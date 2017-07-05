@@ -291,7 +291,8 @@ class TestStreamVersionFullTable(unittest.TestCase):
                 'tap_mysql_test-full_table': {
                     'version': 1,
                 }
-            }, self.catalog)
+            }
+        }, self.catalog)
 
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
