@@ -154,11 +154,11 @@ class State:
         return cls(current_stream, bookmarks)
 
     def get_stream_state(self, tap_stream_id):
-        if tap_stream_id not in self.bookmarks:
+        if tap_stream_id not in self.bookmarks: # pylint: disable=unsupported-membership-test
             raise Exception('No state for stream {}, states are {}'.format(
-                tap_stream_id, s.bookmarks.keys()))
+                tap_stream_id, self.bookmarks.keys()))
 
-        return self.bookmarks[tap_stream_id]
+        return self.bookmarks[tap_stream_id] # pylint: disable=unsubscriptable-object
 
     def make_state_message(self):
         result = {}
@@ -166,7 +166,7 @@ class State:
             result['current_stream'] = self.current_stream
 
         result['bookmarks'] = {s.tap_stream_id: s.as_dict()
-                               for s in self.bookmarks.values()}
+                               for s in self.bookmarks.values()} # pylint: disable=no-member
 
         return singer.StateMessage(value=result)
 
