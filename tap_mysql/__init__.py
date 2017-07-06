@@ -49,7 +49,8 @@ def open_connection(config):
     '''Returns an open connection to the database based on the config.'''
     connection_args = {'host': config['host'],
                        'user': config['user'],
-                       'password': config['password']}
+                       'password': config['password'],
+                       'cursorclass': pymysql.cursors.SSCursor}
     database = config.get('database')
     if database:
         connection_args['database'] = database
