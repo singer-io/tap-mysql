@@ -47,10 +47,16 @@ LOGGER = singer.get_logger()
 
 def open_connection(config):
     '''Returns an open connection to the database based on the config.'''
+
+    connect_timeout_seconds = 300
+    read_timeout_seconds = 3600
+
     connection_args = {'host': config['host'],
                        'user': config['user'],
                        'password': config['password'],
-                       'cursorclass': pymysql.cursors.SSCursor}
+                       'cursorclass': pymysql.cursors.SSCursor,
+                       'connect_timeout': connect_timeout_seconds,
+                       'read_timeout': read_timeout_seconds}
     database = config.get('database')
     if database:
         connection_args['database'] = database
@@ -550,8 +556,6 @@ def generate_messages(con, catalog, state):
 
 
 def do_sync(con, catalog, state):
-    with con.cursor() as cur:
-        cur.execute('SET time_zone="+0:00"')
     for message in generate_messages(con, catalog, state):
         singer.write_message(message)
 
@@ -560,10 +564,10 @@ def log_server_params(con):
     with con.cursor() as cur:
         cur.execute('''
             SELECT VERSION() as version,
-                   @@SESSION.wait_timeout as wait_timeout,
-                   @@SESSION.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
-                   @@SESSION.max_allowed_packet as max_allowed_packet,
-                   @@SESSION.interactive_timeout as interactive_timeout''')
+                   @@session.wait_timeout as wait_timeout,
+                   @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+                   @@session.max_allowed_packet as max_allowed_packet,
+                   @@session.interactive_timeout as interactive_timeout''')
         row = cur.fetchone()
         LOGGER.info('Server Parameters: ' +
                     'version: %s, ' +
@@ -577,6 +581,10 @@ def log_server_params(con):
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
+    with connection.cursor() as cur:
+        cur.execute('SET @@session.time_zone="+0:00"')
+        cur.execute('SET @@session.wait_timeout=2700')
+        cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
     log_server_params(connection)
     if args.discover:
         do_discover(connection)
