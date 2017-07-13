@@ -236,27 +236,17 @@ def discover_catalog(connection):
     '''Returns a Catalog describing the structure of the database.'''
 
     with connection.cursor() as cursor:
-        if connection.db:
-            cursor.execute("""
-                SELECT table_schema,
-                       table_name,
-                       table_type,
-                       table_rows
-                  FROM information_schema.tables
-                 WHERE table_schema = %s""",
-                           (connection.db,))
-        else:
-            cursor.execute("""
-                SELECT table_schema,
-                       table_name,
-                       table_type,
-                       table_rows
-                  FROM information_schema.tables
-                 WHERE table_schema NOT IN (
-                          'information_schema',
-                          'performance_schema',
-                          'mysql')
-            """)
+        cursor.execute("""
+            SELECT table_schema,
+                   table_name,
+                   table_type,
+                   table_rows
+                FROM information_schema.tables
+                WHERE table_schema NOT IN (
+                        'information_schema',
+                        'performance_schema',
+                        'mysql')
+        """)
         table_info = {}
 
         for (db, table, table_type, rows) in cursor.fetchall():
@@ -269,37 +259,22 @@ def discover_catalog(connection):
 
     with connection.cursor() as cursor:
 
-        if connection.db:
-            cursor.execute("""
-                SELECT table_schema,
-                       table_name,
-                       column_name,
-                       data_type,
-                       character_maximum_length,
-                       numeric_precision,
-                       numeric_scale,
-                       column_type,
-                       column_key
-                  FROM information_schema.columns
-                 WHERE table_schema = %s""",
-                           (connection.db,))
-        else:
-            cursor.execute("""
-                SELECT table_schema,
-                       table_name,
-                       column_name,
-                       data_type,
-                       character_maximum_length,
-                       numeric_precision,
-                       numeric_scale,
-                       column_type,
-                       column_key
-                  FROM information_schema.columns
-                 WHERE table_schema NOT IN (
-                          'information_schema',
-                          'performance_schema',
-                          'mysql')
-            """)
+        cursor.execute("""
+            SELECT table_schema,
+                   table_name,
+                   column_name,
+                   data_type,
+                   character_maximum_length,
+                   numeric_precision,
+                   numeric_scale,
+                   column_type,
+                   column_key
+                FROM information_schema.columns
+                WHERE table_schema NOT IN (
+                        'information_schema',
+                        'performance_schema',
+                        'mysql')
+        """)
 
         columns = []
         rec = cursor.fetchone()
