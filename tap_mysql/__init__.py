@@ -53,6 +53,7 @@ def open_connection(config):
 
     connection_args = {'host': config['host'],
                        'user': config['user'],
+                       'port': int(config['port']),
                        'password': config['password'],
                        'cursorclass': pymysql.cursors.SSCursor,
                        'connect_timeout': connect_timeout_seconds,
