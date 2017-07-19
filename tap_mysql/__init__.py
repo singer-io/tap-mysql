@@ -39,7 +39,7 @@ Column = collections.namedtuple('Column', [
 REQUIRED_CONFIG_KEYS = [
     'host',
     'port',
-    'username',
+    'user',
     'password'
 ]
 
