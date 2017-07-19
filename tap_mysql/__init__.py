@@ -50,7 +50,7 @@ READ_TIMEOUT_SECONDS = 3600
 
 
 def open_connection_has_ca(args):
-    args["ssl"] = {"ca": config["ssl_ca"]}
+    args["ssl"] = {"ca": args["ssl_ca"]}
     return pymysql.connect(**args)
 
 
@@ -80,14 +80,14 @@ def open_connection(config):
 
     if config.get("ssl_ca"):
         try:
-            return open_connection_has_ca(config)
-        except:
+            return pymysql.connect(ssl={"ca": config["ssl_ca"]}, **args)
+        except: # pylint: disable=bare-except
             pass
 
     if config.get("ssl", False):
         try:
             return open_connection_ssl(config)
-        except:
+        except: # pylint: disable=bare-except
             pass
 
     return pymysql.connect(**args)
