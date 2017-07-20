@@ -83,7 +83,6 @@ def open_connection(config):
             return conn
         except: # pylint: disable=bare-except
             LOGGER.error("SSL connection failed")
-            pass
 
     try:
         LOGGER.info("Attempting connection")
