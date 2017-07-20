@@ -49,22 +49,6 @@ CONNECT_TIMEOUT_SECONDS = 300
 READ_TIMEOUT_SECONDS = 3600
 
 
-def open_connection_has_ca(args):
-    args["ssl"] = {"ca": args["ssl_ca"]}
-    return pymysql.connect(**args)
-
-
-def open_connection_ssl(args):
-    conn = pymysql.Connection(defer_connect=True, **args)
-    conn.ssl = True
-    conn.ctx = ssl.create_default_context()
-    conn.ctx.check_hostname = False
-    conn.ctx.verify_mode = ssl.CERT_NONE
-    conn.client_flag |= CLIENT.SSL
-    conn.connect()
-    return conn
-
-
 def open_connection(config):
     args = {
         "user": config["user"],
@@ -75,22 +59,37 @@ def open_connection(config):
         "connect_timeout": CONNECT_TIMEOUT_SECONDS,
         "read_timeout": READ_TIMEOUT_SECONDS,
     }
+
     if config.get("database"):
         args["database"] = config["database"]
 
     if config.get("ssl_ca"):
         try:
+            LOGGER.info("Attempting SSL connection with custom ca")
             return pymysql.connect(ssl={"ca": config["ssl_ca"]}, **args)
         except: # pylint: disable=bare-except
-            pass
+            LOGGER.error("SSL connection with custom ca failed.")
 
     if config.get("ssl", False):
         try:
-            return open_connection_ssl(config)
+            LOGGER.info("Attempting SSL connection")
+            conn = pymysql.Connection(defer_connect=True, **args)
+            conn.ssl = True
+            conn.ctx = ssl.create_default_context()
+            conn.ctx.check_hostname = False
+            conn.ctx.verify_mode = ssl.CERT_NONE
+            conn.client_flag |= CLIENT.SSL
+            conn.connect()
+            return conn
         except: # pylint: disable=bare-except
+            LOGGER.error("SSL connection failed")
             pass
 
-    return pymysql.connect(**args)
+    try:
+        LOGGER.info("Attempting connection")
+        return pymysql.connect(**args)
+    except: # pylint: disable=bare-except
+        LOGGER.error("Connection failed")
 
 
 STRING_TYPES = set([
