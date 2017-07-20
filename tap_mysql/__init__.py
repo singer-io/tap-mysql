@@ -10,12 +10,13 @@ import collections
 import itertools
 from itertools import dropwhile
 import copy
+import ssl
 
 import attr
 import pendulum
 
 import pymysql
-import pymysql.constants.FIELD_TYPE as FIELD_TYPE
+from pymysql.constants import CLIENT
 
 import singer
 import singer.metrics as metrics
@@ -44,24 +45,51 @@ REQUIRED_CONFIG_KEYS = [
 
 LOGGER = singer.get_logger()
 
+CONNECT_TIMEOUT_SECONDS = 300
+READ_TIMEOUT_SECONDS = 3600
+
 
 def open_connection(config):
-    '''Returns an open connection to the database based on the config.'''
+    args = {
+        "user": config["user"],
+        "password": config["password"],
+        "host": config["host"],
+        "port": int(config["port"]),
+        "cursor": pymysql.cursors.SSCursor,
+        "connect_timeout": CONNECT_TIMEOUT_SECONDS,
+        "read_timeout": READ_TIMEOUT_SECONDS,
+    }
 
-    connect_timeout_seconds = 300
-    read_timeout_seconds = 3600
+    if config.get("database"):
+        args["database"] = config["database"]
 
-    connection_args = {'host': config['host'],
-                       'user': config['user'],
-                       'port': int(config['port']),
-                       'password': config['password'],
-                       'cursorclass': pymysql.cursors.SSCursor,
-                       'connect_timeout': connect_timeout_seconds,
-                       'read_timeout': read_timeout_seconds}
-    database = config.get('database')
-    if database:
-        connection_args['database'] = database
-    return pymysql.connect(**connection_args)
+    if config.get("ssl_ca"):
+        try:
+            LOGGER.info("Attempting SSL connection with custom ca")
+            return pymysql.connect(ssl={"ca": config["ssl_ca"]}, **args)
+        except: # pylint: disable=bare-except
+            LOGGER.error("SSL connection with custom ca failed.")
+
+    if config.get("ssl", False):
+        try:
+            LOGGER.info("Attempting SSL connection")
+            conn = pymysql.Connection(defer_connect=True, **args)
+            conn.ssl = True
+            conn.ctx = ssl.create_default_context()
+            conn.ctx.check_hostname = False
+            conn.ctx.verify_mode = ssl.CERT_NONE
+            conn.client_flag |= CLIENT.SSL
+            conn.connect()
+            return conn
+        except: # pylint: disable=bare-except
+            LOGGER.error("SSL connection failed")
+
+    try:
+        LOGGER.info("Attempting connection")
+        return pymysql.connect(**args)
+    except: # pylint: disable=bare-except
+        LOGGER.error("Connection failed")
+
 
 STRING_TYPES = set([
     'char',
