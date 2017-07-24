@@ -35,6 +35,10 @@ def get_test_connection():
 
     return pymysql.connect(**creds)
 
+def discover_catalog(connection):
+    catalog = tap_mysql.discover_catalog(connection)
+    catalog.streams = [s for s in catalog.streams if s.database == DB_NAME]
+    return catalog
 
 class TestTypeMapping(unittest.TestCase):
 
@@ -59,7 +63,7 @@ class TestTypeMapping(unittest.TestCase):
             c_bit BIT(4)
             )''')
 
-            catalog = tap_mysql.discover_catalog(con)
+            catalog = discover_catalog(con)
             cls.schema = catalog.streams[0].schema
 
 
@@ -197,7 +201,7 @@ class TestSchemaMessages(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-            catalog = tap_mysql.discover_catalog(con)
+            catalog = discover_catalog(con)
             catalog.streams[0].stream = 'tab'
             catalog.streams[0].schema.selected = True
             catalog.streams[0].schema.properties['a'].selected = True
@@ -226,7 +230,8 @@ class TestCurrentStream(unittest.TestCase):
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
 
-        self.catalog = tap_mysql.discover_catalog(self.con)
+        self.catalog = discover_catalog(self.con)
+
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
@@ -265,7 +270,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             cursor.execute('CREATE TABLE full_table (val int)')
             cursor.execute('INSERT INTO full_table (val) VALUES (1)')
 
-        self.catalog = tap_mysql.discover_catalog(self.con)
+        self.catalog = discover_catalog(self.con)
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
@@ -310,7 +315,7 @@ class TestStreamVersionIncremental(unittest.TestCase):
             cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
             cursor.execute('INSERT INTO incremental (val, updated) VALUES (2, \'2017-06-20\')')
 
-        self.catalog = tap_mysql.discover_catalog(self.con)
+        self.catalog = discover_catalog(self.con)
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
@@ -370,7 +375,7 @@ class TestViews(unittest.TestCase):
             self.con.close()
 
     def test_discovery_sets_is_view(self):
-        catalog = tap_mysql.discover_catalog(self.con)
+        catalog = discover_catalog(self.con)
 
         is_view = {s.table: s.is_view for s in catalog.streams}
         self.assertEqual(
@@ -379,7 +384,7 @@ class TestViews(unittest.TestCase):
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        catalog = tap_mysql.discover_catalog(self.con)
+        catalog = discover_catalog(self.con)
         discovered_key_properties = {
             s.table: s.key_properties
             for s in catalog.streams
@@ -390,7 +395,7 @@ class TestViews(unittest.TestCase):
              'a_view': None})
 
     def test_can_set_key_properties_for_view(self):
-        catalog = tap_mysql.discover_catalog(self.con)
+        catalog = discover_catalog(self.con)
         for stream in catalog.streams:
             stream.stream = stream.table
 
@@ -419,7 +424,7 @@ class TestEscaping(unittest.TestCase):
             self.con.close()
 
     def runTest(self):
-        catalog = tap_mysql.discover_catalog(self.con)
+        catalog = discover_catalog(self.con)
         catalog.streams[0].stream = 'some_stream_name'
         catalog.streams[0].schema.selected = True
         catalog.streams[0].key_properties = []
