@@ -10,12 +10,13 @@ import collections
 import itertools
 from itertools import dropwhile
 import copy
+import ssl
 
 import attr
 import pendulum
 
 import pymysql
-import pymysql.constants.FIELD_TYPE as FIELD_TYPE
+from pymysql.constants import CLIENT
 
 import singer
 import singer.metrics as metrics
@@ -23,6 +24,7 @@ import singer.schema
 from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
+
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -44,23 +46,95 @@ REQUIRED_CONFIG_KEYS = [
 
 LOGGER = singer.get_logger()
 
+CONNECT_TIMEOUT_SECONDS = 300
+READ_TIMEOUT_SECONDS = 3600
+
+# We need to hold onto this for self-signed SSL
+match_hostname = ssl.match_hostname
+
+
+def parse_internal_hostname(hostname):
+    # special handling for google cloud
+    if ":" in hostname:
+        parts = hostname.split(":")
+        if len(parts) == 3:
+            return parts[0] + ":" + parts[2]
+        else:
+            return parts[0] + ":" + parts[1]
+
+    return hostname
+
 
 def open_connection(config):
-    '''Returns an open connection to the database based on the config.'''
+    # Google Cloud's SSL involves a self-signed certificate. This certificate's
+    # hostname matches the form {instance}:{box}. The hostname displayed in the
+    # Google Cloud UI is of the form {instance}:{region}:{box} which
+    # necessitates the "parse_internal_hostname" function to get the correct
+    # hostname to match.
+    # The "internal_hostname" config variable allows for matching the SSL
+    # against a host that doesn't match the host we are connecting to. In the
+    # case of Google Cloud, we will be connecting to an IP, not the hostname
+    # the SSL certificate expects.
+    # The "ssl.match_hostname" function is patched to check against the
+    # internal hostname rather than the host of the connection. In the event
+    # that the connection fails, the patch is reverted by reassigning the
+    # patched out method to it's original spot.
 
-    connect_timeout_seconds = 300
-    read_timeout_seconds = 3600
+    args = {
+        "user": config["user"],
+        "password": config["password"],
+        "host": config["host"],
+        "port": int(config["port"]),
+        "cursor": pymysql.cursors.SSCursor,
+        "connect_timeout": CONNECT_TIMEOUT_SECONDS,
+        "read_timeout": READ_TIMEOUT_SECONDS,
+    }
 
-    connection_args = {'host': config['host'],
-                       'user': config['user'],
-                       'password': config['password'],
-                       'cursorclass': pymysql.cursors.SSCursor,
-                       'connect_timeout': connect_timeout_seconds,
-                       'read_timeout': read_timeout_seconds}
-    database = config.get('database')
-    if database:
-        connection_args['database'] = database
-    return pymysql.connect(**connection_args)
+    if config.get("database"):
+        args["database"] = config["database"]
+
+    # Attempt self-signed SSL if config vars are present
+    if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
+        try:
+            LOGGER.info("Attempting SSL connection with custom ca")
+            ssl_arg = {
+                "ca": config["ssl_ca"],
+                "cert": config["ssl_cert"],
+                "key": config["ssl_key"],
+            }
+
+            # override match hostname for google cloud
+            if config.get("internal_hostname"):
+                hostname = parse_internal_hostname(config["internal_hostname"])
+                ssl.match_hostname = lambda cert, hostname: match_hostname(cert, hostname)
+
+            return pymysql.connect(ssl=ssl_arg, **args)
+        except: # pylint: disable=bare-except
+            ssl.match_hostname = match_hostname
+            LOGGER.error("SSL connection with custom ca failed.")
+
+    # Attempt SSL if SSL is enabled
+    if config.get("ssl", False):
+        try:
+            LOGGER.info("Attempting SSL connection")
+            conn = pymysql.Connection(defer_connect=True, **args)
+            conn.ssl = True
+            conn.ctx = ssl.create_default_context()
+            conn.ctx.check_hostname = False
+            conn.ctx.verify_mode = ssl.CERT_NONE
+            conn.client_flag |= CLIENT.SSL
+            conn.connect()
+            return conn
+        except: # pylint: disable=bare-except
+            LOGGER.error("SSL connection failed")
+
+    # Attempt unencrypted connection
+    try:
+        LOGGER.info("Attempting connection")
+        return pymysql.connect(**args)
+    except: # pylint: disable=bare-except
+        LOGGER.error("Connection failed")
+
 
 STRING_TYPES = set([
     'char',
