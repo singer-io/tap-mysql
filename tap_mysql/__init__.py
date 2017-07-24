@@ -85,7 +85,7 @@ def open_connection(config):
         "password": config["password"],
         "host": config["host"],
         "port": int(config["port"]),
-        "cursor": pymysql.cursors.SSCursor,
+        "cursorclass": pymysql.cursors.SSCursor,
         "connect_timeout": CONNECT_TIMEOUT_SECONDS,
         "read_timeout": READ_TIMEOUT_SECONDS,
     }
