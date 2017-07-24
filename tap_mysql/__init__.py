@@ -105,8 +105,8 @@ def open_connection(config):
 
             # override match hostname for google cloud
             if config.get("internal_hostname"):
-                hostname = parse_internal_hostname(config["internal_hostname"])
-                ssl.match_hostname = lambda cert, hostname: match_hostname(cert, hostname)
+                parsed_hostname = parse_internal_hostname(config["internal_hostname"])
+                ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
             return pymysql.connect(ssl=ssl_arg, **args)
         except: # pylint: disable=bare-except
