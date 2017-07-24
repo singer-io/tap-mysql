@@ -59,8 +59,7 @@ def parse_internal_hostname(hostname):
         parts = hostname.split(":")
         if len(parts) == 3:
             return parts[0] + ":" + parts[2]
-        else:
-            return parts[0] + ":" + parts[1]
+        return parts[0] + ":" + parts[1]
 
     return hostname
 
