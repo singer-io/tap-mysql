@@ -187,7 +187,7 @@ class StreamState:
             if raw and raw.get('replication_key') == catalog_entry.replication_key:
                 result.replication_key_value = raw['replication_key_value']
 
-        if raw and 'version' in raw:
+        if raw and raw.get('version'):
             result.version = raw['version']
         else:
             result.version = int(time.time() * 1000)
@@ -503,12 +503,16 @@ def sync_table(connection, catalog_entry, state):
                 if rows_saved % 1000 == 0:
                     yield state.make_state_message()
                 row = cursor.fetchone()
-        yield state.make_state_message()
 
-        # If there is no replication key, we're doing "full table"
-        # replication, and we need to activate this version at the end.
+        # If there is no replication key, we're doing "full table" replication,
+        # and we need to activate this version at the end. Also clear the
+        # stream's version from the state so that subsequent invocations will
+        # emit a distinct stream version.
         if not stream_state.replication_key:
             yield activate_version_message
+            stream_state.version = None
+
+        yield state.make_state_message()
 
 # TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, state):
