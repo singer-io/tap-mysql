@@ -52,6 +52,7 @@ READ_TIMEOUT_SECONDS = 3600
 # We need to hold onto this for self-signed SSL
 match_hostname = ssl.match_hostname
 
+pymysql.converters.conversions[pendulum.Pendulum] = pymysql.converters.escape_datetime
 
 def parse_internal_hostname(hostname):
     # special handling for google cloud
@@ -459,13 +460,16 @@ def sync_table(connection, catalog_entry, state):
         if stream_state.replication_key_value is not None:
             key = stream_state.replication_key
             value = stream_state.replication_key_value
+            if catalog_entry.schema.properties[stream_state.replication_key].format == 'date-time':
+                value = pendulum.parse(value)
             select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
             params['replication_key_value'] = value
         elif stream_state.replication_key is not None:
             key = stream_state.replication_key
             select += ' ORDER BY `{}` ASC'.format(key)
 
-        LOGGER.info('Running %s', select)
+        query_string = cursor.mogrify(select, params)
+        LOGGER.info('Running %s', query_string)
         cursor.execute(select, params)
         row = cursor.fetchone()
         rows_saved = 0
