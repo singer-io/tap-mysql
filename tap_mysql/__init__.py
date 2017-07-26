@@ -494,7 +494,7 @@ def sync_table(connection, catalog_entry, state):
                 row_to_persist = ()
                 for elem in row:
                     if isinstance(elem, datetime.datetime):
-                        row_to_persist += (pendulum.instance(elem).to_iso8601_string(),)
+                        row_to_persist += (elem.isoformat(),)
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
