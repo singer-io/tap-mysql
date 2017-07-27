@@ -305,6 +305,19 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertEqual(versions, [1, 1])
 
+    def test_version_cleared_from_state_after_full_table_success(self):
+        state = State.from_dict({
+            'bookmarks': {
+                'tap_mysql_test-full_table': {
+                    'version': 1,
+                }
+            }
+        }, self.catalog)
+
+        list(tap_mysql.generate_messages(self.con, self.catalog, state))
+
+        self.assertEqual(state.bookmarks['tap_mysql_test-full_table'].version, None)
+
 
 class TestStreamVersionIncremental(unittest.TestCase):
 
@@ -341,9 +354,11 @@ class TestStreamVersionIncremental(unittest.TestCase):
 
     def test_with_state(self):
         state = State.from_dict({
-            'streams': [{
-                'tap_stream_id': 'tap_mysql_test-incremental',
-                'version': 1}]
+            'bookmarks': {
+                'tap_mysql_test-incremental': {
+                    'version': 1,
+                }
+            }
         }, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
@@ -352,6 +367,20 @@ class TestStreamVersionIncremental(unittest.TestCase):
             message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
+        self.assertEqual(versions[1], 1)
+
+    def test_version_not_cleared_from_state_after_incremental_success(self):
+        state = State.from_dict({
+            'bookmarks': {
+                'tap_mysql_test-incremental': {
+                    'version': 1,
+                }
+            }
+        }, self.catalog)
+
+        list(tap_mysql.generate_messages(self.con, self.catalog, state))
+
+        self.assertEqual(state.bookmarks['tap_mysql_test-incremental'].version, 1)
 
 class TestViews(unittest.TestCase):
     def setUp(self):
