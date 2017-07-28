@@ -179,6 +179,7 @@ class StreamState:
     replication_key = attr.ib(default=None)
     replication_key_value = attr.ib(default=None)
     version = attr.ib(default=None)
+    first_replication = attr.ib(default=False)
 
     @classmethod
     def from_dict(cls, raw, catalog_entry):
@@ -192,6 +193,9 @@ class StreamState:
             result.version = raw['version']
         else:
             result.version = int(time.time() * 1000)
+
+        if raw is None:
+            result.first_replication = True
 
         return result
 
@@ -481,8 +485,9 @@ def sync_table(connection, catalog_entry, state):
 
         # If there's a replication key, we want to emit an
         # ACTIVATE_VERSION message at the beginning so the records show up
-        # right away.
-        if stream_state.replication_key:
+        # right away. We can also do this if there _isn't_ a replication key
+        # but it's the first time replicating the stream.
+        if stream_state.replication_key or stream_state.first_replication:
             yield activate_version_message
 
         with metrics.record_counter(None) as counter:
@@ -494,7 +499,7 @@ def sync_table(connection, catalog_entry, state):
                 row_to_persist = ()
                 for elem in row:
                     if isinstance(elem, datetime.datetime):
-                        row_to_persist += (elem.isoformat(),)
+                        row_to_persist += (elem.isoformat() + "-00:00",)
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
