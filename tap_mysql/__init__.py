@@ -212,27 +212,27 @@ class State:
 
     Two properties:
 
-      * current_stream - When the tap is in the middle of syncing a
+      * currently_syncing - When the tap is in the middle of syncing a
         stream, this will be set to the tap_stream_id for that stream.
       * bookmarks - Map of tap_stream_ids to StreamState objects.
 
     Use State.from_dict(raw, catalog) to build a StreamState based
     on the raw dict and the singer.catalog.Catalog.
     '''
-    current_stream = attr.ib()
+    currently_syncing = attr.ib()
     bookmarks = attr.ib(default={})
 
     @classmethod
     def from_dict(cls, raw, catalog):
         LOGGER.info('Building State from raw %s and catalog %s', raw, catalog.to_dict())
 
-        current_stream = raw.get('current_stream')
+        currently_syncing = raw.get('currently_syncing')
 
         bms = raw.get('bookmarks', {})
         bookmarks = {c.tap_stream_id: StreamState.from_dict(bms.get(c.tap_stream_id), c)
                      for c in catalog.streams}
 
-        return cls(current_stream, bookmarks)
+        return cls(currently_syncing, bookmarks)
 
     def get_stream_state(self, tap_stream_id):
         if tap_stream_id not in self.bookmarks: # pylint: disable=unsupported-membership-test
@@ -243,8 +243,8 @@ class State:
 
     def make_state_message(self):
         result = {}
-        if self.current_stream:
-            result['current_stream'] = self.current_stream
+        if self.currently_syncing:
+            result['currently_syncing'] = self.currently_syncing
 
         result['bookmarks'] = {s.tap_stream_id: s.as_dict()
                                for s in self.bookmarks.values()} # pylint: disable=no-member
@@ -498,13 +498,13 @@ def sync_table(connection, catalog_entry, state):
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
-                if stream_state.replication_key is not None:
-                    stream_state.update(rec)
                 yield singer.RecordMessage(
                     stream=catalog_entry.stream,
                     record=rec,
                     version=stream_state.version)
                 if rows_saved % 1000 == 0:
+                    if stream_state.replication_key is not None:
+                        stream_state.update(rec)
                     yield state.make_state_message()
                 row = cursor.fetchone()
 
@@ -532,7 +532,7 @@ def resolve_catalog(con, catalog, state):
       * It will only include streams marked as "selected".
       * We will remove any streams and columns that were selected but do
         not actually exist in the database right now.
-      * If the state has a current_stream, we will skip to that stream and
+      * If the state has a currently_syncing, we will skip to that stream and
         drop all streams appearing before it in the catalog.
       * We will add any columns that were not selected but should be
         automatically included. For example, primary key columns and
@@ -546,8 +546,8 @@ def resolve_catalog(con, catalog, state):
 
     # If the state says we were in the middle of processing a stream, skip
     # to that stream.
-    if state.current_stream:
-        streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
+    if state.currently_syncing:
+        streams = dropwhile(lambda s: s.tap_stream_id != state.currently_syncing, streams)
 
     result = Catalog(streams=[])
 
@@ -587,7 +587,7 @@ def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
-        state.current_stream = catalog_entry.tap_stream_id
+        state.currently_syncing = catalog_entry.tap_stream_id
 
         # Emit a STATE message to indicate that we've started this stream
         yield state.make_state_message()
@@ -606,8 +606,8 @@ def generate_messages(con, catalog, state):
                 yield message
 
     # If we get here, we've finished processing all the streams, so clear
-    # current_stream from the state and emit a STATE message.
-    state.current_stream = None
+    # currently_syncing from the state and emit a STATE message.
+    state.currently_syncing = None
     yield state.make_state_message()
 
 

@@ -213,9 +213,9 @@ class TestSchemaMessages(unittest.TestCase):
         finally:
             con.close()
 
-def current_stream_seq(messages):
+def currently_syncing_seq(messages):
     return ''.join(
-        [m.value.get('current_stream', '_')[-1]
+        [m.value.get('currently_syncing', '_')[-1]
          for m in messages
          if isinstance(m, singer.StateMessage)]
     )
@@ -241,15 +241,15 @@ class TestCurrentStream(unittest.TestCase):
     def tearDown(self):
         if self.con:
             self.con.close()
-    def test_emit_current_stream(self):
+    def test_emit_currently_syncing(self):
         state = State.from_dict({}, self.catalog)
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
-        self.assertRegexpMatches(current_stream_seq(messages), '^a+b+_+')
+        self.assertRegexpMatches(currently_syncing_seq(messages), '^a+b+_+')
 
-    def test_start_at_current_stream(self):
-        state = State.from_dict({'current_stream': 'tap_mysql_test-b'}, self.catalog)
+    def test_start_at_currently_syncing(self):
+        state = State.from_dict({'currently_syncing': 'tap_mysql_test-b'}, self.catalog)
         messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
-        self.assertRegexpMatches(current_stream_seq(messages), '^b+_+')
+        self.assertRegexpMatches(currently_syncing_seq(messages), '^b+_+')
 
 def message_types_and_versions(messages):
     message_types = []
