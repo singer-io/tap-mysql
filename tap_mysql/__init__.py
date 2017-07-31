@@ -190,7 +190,7 @@ def build_state(raw_state, catalog):
         stream_version = int(time.time() * 1000)
         raw_stream_version = singer.get_bookmark(raw_state,
                                                  catalog_entry.tap_stream_id,
-                                                'version')
+                                                 'version')
         if raw_stream_version:
             stream_version = raw_stream_version
 
@@ -409,12 +409,14 @@ def sync_table(connection, catalog_entry, STATE):
                                                     catalog_entry.tap_stream_id,
                                                     'replication_key_value')
         replication_key = singer.get_bookmark(STATE,
-                                                catalog_entry.tap_stream_id,
-                                                'replication_key')
+                                              catalog_entry.tap_stream_id,
+                                              'replication_key')
         if replication_key_value is not None:
             if catalog_entry.schema.properties[replication_key].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
-                select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(replication_key, replication_key)
+                select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(
+                    replication_key,
+                    replication_key)
                 params['replication_key_value'] = replication_key_value
         elif replication_key is not None:
             select += ' ORDER BY `{}` ASC'.format(replication_key)
@@ -447,7 +449,7 @@ def sync_table(connection, catalog_entry, STATE):
                 row_to_persist = ()
                 for elem in row:
                     if isinstance(elem, datetime.datetime):
-                        row_to_persist += (elem.isoformat() + "-00:00",)
+                        row_to_persist += (elem.isoformat() + "Z",)
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
@@ -457,11 +459,11 @@ def sync_table(connection, catalog_entry, STATE):
                     version=stream_version)
                 if replication_key is not None:
                     STATE = singer.write_bookmark(STATE,
-                                                catalog_entry.tap_stream_id,
-                                                'replication_key_value',
-                                                rec[replication_key])
+                                                  catalog_entry.tap_stream_id,
+                                                  'replication_key_value',
+                                                  rec[replication_key])
                 if rows_saved % 1000 == 0:
-                    yield singer.StateMessage(value=STATE)
+                    yield singer.StateMessage(value=copy.deepcopy(STATE))
                 row = cursor.fetchone()
 
         # If there is no replication key, we're doing "full table" replication,
@@ -472,7 +474,7 @@ def sync_table(connection, catalog_entry, STATE):
             yield activate_version_message
             STATE = singer.write_bookmark(STATE, catalog_entry.tap_stream_id, 'version', None)
 
-        yield singer.StateMessage(value=STATE)
+        yield singer.StateMessage(value=copy.deepcopy(STATE))
 
 # TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, STATE):
@@ -547,7 +549,7 @@ def generate_messages(con, catalog, STATE):
         STATE = singer.set_currently_syncing(STATE, catalog_entry.tap_stream_id)
 
         # Emit a STATE message to indicate that we've started this stream
-        yield singer.StateMessage(value=STATE)
+        yield singer.StateMessage(value=copy.deepcopy(STATE))
 
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
@@ -565,7 +567,7 @@ def generate_messages(con, catalog, STATE):
     # If we get here, we've finished processing all the streams, so clear
     # currently_syncing from the state and emit a STATE message.
     STATE = singer.set_currently_syncing(STATE, None)
-    yield singer.StateMessage(value=STATE)
+    yield singer.StateMessage(value=copy.deepcopy(STATE))
 
 
 def do_sync(con, catalog, STATE):
