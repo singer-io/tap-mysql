@@ -388,7 +388,7 @@ def escape(string):
     return '`' + string + '`'
 
 
-def sync_table(connection, catalog_entry, STATE):
+def sync_table(connection, catalog_entry, state):
     columns = list(catalog_entry.schema.properties.keys())
     if not columns:
         LOGGER.warning(
@@ -405,10 +405,10 @@ def sync_table(connection, catalog_entry, STATE):
             escaped_db,
             escaped_table)
         params = {}
-        replication_key_value = singer.get_bookmark(STATE,
+        replication_key_value = singer.get_bookmark(state,
                                                     catalog_entry.tap_stream_id,
                                                     'replication_key_value')
-        replication_key = singer.get_bookmark(STATE,
+        replication_key = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
         if replication_key_value is not None:
@@ -427,7 +427,7 @@ def sync_table(connection, catalog_entry, STATE):
         row = cursor.fetchone()
         rows_saved = 0
 
-        stream_version = singer.get_bookmark(STATE, catalog_entry.tap_stream_id, 'version')
+        stream_version = singer.get_bookmark(state, catalog_entry.tap_stream_id, 'version')
 
         activate_version_message = singer.ActivateVersionMessage(
             stream=catalog_entry.stream,
@@ -458,12 +458,12 @@ def sync_table(connection, catalog_entry, STATE):
                     record=rec,
                     version=stream_version)
                 if replication_key is not None:
-                    STATE = singer.write_bookmark(STATE,
+                    state = singer.write_bookmark(state,
                                                   catalog_entry.tap_stream_id,
                                                   'replication_key_value',
                                                   rec[replication_key])
                 if rows_saved % 1000 == 0:
-                    yield singer.StateMessage(value=copy.deepcopy(STATE))
+                    yield singer.StateMessage(value=copy.deepcopy(state))
                 row = cursor.fetchone()
 
         # If there is no replication key, we're doing "full table" replication,
@@ -472,12 +472,12 @@ def sync_table(connection, catalog_entry, STATE):
         # emit a distinct stream version.
         if not replication_key:
             yield activate_version_message
-            STATE = singer.write_bookmark(STATE, catalog_entry.tap_stream_id, 'version', None)
+            state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
 
-        yield singer.StateMessage(value=copy.deepcopy(STATE))
+        yield singer.StateMessage(value=copy.deepcopy(state))
 
 # TODO: Maybe put in a singer-db-utils library.
-def resolve_catalog(con, catalog, STATE):
+def resolve_catalog(con, catalog, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -504,7 +504,7 @@ def resolve_catalog(con, catalog, STATE):
 
     # If the state says we were in the middle of processing a stream, skip
     # to that stream.
-    currently_syncing = singer.get_currently_syncing(STATE)
+    currently_syncing = singer.get_currently_syncing(state)
     if currently_syncing:
         streams = dropwhile(lambda s: s.tap_stream_id != currently_syncing, streams)
 
@@ -542,14 +542,14 @@ def resolve_catalog(con, catalog, STATE):
     return result
 
 
-def generate_messages(con, catalog, STATE):
-    catalog = resolve_catalog(con, catalog, STATE)
+def generate_messages(con, catalog, state):
+    catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
-        STATE = singer.set_currently_syncing(STATE, catalog_entry.tap_stream_id)
+        state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 
-        # Emit a STATE message to indicate that we've started this stream
-        yield singer.StateMessage(value=copy.deepcopy(STATE))
+        # Emit a state message to indicate that we've started this stream
+        yield singer.StateMessage(value=copy.deepcopy(state))
 
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
@@ -561,17 +561,17 @@ def generate_messages(con, catalog, STATE):
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
-            for message in sync_table(con, catalog_entry, STATE):
+            for message in sync_table(con, catalog_entry, state):
                 yield message
 
     # If we get here, we've finished processing all the streams, so clear
-    # currently_syncing from the state and emit a STATE message.
-    STATE = singer.set_currently_syncing(STATE, None)
-    yield singer.StateMessage(value=copy.deepcopy(STATE))
+    # currently_syncing from the state and emit a state message.
+    state = singer.set_currently_syncing(state, None)
+    yield singer.StateMessage(value=copy.deepcopy(state))
 
 
-def do_sync(con, catalog, STATE):
-    for message in generate_messages(con, catalog, STATE):
+def do_sync(con, catalog, state):
+    for message in generate_messages(con, catalog, state):
         singer.write_message(message)
 
 def log_server_params(con):
@@ -603,11 +603,11 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        STATE = build_state(args.state, args.catalog)
-        do_sync(connection, args.catalog, STATE)
+        state = build_state(args.state, args.catalog)
+        do_sync(connection, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
-        STATE = build_state(args.state, catalog)
-        do_sync(connection, catalog, STATE)
+        state = build_state(args.state, catalog)
+        do_sync(connection, catalog, state)
     else:
         LOGGER.info("No properties were selected")
