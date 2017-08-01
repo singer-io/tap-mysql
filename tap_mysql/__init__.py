@@ -157,103 +157,48 @@ FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp'])
 
+def build_state(raw_state, catalog):
+    LOGGER.info('Building State from raw state %s and catalog %s', raw_state, catalog.to_dict())
 
-@attr.s
-class StreamState:
-    '''Represents the state for a single stream.
+    state = {}
 
-    The state for a stream consists of four properties:
+    currently_syncing = singer.get_currently_syncing(raw_state)
+    if currently_syncing:
+        state = singer.set_currently_syncing(state, currently_syncing)
 
-      * tap_stream_id - the identifier for the stream
-      * replication_key (optional, string) - name of the field used for
-        bookmarking
-      * replication_key_value (optional, string or int) - current value of
-        the bookmark
-      * version (int) - the version number of the stream.
-
-    Use StreamState.from_dict(raw, catalog_entry) to build a StreamState
-    based on the raw dict and the singer.catalog.CatalogEntry for the
-    stream.
-    '''
-    tap_stream_id = attr.ib()
-    replication_key = attr.ib(default=None)
-    replication_key_value = attr.ib(default=None)
-    version = attr.ib(default=None)
-    first_replication = attr.ib(default=False)
-
-    @classmethod
-    def from_dict(cls, raw, catalog_entry):
-        result = cls(catalog_entry.tap_stream_id)
+    for catalog_entry in catalog.streams:
         if catalog_entry.replication_key:
-            result.replication_key = catalog_entry.replication_key
-            if raw and raw.get('replication_key') == catalog_entry.replication_key:
-                result.replication_key_value = raw['replication_key_value']
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'replication_key',
+                                          catalog_entry.replication_key)
 
-        if raw and raw.get('version'):
-            result.version = raw['version']
-        else:
-            result.version = int(time.time() * 1000)
+            # Only keep the existing replication_key_value if the
+            # replication_key hasn't changed.
+            raw_replication_key = singer.get_bookmark(raw_state,
+                                                      catalog_entry.tap_stream_id,
+                                                      'replication_key')
+            if raw_replication_key == catalog_entry.replication_key:
+                raw_replication_key_value = singer.get_bookmark(raw_state,
+                                                                catalog_entry.tap_stream_id,
+                                                                'replication_key_value')
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'replication_key_value',
+                                              raw_replication_key_value)
 
-        if raw is None:
-            result.first_replication = True
+        # Persist any existing version, even if it's None
+        if raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id):
+            raw_stream_version = singer.get_bookmark(raw_state,
+                                                    catalog_entry.tap_stream_id,
+                                                    'version')
 
-        return result
+            state = singer.write_bookmark(state,
+                                        catalog_entry.tap_stream_id,
+                                        'version',
+                                        raw_stream_version)
 
-    def update(self, record):
-        self.replication_key_value = record[self.replication_key]
-
-    def as_dict(self):
-        return {
-            "replication_key": self.replication_key,
-            "replication_key_value": self.replication_key_value,
-            "version": self.version,
-        }
-
-
-@attr.s
-class State:
-    '''Represents the full state.
-
-    Two properties:
-
-      * current_stream - When the tap is in the middle of syncing a
-        stream, this will be set to the tap_stream_id for that stream.
-      * bookmarks - Map of tap_stream_ids to StreamState objects.
-
-    Use State.from_dict(raw, catalog) to build a StreamState based
-    on the raw dict and the singer.catalog.Catalog.
-    '''
-    current_stream = attr.ib()
-    bookmarks = attr.ib(default={})
-
-    @classmethod
-    def from_dict(cls, raw, catalog):
-        LOGGER.info('Building State from raw %s and catalog %s', raw, catalog.to_dict())
-
-        current_stream = raw.get('current_stream')
-
-        bms = raw.get('bookmarks', {})
-        bookmarks = {c.tap_stream_id: StreamState.from_dict(bms.get(c.tap_stream_id), c)
-                     for c in catalog.streams}
-
-        return cls(current_stream, bookmarks)
-
-    def get_stream_state(self, tap_stream_id):
-        if tap_stream_id not in self.bookmarks: # pylint: disable=unsupported-membership-test
-            raise Exception('No state for stream {}, states are {}'.format(
-                tap_stream_id, self.bookmarks.keys())) #pylint: disable=no-member
-
-        return self.bookmarks[tap_stream_id] # pylint: disable=unsubscriptable-object
-
-    def make_state_message(self):
-        result = {}
-        if self.current_stream:
-            result['current_stream'] = self.current_stream
-
-        result['bookmarks'] = {s.tap_stream_id: s.as_dict()
-                               for s in self.bookmarks.values()} # pylint: disable=no-member
-
-        return singer.StateMessage(value=result)
+    return state
 
 
 def schema_for_column(c):
@@ -450,8 +395,6 @@ def sync_table(connection, catalog_entry, state):
             catalog_entry.table)
         return
 
-    stream_state = state.get_stream_state(catalog_entry.tap_stream_id)
-
     with connection.cursor() as cursor:
         escaped_db = escape(catalog_entry.database)
         escaped_table = escape(catalog_entry.table)
@@ -461,16 +404,21 @@ def sync_table(connection, catalog_entry, state):
             escaped_db,
             escaped_table)
         params = {}
-        if stream_state.replication_key_value is not None:
-            key = stream_state.replication_key
-            value = stream_state.replication_key_value
-            if catalog_entry.schema.properties[stream_state.replication_key].format == 'date-time':
-                value = pendulum.parse(value)
-            select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(key, key)
-            params['replication_key_value'] = value
-        elif stream_state.replication_key is not None:
-            key = stream_state.replication_key
-            select += ' ORDER BY `{}` ASC'.format(key)
+        replication_key_value = singer.get_bookmark(state,
+                                                    catalog_entry.tap_stream_id,
+                                                    'replication_key_value')
+        replication_key = singer.get_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'replication_key')
+        if replication_key_value is not None:
+            if catalog_entry.schema.properties[replication_key].format == 'date-time':
+                replication_key_value = pendulum.parse(replication_key_value)
+                select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(
+                    replication_key,
+                    replication_key)
+                params['replication_key_value'] = replication_key_value
+        elif replication_key is not None:
+            select += ' ORDER BY `{}` ASC'.format(replication_key)
 
         query_string = cursor.mogrify(select, params)
         LOGGER.info('Running %s', query_string)
@@ -478,16 +426,30 @@ def sync_table(connection, catalog_entry, state):
         row = cursor.fetchone()
         rows_saved = 0
 
+        stream_version = singer.get_bookmark(state, catalog_entry.tap_stream_id, 'version')
+
+        if stream_version is None:
+            stream_version = int(time.time() * 1000)
+
+        empty_bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
+
+        state = singer.write_bookmark(state,
+                                    catalog_entry.tap_stream_id,
+                                    'version',
+                                    stream_version)
+
         activate_version_message = singer.ActivateVersionMessage(
             stream=catalog_entry.stream,
-            version=stream_state.version
+            version=stream_version
         )
 
-        # If there's a replication key, we want to emit an
-        # ACTIVATE_VERSION message at the beginning so the records show up
-        # right away. We can also do this if there _isn't_ a replication key
-        # but it's the first time replicating the stream.
-        if stream_state.replication_key or stream_state.first_replication:
+        # If there's a replication key, we want to emit an ACTIVATE_VERSION
+        # message at the beginning so the records show up right away. If
+        # there's no bookmark at all for this stream, assume it's the very
+        # first replication. That is, clients have never seen rows for this
+        # stream before, so they can immediately acknowledge the present
+        # version.
+        if replication_key or empty_bookmark:
             yield activate_version_message
 
         with metrics.record_counter(None) as counter:
@@ -499,29 +461,32 @@ def sync_table(connection, catalog_entry, state):
                 row_to_persist = ()
                 for elem in row:
                     if isinstance(elem, datetime.datetime):
-                        row_to_persist += (elem.isoformat() + "-00:00",)
+                        row_to_persist += (elem.isoformat() + '+00:00',)
                     else:
                         row_to_persist += (elem,)
                 rec = dict(zip(columns, row_to_persist))
-                if stream_state.replication_key is not None:
-                    stream_state.update(rec)
                 yield singer.RecordMessage(
                     stream=catalog_entry.stream,
                     record=rec,
-                    version=stream_state.version)
+                    version=stream_version)
+                if replication_key is not None:
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'replication_key_value',
+                                                  rec[replication_key])
                 if rows_saved % 1000 == 0:
-                    yield state.make_state_message()
+                    yield singer.StateMessage(value=copy.deepcopy(state))
                 row = cursor.fetchone()
 
         # If there is no replication key, we're doing "full table" replication,
         # and we need to activate this version at the end. Also clear the
         # stream's version from the state so that subsequent invocations will
         # emit a distinct stream version.
-        if not stream_state.replication_key:
+        if not replication_key:
             yield activate_version_message
-            stream_state.version = None
+            state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
 
-        yield state.make_state_message()
+        yield singer.StateMessage(value=copy.deepcopy(state))
 
 # TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, state):
@@ -537,7 +502,7 @@ def resolve_catalog(con, catalog, state):
       * It will only include streams marked as "selected".
       * We will remove any streams and columns that were selected but do
         not actually exist in the database right now.
-      * If the state has a current_stream, we will skip to that stream and
+      * If the state has a currently_syncing, we will skip to that stream and
         drop all streams appearing before it in the catalog.
       * We will add any columns that were not selected but should be
         automatically included. For example, primary key columns and
@@ -551,8 +516,9 @@ def resolve_catalog(con, catalog, state):
 
     # If the state says we were in the middle of processing a stream, skip
     # to that stream.
-    if state.current_stream:
-        streams = dropwhile(lambda s: s.tap_stream_id != state.current_stream, streams)
+    currently_syncing = singer.get_currently_syncing(state)
+    if currently_syncing:
+        streams = dropwhile(lambda s: s.tap_stream_id != currently_syncing, streams)
 
     result = Catalog(streams=[])
 
@@ -592,10 +558,10 @@ def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
-        state.current_stream = catalog_entry.tap_stream_id
+        state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 
-        # Emit a STATE message to indicate that we've started this stream
-        yield state.make_state_message()
+        # Emit a state message to indicate that we've started this stream
+        yield singer.StateMessage(value=copy.deepcopy(state))
 
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
@@ -611,15 +577,14 @@ def generate_messages(con, catalog, state):
                 yield message
 
     # If we get here, we've finished processing all the streams, so clear
-    # current_stream from the state and emit a STATE message.
-    state.current_stream = None
-    yield state.make_state_message()
+    # currently_syncing from the state and emit a state message.
+    state = singer.set_currently_syncing(state, None)
+    yield singer.StateMessage(value=copy.deepcopy(state))
 
 
 def do_sync(con, catalog, state):
     for message in generate_messages(con, catalog, state):
         singer.write_message(message)
-
 
 def log_server_params(con):
     with con.cursor() as cur:
@@ -650,11 +615,11 @@ def main():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        state = State.from_dict(args.state, args.catalog)
+        state = build_state(args.state, args.catalog)
         do_sync(connection, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
-        state = State.from_dict(args.state, catalog)
+        state = build_state(args.state, catalog)
         do_sync(connection, catalog, state)
     else:
         LOGGER.info("No properties were selected")
