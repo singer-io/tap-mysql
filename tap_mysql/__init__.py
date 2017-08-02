@@ -187,17 +187,16 @@ def build_state(raw_state, catalog):
                                               'replication_key_value',
                                               raw_replication_key_value)
 
-        stream_version = int(time.time() * 1000)
-        raw_stream_version = singer.get_bookmark(raw_state,
-                                                 catalog_entry.tap_stream_id,
-                                                 'version')
-        if raw_stream_version:
-            stream_version = raw_stream_version
+        # Persist any existing version, even if it's None
+        if raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id):
+            raw_stream_version = singer.get_bookmark(raw_state,
+                                                     catalog_entry.tap_stream_id,
+                                                     'version')
 
-        state = singer.write_bookmark(state,
-                                      catalog_entry.tap_stream_id,
-                                      'version',
-                                      stream_version)
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'version',
+                                          raw_stream_version)
 
     return state
 
@@ -387,6 +386,27 @@ def escape(string):
                         .format(string))
     return '`' + string + '`'
 
+def get_stream_version(tap_stream_id, state):
+    stream_version = singer.get_bookmark(state, tap_stream_id, 'version')
+
+    if stream_version is None:
+        stream_version = int(time.time() * 1000)
+
+    return stream_version
+
+def row_to_singer_record(stream, version, row, columns):
+    row_to_persist = ()
+    for elem in row:
+        if isinstance(elem, datetime.datetime):
+            row_to_persist += (elem.isoformat() + '+00:00',)
+        else:
+            row_to_persist += (elem,)
+    rec = dict(zip(columns, row_to_persist))
+
+    return singer.RecordMessage(
+        stream=stream,
+        record=rec,
+        version=version)
 
 def sync_table(connection, catalog_entry, state):
     columns = list(catalog_entry.schema.properties.keys())
@@ -411,6 +431,29 @@ def sync_table(connection, catalog_entry, state):
         replication_key = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
+
+        bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
+
+        stream_version = get_stream_version(catalog_entry.tap_stream_id, state)
+        state = singer.write_bookmark(state,
+                                      catalog_entry.tap_stream_id,
+                                      'version',
+                                      stream_version)
+
+        activate_version_message = singer.ActivateVersionMessage(
+            stream=catalog_entry.stream,
+            version=stream_version
+        )
+
+        # If there's a replication key, we want to emit an ACTIVATE_VERSION
+        # message at the beginning so the records show up right away. If
+        # there's no bookmark at all for this stream, assume it's the very
+        # first replication. That is, clients have never seen rows for this
+        # stream before, so they can immediately acknowledge the present
+        # version.
+        if replication_key or bookmark_is_empty:
+            yield activate_version_message
+
         if replication_key_value is not None:
             if catalog_entry.schema.properties[replication_key].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
@@ -427,41 +470,22 @@ def sync_table(connection, catalog_entry, state):
         row = cursor.fetchone()
         rows_saved = 0
 
-        stream_version = singer.get_bookmark(state, catalog_entry.tap_stream_id, 'version')
-
-        activate_version_message = singer.ActivateVersionMessage(
-            stream=catalog_entry.stream,
-            version=stream_version
-        )
-
-        # If there's a replication key, we want to emit an
-        # ACTIVATE_VERSION message at the beginning so the records show up
-        # right away.
-        if replication_key:
-            yield activate_version_message
-
         with metrics.record_counter(None) as counter:
             counter.tags['database'] = catalog_entry.database
             counter.tags['table'] = catalog_entry.table
             while row:
                 counter.increment()
                 rows_saved += 1
-                row_to_persist = ()
-                for elem in row:
-                    if isinstance(elem, datetime.datetime):
-                        row_to_persist += (elem.isoformat() + '+00:00',)
-                    else:
-                        row_to_persist += (elem,)
-                rec = dict(zip(columns, row_to_persist))
-                yield singer.RecordMessage(
-                    stream=catalog_entry.stream,
-                    record=rec,
-                    version=stream_version)
+                record_message = row_to_singer_record(catalog_entry.stream,
+                                                      stream_version,
+                                                      row,
+                                                      columns)
+                yield record_message
                 if replication_key is not None:
                     state = singer.write_bookmark(state,
                                                   catalog_entry.tap_stream_id,
                                                   'replication_key_value',
-                                                  rec[replication_key])
+                                                  record_message.record[replication_key])
                 if rows_saved % 1000 == 0:
                     yield singer.StateMessage(value=copy.deepcopy(state))
                 row = cursor.fetchone()

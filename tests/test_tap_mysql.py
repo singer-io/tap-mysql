@@ -284,12 +284,25 @@ class TestStreamVersionFullTable(unittest.TestCase):
         state = tap_mysql.build_state({}, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
+        self.assertEqual(['ActivateVersionMessage', 'RecordMessage', 'ActivateVersionMessage'], message_types)
+        self.assertTrue(isinstance(versions[0], int))
+        self.assertEqual(versions[0], versions[1])
+
+    def test_with_no_version_in_state(self):
+        state = tap_mysql.build_state({
+            'bookmarks': {
+                'tap_mysql_test-full_table': {
+                    'version': None,
+                }
+            }
+        }, self.catalog)
+        (message_types, versions) = message_types_and_versions(
+            tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
 
-
-    def test_with_state(self):
+    def test_with_version_in_state(self):
         state = tap_mysql.build_state({
             'bookmarks': {
                 'tap_mysql_test-full_table': {
