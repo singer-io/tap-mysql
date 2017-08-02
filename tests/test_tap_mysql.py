@@ -59,7 +59,10 @@ class TestTypeMapping(unittest.TestCase):
             c_bigint BIGINT,
             c_float FLOAT,
             c_double DOUBLE,
-            c_bit BIT(4)
+            c_bit BIT(4),
+            c_date DATE,
+            c_time TIME,
+            c_year YEAR
             )''')
 
             catalog = discover_catalog(con)
@@ -162,9 +165,31 @@ class TestTypeMapping(unittest.TestCase):
                                 sqlDatatype='double'))
 
     def test_bit(self):
-        self.assertEqual(self.schema.properties['c_bit'].inclusion,
-                         'unsupported')
+        self.assertEqual(self.schema.properties['c_bit'],
+                         Schema(['null', 'boolean'],
+                                selected=False,
+                                inclusion='available',
+                                sqlDatatype='bit(4)'))
 
+    def test_date(self):
+        self.assertEqual(self.schema.properties['c_date'],
+                         Schema(['null', 'string'],
+                                format='date-time',
+                                selected=False,
+                                inclusion='available',
+                                sqlDatatype='date'))
+
+    def test_time(self):
+        self.assertEqual(self.schema.properties['c_time'],
+                         Schema(['null', 'string'],
+                                format='date-time',
+                                selected=False,
+                                inclusion='available',
+                                sqlDatatype='time'))
+
+    def test_year(self):
+        self.assertEqual(self.schema.properties['c_year'].inclusion,
+                         'unsupported')
     def test_pk(self):
         self.assertEqual(
             self.schema.properties['c_pk'].inclusion,
