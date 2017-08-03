@@ -155,7 +155,7 @@ BYTES_FOR_INTEGER_TYPE = {
 
 FLOAT_TYPES = set(['float', 'double'])
 
-DATETIME_TYPES = set(['datetime', 'timestamp'])
+DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
 
 def build_state(raw_state, catalog):
     LOGGER.info('Building State from raw state %s and catalog %s', raw_state, catalog.to_dict())
@@ -205,11 +205,10 @@ def schema_for_column(c):
     '''Returns the Schema object for the given Column.'''
     t = c.data_type
 
+    inclusion = 'available'
     # We want to automatically include all primary key columns
     if c.column_key == 'PRI':
         inclusion = 'automatic'
-    else:
-        inclusion = 'available'
 
     result = Schema(inclusion=inclusion, selected=False)
     result.sqlDatatype = c.column_type
@@ -246,6 +245,9 @@ def schema_for_column(c):
     elif t in DATETIME_TYPES:
         result.type = ['null', 'string']
         result.format = 'date-time'
+
+    elif t == 'bit':
+        result.type = ['null', 'boolean']
 
     else:
         result = Schema(None,
@@ -399,6 +401,20 @@ def row_to_singer_record(stream, version, row, columns):
     for elem in row:
         if isinstance(elem, datetime.datetime):
             row_to_persist += (elem.isoformat() + '+00:00',)
+
+        elif isinstance(elem, datetime.date):
+            row_to_persist += (elem.isoformat() + 'T00:00:00+00:00',)
+
+        elif isinstance(elem, datetime.timedelta):
+            epoch = datetime.datetime.utcfromtimestamp(0)
+            timedelta_from_epoch = epoch + elem
+            row_to_persist += (timedelta_from_epoch.isoformat() + '+00:00',)
+
+        elif isinstance(elem, bytes):
+            # for BIT value, treat 0 as False and anything else as True
+            boolean_representation = elem != b'\x00'
+            row_to_persist += (boolean_representation,)
+
         else:
             row_to_persist += (elem,)
     rec = dict(zip(columns, row_to_persist))
