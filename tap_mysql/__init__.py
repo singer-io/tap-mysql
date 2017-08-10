@@ -504,6 +504,7 @@ def sync_table(connection, catalog_entry, state):
                                                   record_message.record[replication_key])
                 if rows_saved % 1000 == 0:
                     yield singer.StateMessage(value=copy.deepcopy(state))
+                LOGGER.info("Fetching row")
                 row = cursor.fetchone()
 
         # If there is no replication key, we're doing "full table" replication,
