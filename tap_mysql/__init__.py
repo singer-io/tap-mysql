@@ -424,7 +424,29 @@ def row_to_singer_record(stream, version, row, columns):
         record=rec,
         version=version)
 
+def get_engine(connection, catalog_entry):
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT engine
+              FROM information_schema.tables
+             WHERE table_schema = %s
+               AND table_name   = %s
+        """, (catalog_entry.database, catalog_entry.table))
+
+        row = cursor.fetchone()
+
+        if row is None:
+            raise Exception("Attempting to sync table {}.{} but it does not exist".format(catalog_entry.database, catalog_entry.table))
+        else:
+            return row[0]
+
 def sync_table(connection, catalog_entry, state):
+    if catalog_entry.is_view:
+        LOGGER.info("Beginning sync for view {}.{}".format(catalog_entry.database, catalog_entry.table))
+    else:
+        engine = get_engine(connection, catalog_entry)
+        LOGGER.info("Beginning sync for {} table {}.{}".format(engine, catalog_entry.database, catalog_entry.table))
+
     columns = list(catalog_entry.schema.properties.keys())
     if not columns:
         LOGGER.warning(
