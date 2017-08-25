@@ -111,29 +111,28 @@ def open_connection(config):
             return pymysql.connect(ssl=ssl_arg, **args)
         except: # pylint: disable=bare-except
             ssl.match_hostname = match_hostname
-            LOGGER.error("SSL connection with custom ca failed.")
+            LOGGER.error("SSL connection attempt with custom ca failed.")
 
-    # Attempt SSL if SSL is enabled
-    if config.get("ssl", False):
-        try:
-            LOGGER.info("Attempting SSL connection")
-            conn = pymysql.Connection(defer_connect=True, **args)
-            conn.ssl = True
-            conn.ctx = ssl.create_default_context()
-            conn.ctx.check_hostname = False
-            conn.ctx.verify_mode = ssl.CERT_NONE
-            conn.client_flag |= CLIENT.SSL
-            conn.connect()
-            return conn
-        except: # pylint: disable=bare-except
-            LOGGER.error("SSL connection failed")
-
-    # Attempt unencrypted connection
+    # Attempt SSL
     try:
-        LOGGER.info("Attempting connection")
+        LOGGER.info("Attempting SSL connection")
+        conn = pymysql.Connection(defer_connect=True, **args)
+        conn.ssl = True
+        conn.ctx = ssl.create_default_context()
+        conn.ctx.check_hostname = False
+        conn.ctx.verify_mode = ssl.CERT_NONE
+        conn.client_flag |= CLIENT.SSL
+        conn.connect()
+        return conn
+    except: # pylint: disable=bare-except
+        LOGGER.info("SSL Connection attempt failed for host %s and user %s", config["host"], config["user"])
+
+    # Fallback to attempting unencrypted connection
+    try:
+        LOGGER.info("Falling back to attempting unencrypted connection")
         return pymysql.connect(**args)
     except: # pylint: disable=bare-except
-        LOGGER.error("Connection failed")
+        raise Exception("Connection attempt failed for host {} and user {}".format(config["host"], config["user"]))
 
 
 STRING_TYPES = set([
