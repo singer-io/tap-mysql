@@ -572,6 +572,7 @@ def resolve_catalog(con, catalog, state):
             database=catalog_entry.database,
             table=catalog_entry.table,
             replication_key=catalog_entry.replication_key,
+            is_view=catalog_entry.is_view,
             schema=Schema(
                 type='object',
                 properties={col: discovered_table.schema.properties[col]
