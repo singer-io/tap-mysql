@@ -125,14 +125,17 @@ def open_connection(config):
         conn.connect()
         return conn
     except: # pylint: disable=bare-except
-        LOGGER.info("SSL Connection attempt failed for host %s and user %s", config["host"], config["user"])
+        LOGGER.info("SSL Connection attempt failed for host %s and user %s",
+                    config["host"],
+                    config["user"])
 
     # Fallback to attempting unencrypted connection
     try:
         LOGGER.info("Falling back to attempting unencrypted connection")
         return pymysql.connect(**args)
     except: # pylint: disable=bare-except
-        raise Exception("Connection attempt failed for host {} and user {}".format(config["host"], config["user"]))
+        raise Exception("Connection attempt failed for host {} and user {}".format(config["host"],
+                                                                                   config["user"]))
 
 
 STRING_TYPES = set([
