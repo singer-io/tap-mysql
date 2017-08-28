@@ -436,16 +436,24 @@ def get_engine(connection, catalog_entry):
         row = cursor.fetchone()
 
         if row is None:
-            raise Exception("Attempting to sync table {}.{} but it does not exist".format(catalog_entry.database, catalog_entry.table))
+            raise Exception("Attempting to sync table {}.{} but it does not exist".format(
+                catalog_entry.database,
+                catalog_entry.table))
         else:
             return row[0]
 
-def sync_table(connection, catalog_entry, state):
+def log_engine(connection, catalog_entry):
     if catalog_entry.is_view:
-        LOGGER.info("Beginning sync for view {}.{}".format(catalog_entry.database, catalog_entry.table))
+        LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database, catalog_entry.table)
     else:
         engine = get_engine(connection, catalog_entry)
-        LOGGER.info("Beginning sync for {} table {}.{}".format(engine, catalog_entry.database, catalog_entry.table))
+        LOGGER.info("Beginning sync for %s table %s.%s",
+                    engine,
+                    catalog_entry.database,
+                    catalog_entry.table)
+
+def sync_table(connection, catalog_entry, state):
+    log_engine(connection, catalog_entry)
 
     columns = list(catalog_entry.schema.properties.keys())
     if not columns:
