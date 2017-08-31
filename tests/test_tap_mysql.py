@@ -8,6 +8,7 @@ import os
 from singer.schema import Schema
 
 DB_NAME='tap_mysql_test'
+FIELDS_SELECTED_BY_DEFAULT=True
 
 def get_test_connection():
 
@@ -72,7 +73,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal(self):
         self.assertEqual(self.schema.properties['c_decimal'],
                          Schema(['null', 'number'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='decimal(10,0)',
                                 inclusion='available',
                                 maximum=10000000000,
@@ -84,7 +85,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal_unsigned(self):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
                          Schema(['null', 'number'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='decimal(5,2) unsigned',
                                 inclusion='available',
                                 maximum=1000,
@@ -95,7 +96,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_decimal_with_defined_scale_and_precision(self):
         self.assertEqual(self.schema.properties['c_decimal_2'],
                          Schema(['null', 'number'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='decimal(11,2)',
                                 inclusion='available',
                                 maximum=1000000000,
@@ -107,7 +108,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
                          Schema(['null', 'integer'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='tinyint(4)',
                                 inclusion='available', minimum=-128,
                                 maximum=127))
@@ -115,7 +116,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
                          Schema(['null', 'integer'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='smallint(6)',
                                 inclusion='available',
                                 minimum=-32768,
@@ -124,7 +125,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
                          Schema(['null', 'integer'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='mediumint(9)',
                                 inclusion='available',
                                 minimum=-8388608,
@@ -134,7 +135,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
                          Schema(['null', 'integer'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='int(11)',
                                 inclusion='available',
                                 minimum=-2147483648,
@@ -143,7 +144,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
                          Schema(['null', 'integer'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='bigint(20)',
                                 inclusion='available',
                                 minimum=-9223372036854775808,
@@ -152,7 +153,7 @@ class TestTypeMapping(unittest.TestCase):
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],
                          Schema(['null', 'number'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 inclusion='available',
                                 sqlDatatype='float'))
 
@@ -160,14 +161,14 @@ class TestTypeMapping(unittest.TestCase):
     def test_double(self):
         self.assertEqual(self.schema.properties['c_double'],
                          Schema(['null', 'number'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 inclusion='available',
                                 sqlDatatype='double'))
 
     def test_bit(self):
         self.assertEqual(self.schema.properties['c_bit'],
                          Schema(['null', 'boolean'],
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 inclusion='available',
                                 sqlDatatype='bit(4)'))
 
@@ -175,7 +176,7 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema.properties['c_date'],
                          Schema(['null', 'string'],
                                 format='date-time',
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 inclusion='available',
                                 sqlDatatype='date'))
 
@@ -183,13 +184,14 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema.properties['c_time'],
                          Schema(['null', 'string'],
                                 format='date-time',
-                                selected=False,
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
                                 inclusion='available',
                                 sqlDatatype='time'))
 
     def test_year(self):
         self.assertEqual(self.schema.properties['c_year'].inclusion,
                          'unsupported')
+
     def test_pk(self):
         self.assertEqual(
             self.schema.properties['c_pk'].inclusion,
@@ -232,7 +234,10 @@ class TestSchemaMessages(unittest.TestCase):
             messages = list(tap_mysql.generate_messages(con, catalog, tap_mysql.build_state({}, catalog)))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-            self.assertEqual(schema_message.schema['properties'].keys(), set(['id', 'a']))
+            expectedKeys = ['id', 'a']
+            if FIELDS_SELECTED_BY_DEFAULT:
+                expectedKeys.append('b')
+            self.assertEqual(schema_message.schema['properties'].keys(), set(expectedKeys))
 
         finally:
             con.close()

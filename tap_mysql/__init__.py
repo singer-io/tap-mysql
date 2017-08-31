@@ -210,7 +210,7 @@ def schema_for_column(c):
     if c.column_key == 'PRI':
         inclusion = 'automatic'
 
-    result = Schema(inclusion=inclusion, selected=False)
+    result = Schema(inclusion=inclusion, selected=True)
     result.sqlDatatype = c.column_type
 
     if t in BYTES_FOR_INTEGER_TYPE:
