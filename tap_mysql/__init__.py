@@ -413,7 +413,29 @@ def row_to_singer_record(stream, version, row, columns):
         record=rec,
         version=version)
 
+def log_engine(connection, catalog_entry):
+    if catalog_entry.is_view:
+        LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database, catalog_entry.table)
+    else:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT engine
+                  FROM information_schema.tables
+                 WHERE table_schema = %s
+                   AND table_name   = %s
+            """, (catalog_entry.database, catalog_entry.table))
+
+            row = cursor.fetchone()
+
+            if row:
+                LOGGER.info("Beginning sync for %s table %s.%s",
+                            row[0],
+                            catalog_entry.database,
+                            catalog_entry.table)
+
 def sync_table(connection, catalog_entry, state):
+    log_engine(connection, catalog_entry)
+
     columns = list(catalog_entry.schema.properties.keys())
     if not columns:
         LOGGER.warning(
@@ -561,6 +583,7 @@ def resolve_catalog(con, catalog, state):
             database=catalog_entry.database,
             table=catalog_entry.table,
             replication_key=catalog_entry.replication_key,
+            is_view=catalog_entry.is_view,
             schema=Schema(
                 type='object',
                 properties={col: discovered_table.schema.properties[col]
