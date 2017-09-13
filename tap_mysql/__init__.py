@@ -95,45 +95,34 @@ def open_connection(config):
 
     # Attempt self-signed SSL if config vars are present
     if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
-        try:
-            LOGGER.info("Attempting SSL connection with custom ca")
-            ssl_arg = {
-                "ca": config["ssl_ca"],
-                "cert": config["ssl_cert"],
-                "key": config["ssl_key"],
-            }
+        LOGGER.info("Using custom certificate authority")
+        ssl_arg = {
+            "ca": config["ssl_ca"],
+            "cert": config["ssl_cert"],
+            "key": config["ssl_key"],
+        }
 
-            # override match hostname for google cloud
-            if config.get("internal_hostname"):
-                parsed_hostname = parse_internal_hostname(config["internal_hostname"])
-                ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
+        # override match hostname for google cloud
+        if config.get("internal_hostname"):
+            parsed_hostname = parse_internal_hostname(config["internal_hostname"])
+            ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
             return pymysql.connect(ssl=ssl_arg, **args)
-        except: # pylint: disable=bare-except
-            ssl.match_hostname = match_hostname
-            LOGGER.error("SSL connection with custom ca failed.")
 
-    # Attempt SSL if SSL is enabled
-    if config.get("ssl", False):
-        try:
-            LOGGER.info("Attempting SSL connection")
-            conn = pymysql.Connection(defer_connect=True, **args)
-            conn.ssl = True
-            conn.ctx = ssl.create_default_context()
-            conn.ctx.check_hostname = False
-            conn.ctx.verify_mode = ssl.CERT_NONE
-            conn.client_flag |= CLIENT.SSL
-            conn.connect()
-            return conn
-        except: # pylint: disable=bare-except
-            LOGGER.error("SSL connection failed")
+    # Attempt SSL
+    if config.get("ssl") == 'true':
+        LOGGER.info("Attempting SSL connection")
+        conn = pymysql.Connection(defer_connect=True, **args)
+        conn.ssl = True
+        conn.ctx = ssl.create_default_context()
+        conn.ctx.check_hostname = False
+        conn.ctx.verify_mode = ssl.CERT_NONE
+        conn.client_flag |= CLIENT.SSL
+        conn.connect()
+        return conn
 
-    # Attempt unencrypted connection
-    try:
-        LOGGER.info("Attempting connection")
-        return pymysql.connect(**args)
-    except: # pylint: disable=bare-except
-        LOGGER.error("Connection failed")
+    LOGGER.info("Attempting unencrypted connection")
+    return pymysql.connect(**args)
 
 
 STRING_TYPES = set([
