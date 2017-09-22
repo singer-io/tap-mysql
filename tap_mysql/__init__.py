@@ -484,10 +484,11 @@ def sync_table(connection, catalog_entry, state):
         if replication_key_value is not None:
             if catalog_entry.schema.properties[replication_key].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
-                select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(
-                    replication_key,
-                    replication_key)
-                params['replication_key_value'] = replication_key_value
+
+            select += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(
+                replication_key,
+                replication_key)
+            params['replication_key_value'] = replication_key_value
         elif replication_key is not None:
             select += ' ORDER BY `{}` ASC'.format(replication_key)
 

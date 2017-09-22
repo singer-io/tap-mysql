@@ -361,7 +361,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertEqual(state['bookmarks']['tap_mysql_test-full_table']['version'], None)
 
 
-class TestStreamVersionIncremental(unittest.TestCase):
+class TestIncrementalReplication(unittest.TestCase):
 
     def setUp(self):
         self.con = get_test_connection()
@@ -369,6 +369,11 @@ class TestStreamVersionIncremental(unittest.TestCase):
             cursor.execute('CREATE TABLE incremental (val int, updated datetime)')
             cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
             cursor.execute('INSERT INTO incremental (val, updated) VALUES (2, \'2017-06-20\')')
+            cursor.execute('INSERT INTO incremental (val, updated) VALUES (3, \'2017-09-22\')')
+            cursor.execute('CREATE TABLE integer_incremental (val int, updated int)')
+            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (1, 1)')
+            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (2, 2)')
+            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (3, 3)')
 
         self.catalog = discover_catalog(self.con)
         for stream in self.catalog.streams:
@@ -388,7 +393,14 @@ class TestStreamVersionIncremental(unittest.TestCase):
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
-            ['ActivateVersionMessage', 'RecordMessage', 'RecordMessage'],
+            ['ActivateVersionMessage',
+             'RecordMessage',
+             'RecordMessage',
+             'RecordMessage',
+             'ActivateVersionMessage',
+             'RecordMessage',
+             'RecordMessage',
+             'RecordMessage'],
             message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
@@ -399,13 +411,24 @@ class TestStreamVersionIncremental(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-incremental': {
                     'version': 1,
+                    'replication_key_value': '2017-06-20',
+                    'replication_key': 'updated'
+                },
+                'tap_mysql_test-integer_incremental': {
+                    'version': 1,
+                    'replication_key_value': 3,
+                    'replication_key': 'updated'
                 }
             }
         }, self.catalog)
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
-            ['ActivateVersionMessage', 'RecordMessage', 'RecordMessage'],
+            ['ActivateVersionMessage',
+             'RecordMessage',
+             'RecordMessage',
+             'ActivateVersionMessage',
+             'RecordMessage'],
             message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
