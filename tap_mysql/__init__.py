@@ -202,7 +202,10 @@ def schema_for_column(c):
     result = Schema(inclusion=inclusion, selected=True)
     result.sqlDatatype = c.column_type
 
-    if t in BYTES_FOR_INTEGER_TYPE:
+    if t == 'bit' or c.column_type == 'tinyint(1)':
+        result.type = ['null', 'boolean']
+
+    elif t in BYTES_FOR_INTEGER_TYPE:
         result.type = ['null', 'integer']
         bits = BYTES_FOR_INTEGER_TYPE[t] * 8
         if 'unsigned' in c.column_type:
@@ -234,9 +237,6 @@ def schema_for_column(c):
     elif t in DATETIME_TYPES:
         result.type = ['null', 'string']
         result.format = 'date-time'
-
-    elif t == 'bit':
-        result.type = ['null', 'boolean']
 
     else:
         result = Schema(None,
@@ -385,9 +385,10 @@ def get_stream_version(tap_stream_id, state):
 
     return stream_version
 
-def row_to_singer_record(stream, version, row, columns):
+def row_to_singer_record(catalog_entry, version, row, columns):
     row_to_persist = ()
-    for elem in row:
+    for idx, elem in enumerate(row):
+        column_type = catalog_entry.schema.properties[columns[idx]].type
         if isinstance(elem, datetime.datetime):
             row_to_persist += (elem.isoformat() + '+00:00',)
 
@@ -404,12 +405,17 @@ def row_to_singer_record(stream, version, row, columns):
             boolean_representation = elem != b'\x00'
             row_to_persist += (boolean_representation,)
 
+        elif 'boolean' in column_type or column_type == 'boolean':
+            # for TINYINT(1) value, treat 0 as False and anything else as True
+            boolean_representation = elem != 0
+            row_to_persist += (boolean_representation,)
+
         else:
             row_to_persist += (elem,)
     rec = dict(zip(columns, row_to_persist))
 
     return singer.RecordMessage(
-        stream=stream,
+        stream=catalog_entry.stream,
         record=rec,
         version=version)
 
@@ -504,7 +510,7 @@ def sync_table(connection, catalog_entry, state):
             while row:
                 counter.increment()
                 rows_saved += 1
-                record_message = row_to_singer_record(catalog_entry.stream,
+                record_message = row_to_singer_record(catalog_entry,
                                                       stream_version,
                                                       row,
                                                       columns)
