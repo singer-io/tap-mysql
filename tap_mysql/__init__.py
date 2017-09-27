@@ -304,8 +304,8 @@ def discover_catalog(connection):
                             selected=False,
                             properties={c.column_name: schema_for_column(c) for c in cols})
             entry = CatalogEntry(
-                database=table_schema,
-                table=table_name,
+                database_name=table_schema,
+                table_name=table_name,
                 stream=table_name,
                 tap_stream_id=table_schema + '-' + table_name,
                 schema=schema)
@@ -415,7 +415,7 @@ def row_to_singer_record(stream, version, row, columns):
 
 def log_engine(connection, catalog_entry):
     if catalog_entry.is_view:
-        LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database, catalog_entry.table)
+        LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database_name, catalog_entry.table_name)
     else:
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -423,15 +423,15 @@ def log_engine(connection, catalog_entry):
                   FROM information_schema.tables
                  WHERE table_schema = %s
                    AND table_name   = %s
-            """, (catalog_entry.database, catalog_entry.table))
+            """, (catalog_entry.database_name, catalog_entry.table_name))
 
             row = cursor.fetchone()
 
             if row:
                 LOGGER.info("Beginning sync for %s table %s.%s",
                             row[0],
-                            catalog_entry.database,
-                            catalog_entry.table)
+                            catalog_entry.database_name,
+                            catalog_entry.table_name)
 
 def sync_table(connection, catalog_entry, state):
     log_engine(connection, catalog_entry)
@@ -444,8 +444,8 @@ def sync_table(connection, catalog_entry, state):
         return
 
     with connection.cursor() as cursor:
-        escaped_db = escape(catalog_entry.database)
-        escaped_table = escape(catalog_entry.table)
+        escaped_db = escape(catalog_entry.database_name)
+        escaped_table = escape(catalog_entry.table_name)
         escaped_columns = [escape(c) for c in columns]
         select = 'SELECT {} FROM {}.{}'.format(
             ','.join(escaped_columns),
@@ -499,8 +499,8 @@ def sync_table(connection, catalog_entry, state):
         rows_saved = 0
 
         with metrics.record_counter(None) as counter:
-            counter.tags['database'] = catalog_entry.database
-            counter.tags['table'] = catalog_entry.table
+            counter.tags['database'] = catalog_entry.database_name
+            counter.tags['table'] = catalog_entry.table_name
             while row:
                 counter.increment()
                 rows_saved += 1
@@ -569,7 +569,7 @@ def resolve_catalog(con, catalog, state):
         discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
-                           catalog_entry.database, catalog_entry.table)
+                           catalog_entry.database_name, catalog_entry.table_name)
             continue
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == catalog_entry.replication_key])
@@ -581,8 +581,8 @@ def resolve_catalog(con, catalog, state):
             tap_stream_id=catalog_entry.tap_stream_id,
             key_properties=catalog_entry.key_properties,
             stream=catalog_entry.stream,
-            database=catalog_entry.database,
-            table=catalog_entry.table,
+            database_name=catalog_entry.database_name,
+            table_name=catalog_entry.table_name,
             replication_key=catalog_entry.replication_key,
             is_view=catalog_entry.is_view,
             schema=Schema(
@@ -612,8 +612,8 @@ def generate_messages(con, catalog, state):
 
         # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
-            timer.tags['database'] = catalog_entry.database
-            timer.tags['table'] = catalog_entry.table
+            timer.tags['database'] = catalog_entry.database_name
+            timer.tags['table'] = catalog_entry.table_name
             for message in sync_table(con, catalog_entry, state):
                 yield message
 
