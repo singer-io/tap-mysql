@@ -676,7 +676,6 @@ def main_impl():
 def main():
     try:
         main_impl()
-    except Exception as e:
-        LOGGER.critical(e)
-        raise e
-
+    except Exception as exc:
+        LOGGER.critical(exc)
+        raise exc
