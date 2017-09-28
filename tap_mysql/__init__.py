@@ -678,5 +678,5 @@ def main():
         main_impl()
     except Exception as e:
         LOGGER.critical(e)
-        raise(e)
+        raise e
 
