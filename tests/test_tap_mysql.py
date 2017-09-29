@@ -55,6 +55,7 @@ class TestTypeMapping(unittest.TestCase):
             c_decimal_2 DECIMAL(11, 2),
             c_tinyint TINYINT,
             c_tinyint_1 TINYINT(1),
+            c_tinyint_1_unsigned TINYINT(1) UNSIGNED,
             c_smallint SMALLINT,
             c_mediumint MEDIUMINT,
             c_int INT,
@@ -120,6 +121,13 @@ class TestTypeMapping(unittest.TestCase):
                          Schema(['null', 'boolean'],
                                 selected=FIELDS_SELECTED_BY_DEFAULT,
                                 sqlDatatype='tinyint(1)',
+                                inclusion='available'))
+
+    def test_tinyint_1_unsigned(self):
+        self.assertEqual(self.schema.properties['c_tinyint_1_unsigned'],
+                         Schema(['null', 'boolean'],
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
+                                sqlDatatype='tinyint(1) unsigned',
                                 inclusion='available'))
 
     def test_smallint(self):

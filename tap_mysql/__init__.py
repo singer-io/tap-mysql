@@ -203,7 +203,7 @@ def schema_for_column(c):
     result = Schema(inclusion=inclusion, selected=True)
     result.sqlDatatype = c.column_type
 
-    if data_type == 'bit' or column_type == 'tinyint(1)':
+    if data_type == 'bit' or column_type.startswith('tinyint(1)'):
         result.type = ['null', 'boolean']
 
     elif data_type in BYTES_FOR_INTEGER_TYPE:
