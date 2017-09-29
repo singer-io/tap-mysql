@@ -60,6 +60,7 @@ class TestTypeMapping(unittest.TestCase):
             c_mediumint MEDIUMINT,
             c_int INT,
             c_bigint BIGINT,
+            c_bigint_unsigned BIGINT(20) UNSIGNED,
             c_float FLOAT,
             c_double DOUBLE,
             c_bit BIT(4),
@@ -166,6 +167,15 @@ class TestTypeMapping(unittest.TestCase):
                                 inclusion='available',
                                 minimum=-9223372036854775808,
                                 maximum=9223372036854775807))
+
+    def test_bigint_unsigned(self):
+        self.assertEqual(self.schema.properties['c_bigint_unsigned'],
+                         Schema(['null', 'integer'],
+                                selected=FIELDS_SELECTED_BY_DEFAULT,
+                                sqlDatatype='bigint(20) unsigned',
+                                inclusion='available',
+                                minimum=0,
+                                maximum=18446744073709551615))
 
     def test_float(self):
         self.assertEqual(self.schema.properties['c_float'],

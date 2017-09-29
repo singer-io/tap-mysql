@@ -211,7 +211,7 @@ def schema_for_column(c):
         bits = BYTES_FOR_INTEGER_TYPE[data_type] * 8
         if 'unsigned' in c.column_type:
             result.minimum = 0
-            result.maximum = 2 ** bits
+            result.maximum = 2 ** bits - 1
         else:
             result.minimum = 0 - 2 ** (bits - 1)
             result.maximum = 2 ** (bits - 1) - 1
