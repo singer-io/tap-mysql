@@ -96,10 +96,25 @@ def open_connection(config):
     # Attempt self-signed SSL if config vars are present
     if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
         LOGGER.info("Using custom certificate authority")
+
+        # The SSL module requires files not data, so we have to write out the
+        # data to files. After testing with `tempfile.NamedTemporaryFile`
+        # objects, I kept getting "File name too long" errors as the temp file
+        # names were > 99 chars long in some cases. Since the box is ephemeral,
+        # we don't need to worry about cleaning them up.
+        with open("ca.pem", "wb") as ca_file:
+            ca_file.write(config["ssl_ca"].encode('utf-8'))
+
+        with open("cert.pem", "wb") as cert_file:
+            cert_file.write(config["ssl_cert"].encode('utf-8'))
+
+        with open("key.pem", "wb") as key_file:
+            key_file.write(config["ssl_key"].encode('utf-8'))
+
         ssl_arg = {
-            "ca": config["ssl_ca"],
-            "cert": config["ssl_cert"],
-            "key": config["ssl_key"],
+            "ca": "./ca.pem",
+            "cert": "./cert.pem",
+            "key": "./key.pem",
         }
 
         # override match hostname for google cloud
