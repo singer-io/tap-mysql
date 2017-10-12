@@ -24,7 +24,7 @@ import singer.schema
 from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
-
+from singer import metadata
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -215,7 +215,7 @@ def schema_for_column(c):
     if c.column_key.lower() == 'pri':
         inclusion = 'automatic'
 
-    result = Schema(inclusion=inclusion, selected=True)
+    result = Schema(inclusion=inclusion)
     result.sqlDatatype = c.column_type
 
     if data_type == 'bit' or column_type.startswith('tinyint(1)'):
@@ -261,6 +261,14 @@ def schema_for_column(c):
                         description='Unsupported column type {}'.format(column_type))
     return result
 
+
+def create_sbd_metadata(table_name, cols):
+    mdata = {}
+    mdata = metadata.write(mdata, (), 'selected-by-default', False)
+    for c in cols:
+        mdata = metadata.write(mdata, ('properties', c.column_name), 'selected-by-default', True)
+
+    return metadata.to_list(mdata)
 
 def discover_catalog(connection):
     '''Returns a Catalog describing the structure of the database.'''
@@ -317,12 +325,13 @@ def discover_catalog(connection):
             cols = list(cols)
             (table_schema, table_name) = k
             schema = Schema(type='object',
-                            selected=False,
                             properties={c.column_name: schema_for_column(c) for c in cols})
+            md = create_sbd_metadata(table_name, cols)
             entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
                 stream=table_name,
+                metadata=md,
                 tap_stream_id=table_schema + '-' + table_name,
                 schema=schema)
             key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
