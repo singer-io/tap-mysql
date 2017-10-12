@@ -262,7 +262,7 @@ def schema_for_column(c):
     return result
 
 
-def create_sbd_metadata(table_name, cols):
+def create_sbd_metadata(cols):
     mdata = {}
     mdata = metadata.write(mdata, (), 'selected-by-default', False)
     for c in cols:
@@ -326,7 +326,7 @@ def discover_catalog(connection):
             (table_schema, table_name) = k
             schema = Schema(type='object',
                             properties={c.column_name: schema_for_column(c) for c in cols})
-            md = create_sbd_metadata(table_name, cols)
+            md = create_sbd_metadata(cols)
             entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
