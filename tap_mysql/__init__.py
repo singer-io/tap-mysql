@@ -703,6 +703,9 @@ def main_impl():
                 'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
                 )
 
+    if warnings:
+        LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
+                     "impact performance:"))
     for w in warnings:
         LOGGER.warning(w)
 
