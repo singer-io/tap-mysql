@@ -268,7 +268,10 @@ def create_sbd_metadata(cols):
     for c in cols:
         schema = schema_for_column(c)
         if schema.inclusion != 'unsupported':
-            mdata = metadata.write(mdata, ('properties', c.column_name), 'selected-by-default', True)
+            mdata = metadata.write(mdata,
+                                   ('properties', c.column_name),
+                                   'selected-by-default',
+                                   True)
 
     return metadata.to_list(mdata)
 
@@ -681,22 +684,28 @@ def log_server_params(con):
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
+    warnings = []
     with connection.cursor() as cur:
         try:
             cur.execute('SET @@session.time_zone="+0:00"')
         except pymysql.err.InternalError as e:
-            code, msg = e.args
-            LOGGER.warn('Could not set session.time_zone. Code: %s. Message: %s', code, msg)
+            warnings.append('Could not set session.time_zone. Error: ({}) {}'.format(*e.args))
+
         try:
             cur.execute('SET @@session.wait_timeout=2700')
         except pymysql.err.InternalError as e:
-            code, msg = e.args
-            LOGGER.warn('Could not set session.wait_timeout. Code: %s. Message: %s', code, msg)
+            warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
+
         try:
             cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
         except pymysql.err.InternalError as e:
-            code, msg = e.args
-            LOGGER.warn('Could not set session.time_zone. Code: %s. Message: %s', code, msg)
+            warnings.append(
+                'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
+                )
+
+    for w in warnings:
+        LOGGER.warning(w)
+
     log_server_params(connection)
     if args.discover:
         do_discover(connection)
