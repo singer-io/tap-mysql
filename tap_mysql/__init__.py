@@ -682,9 +682,21 @@ def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = open_connection(args.config)
     with connection.cursor() as cur:
-        cur.execute('SET @@session.time_zone="+0:00"')
-        cur.execute('SET @@session.wait_timeout=2700')
-        cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
+        try:
+            cur.execute('SET @@session.time_zone="+0:00"')
+        except pymysql.err.InternalError as e:
+            code, msg = e.args
+            LOGGER.warn('Could not set session.time_zone. Code: %s. Message: %s', code, msg)
+        try:
+            cur.execute('SET @@session.wait_timeout=2700')
+        except pymysql.err.InternalError as e:
+            code, msg = e.args
+            LOGGER.warn('Could not set session.wait_timeout. Code: %s. Message: %s', code, msg)
+        try:
+            cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
+        except pymysql.err.InternalError as e:
+            code, msg = e.args
+            LOGGER.warn('Could not set session.time_zone. Code: %s. Message: %s', code, msg)
     log_server_params(connection)
     if args.discover:
         do_discover(connection)
