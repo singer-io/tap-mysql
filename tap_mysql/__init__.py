@@ -266,7 +266,9 @@ def create_sbd_metadata(cols):
     mdata = {}
     mdata = metadata.write(mdata, (), 'selected-by-default', False)
     for c in cols:
-        mdata = metadata.write(mdata, ('properties', c.column_name), 'selected-by-default', True)
+        schema = schema_for_column(c)
+        if schema.inclusion != 'unsupported':
+            mdata = metadata.write(mdata, ('properties', c.column_name), 'selected-by-default', True)
 
     return metadata.to_list(mdata)
 
