@@ -216,7 +216,6 @@ def schema_for_column(c):
         inclusion = 'automatic'
 
     result = Schema(inclusion=inclusion)
-    result.sqlDatatype = c.column_type
 
     if data_type == 'bit' or column_type.startswith('tinyint(1)'):
         result.type = ['null', 'boolean']
@@ -257,21 +256,23 @@ def schema_for_column(c):
     else:
         result = Schema(None,
                         inclusion='unsupported',
-                        sqlDatatype=column_type,
                         description='Unsupported column type {}'.format(column_type))
     return result
 
 
-def create_sbd_metadata(cols):
+def create_column_metadata(cols):
     mdata = {}
     mdata = metadata.write(mdata, (), 'selected-by-default', False)
     for c in cols:
         schema = schema_for_column(c)
-        if schema.inclusion != 'unsupported':
-            mdata = metadata.write(mdata,
-                                   ('properties', c.column_name),
-                                   'selected-by-default',
-                                   True)
+        mdata = metadata.write(mdata,
+                               ('properties', c.column_name),
+                               'selected-by-default',
+                               schema.inclusion != 'unsupported')
+        mdata = metadata.write(mdata,
+                               ('properties', c.column_name),
+                               'sql-datatype',
+                               c.column_type.lower())
 
     return metadata.to_list(mdata)
 
@@ -331,7 +332,7 @@ def discover_catalog(connection):
             (table_schema, table_name) = k
             schema = Schema(type='object',
                             properties={c.column_name: schema_for_column(c) for c in cols})
-            md = create_sbd_metadata(cols)
+            md = create_column_metadata(cols)
             entry = CatalogEntry(
                 database=table_schema,
                 table=table_name,
@@ -681,7 +682,7 @@ def log_server_params(con):
                         'interactive_timeout: %s',
                         *row)
     except pymysql.err.InternalError as e:
-        LOGGER.warning("Encountered error checking server params. Error: ({}) {}".format(*e.args))
+        LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
 
 
 def main_impl():
