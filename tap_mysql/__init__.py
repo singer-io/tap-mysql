@@ -664,21 +664,24 @@ def do_sync(con, catalog, state):
         singer.write_message(message)
 
 def log_server_params(con):
-    with con.cursor() as cur:
-        cur.execute('''
-            SELECT VERSION() as version,
-                   @@session.wait_timeout as wait_timeout,
-                   @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
-                   @@session.max_allowed_packet as max_allowed_packet,
-                   @@session.interactive_timeout as interactive_timeout''')
-        row = cur.fetchone()
-        LOGGER.info('Server Parameters: ' +
-                    'version: %s, ' +
-                    'wait_timeout: %s, ' +
-                    'innodb_lock_wait_timeout: %s, ' +
-                    'max_allowed_packet: %s, ' +
-                    'interactive_timeout: %s',
-                    *row)
+    try:
+        with con.cursor() as cur:
+            cur.execute('''
+                SELECT VERSION() as version,
+                    @@session.wait_timeout as wait_timeout,
+                    @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+                    @@session.max_allowed_packet as max_allowed_packet,
+                    @@session.interactive_timeout as interactive_timeout''')
+            row = cur.fetchone()
+            LOGGER.info('Server Parameters: ' +
+                        'version: %s, ' +
+                        'wait_timeout: %s, ' +
+                        'innodb_lock_wait_timeout: %s, ' +
+                        'max_allowed_packet: %s, ' +
+                        'interactive_timeout: %s',
+                        *row)
+    except pymysql.err.InternalError as e:
+        LOGGER.warning("Encountered error checking server params. Error: ({}) {}".format(*e.args))
 
 
 def main_impl():
