@@ -572,3 +572,22 @@ class TestEscaping(unittest.TestCase):
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
         self.assertEqual(record_message.record, {'b c': 1})
+
+class TestUnsupportedPK(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+        with self.con.cursor() as cursor:
+            cursor.execute('CREATE TABLE bad_pk_tab (bad_pk BINARY, age INT, PRIMARY KEY (bad_pk))') # BINARY not presently supported
+            cursor.execute('CREATE TABLE good_pk_tab (good_pk INT, age INT, PRIMARY KEY (good_pk))')
+            cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES ('a', 100)")
+            cursor.execute("INSERT INTO good_pk_tab (good_pk, age) VALUES (1, 100)")
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+    def runTest(self):
+        catalog = discover_catalog(self.con)
+        self.assertIsNone(catalog.streams[0].key_properties, None)
+        self.assertEqual(catalog.streams[1].key_properties, ['good_pk'])

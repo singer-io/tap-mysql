@@ -340,7 +340,11 @@ def discover_catalog(connection):
                 metadata=md,
                 tap_stream_id=table_schema + '-' + table_name,
                 schema=schema)
-            key_properties = [c.column_name for c in cols if c.column_key == 'PRI']
+            column_is_key_prop = lambda c, s: (
+                c.column_key == 'PRI' and
+                s.properties[c.column_name].inclusion != 'unsupported'
+            )
+            key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
             if key_properties:
                 entry.key_properties = key_properties
 
