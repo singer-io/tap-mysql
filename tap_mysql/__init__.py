@@ -88,6 +88,7 @@ def open_connection(config):
         "cursorclass": pymysql.cursors.SSCursor,
         "connect_timeout": CONNECT_TIMEOUT_SECONDS,
         "read_timeout": READ_TIMEOUT_SECONDS,
+        "charset": "utf8",
     }
 
     if config.get("database"):

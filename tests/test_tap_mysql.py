@@ -15,6 +15,7 @@ def get_test_connection():
     creds['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
     creds['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
     creds['password'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_PASSWORD')
+    creds['charset'] = 'utf8'
     if not creds['password']:
         del creds['password']
 
