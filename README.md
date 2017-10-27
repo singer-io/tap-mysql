@@ -31,7 +31,9 @@ $ tap-mysql --config config.json --properties properties.json --state state.json
 
 ## Usage
 
-This section dives into basic usage of `tap-mysql` by walking through extracting data from a table. It assumes that you can connect to and read from a MySQL database.
+This section dives into basic usage of `tap-mysql` by walking through extracting
+data from a table. It assumes that you can connect to and read from a MySQL
+database.
 
 ### Install
 
@@ -51,7 +53,8 @@ $ python setup.py install
 
 ### Have a source database
 
-There's some important business data siloed in this MySQL database -- we need to extract it. Here's the table we'd like to sync:
+There's some important business data siloed in this MySQL database -- we need to
+extract it. Here's the table we'd like to sync:
 
 ```
 mysql> select * from example_db.animals;
@@ -78,18 +81,21 @@ Create a config file containing the database connection credentials, e.g.:
 }
 ```
 
-These are the same basic configuration properties used by the MySQL command-line client (`mysql`).
+These are the same basic configuration properties used by the MySQL command-line
+client (`mysql`).
 
 ### Discovery mode
 
-The tap can be invoked in discovery mode to find the available tables and columns in the database:
+The tap can be invoked in discovery mode to find the available tables and
+columns in the database:
 
 ```bash
 $ tap-mysql --config config.json --discover
 
 ```
 
-A discovered catalog is output, with a JSON-schema description of each table. A source table directly corresponds to a Singer stream.
+A discovered catalog is output, with a JSON-schema description of each table. A
+source table directly corresponds to a Singer stream.
 
 ```json
 {
@@ -179,15 +185,19 @@ A discovered catalog is output, with a JSON-schema description of each table. A 
 
 ### Field selection
 
-In sync mode, `tap-mysql` consumes a modified version of the catalog where tables and fields have been marked as _selected_.
+In sync mode, `tap-mysql` consumes a modified version of the catalog where
+tables and fields have been marked as _selected_.
 
-Redirect output from the tap's discovery mode to a file so that it can be modified:
+Redirect output from the tap's discovery mode to a file so that it can be
+modified:
 
 ```bash
 $ tap-mysql -c config.json --discover > properties.json
 ```
 
-Then edit `properties.json` to make selections. In this example we want the `animals` table. The stream's schema gets a top-level `selected` flag, as does its columns' schemas:
+Then edit `properties.json` to make selections. In this example we want the
+`animals` table. The stream's schema gets a top-level `selected` flag, as does
+its columns' schemas:
 
 ```json
 {
@@ -233,7 +243,8 @@ With an annotated properties catalog, the tap can be invoked in sync mode:
 $ tap-mysql -c config.json --properties properties.json
 ```
 
-Messages are written to standard output following the Singer specification. The resultant stream of JSON data can be consumed by a Singer target.
+Messages are written to standard output following the Singer specification. The
+resultant stream of JSON data can be consumed by a Singer target.
 
 ```json
 {"value": {"currently_syncing": "example_db-animals"}, "type": "STATE"}
@@ -257,19 +268,26 @@ Messages are written to standard output following the Singer specification. The 
 
 ## Replication methods and state file
 
-In the above example, we invoked `tap-mysql` without providing a _state_ file and without specifying a replication method. The two ways to replicate a given table are `FULL_TABLE` and `INCREMENTAL`. `FULL_TABLE` replication is used by default.
+In the above example, we invoked `tap-mysql` without providing a _state_ file
+and without specifying a replication method. The two ways to replicate a given
+table are `FULL_TABLE` and `INCREMENTAL`. `FULL_TABLE` replication is used by
+default.
 
 ### Full Table
 
-Full-table replication extracts all data from the source table each time the tap is invoked.
+Full-table replication extracts all data from the source table each time the tap
+is invoked.
 
 ### Incremental
 
-Incremental replication works in conjunction with a state file to only extract new records each time the tap is invoked.
+Incremental replication works in conjunction with a state file to only extract
+new records each time the tap is invoked.
 
 #### Example
 
-Let's sync the `animals` table again, but this time using incremental replication. The replication method and replication key are set in the properties file:
+Let's sync the `animals` table again, but this time using incremental
+replication. The replication method and replication key are set in the
+properties file:
 
 ```json
 {
@@ -325,13 +343,17 @@ Let's sync the `animals` table again, but this time using incremental replicatio
 }
 ```
 
-We have no meaningful state so far, so just invoke the tap in sync mode again without a state file:
+We have no meaningful state so far, so just invoke the tap in sync mode again
+without a state file:
 
 ```bash
 $ tap-mysql -c config.json --properties properties.json
 ```
 
-The output messages look very similar to when the table was replicated using the default `FULL_TABLE` replication method. One important difference is that the `STATE` messages now contain a `replication_key_value` -- a bookmark or high-water mark -- for data that was extracted:
+The output messages look very similar to when the table was replicated using the
+default `FULL_TABLE` replication method. One important difference is that the
+`STATE` messages now contain a `replication_key_value` -- a bookmark or
+high-water mark -- for data that was extracted:
 
 ```
 {"type": "STATE", "value": {"bookmarks": {"example_db-animals": {"replication_key": "id"}}, "currently_syncing": "example_db-animals"}}
@@ -351,9 +373,13 @@ The output messages look very similar to when the table was replicated using the
 {"type": "STATE", "value": {"bookmarks": {"example_db-animals": {"version": 1509135204169, "replication_key_value": 3, "replication_key": "id"}}, "currently_syncing": null}}
 ```
 
-Note that the final `STATE` message has a `replication_key_value` of `3`, reflecting that the extraction ended on a record that had an `id` of `3`. Subsequent invocations of the tap will pick up from this bookmark.
+Note that the final `STATE` message has a `replication_key_value` of `3`,
+reflecting that the extraction ended on a record that had an `id` of `3`.
+Subsequent invocations of the tap will pick up from this bookmark.
 
-Normally, the target will echo the last `STATE` after it's finished processing data. For this example, let's manually write a `state.json` file using the `STATE` message:
+Normally, the target will echo the last `STATE` after it's finished processing
+data. For this example, let's manually write a `state.json` file using the
+`STATE` message:
 
 ```json
 {
@@ -378,7 +404,8 @@ mysql> insert into animals (name, likes_getting_petted) values ('dog', true), ('
 $ tap-mysql -c config.json --properties properties.json --state state.json
 ```
 
-This invocation extracts any data since (and including) the `replication_key_value`:
+This invocation extracts any data since (and including) the
+`replication_key_value`:
 
 ```json
 {"type": "STATE", "value": {"bookmarks": {"example_db-animals": {"replication_key": "id", "version": 1509135204169, "replication_key_value": 3}}, "currently_syncing": "example_db-animals"}}
@@ -396,6 +423,7 @@ This invocation extracts any data since (and including) the `replication_key_val
 
 {"type": "STATE", "value": {"bookmarks": {"example_db-animals": {"replication_key": "id", "version": 1509135204169, "replication_key_value": 6}}, "currently_syncing": null}}
 ```
+
 ---
 
 Copyright &copy; 2017 Stitch
