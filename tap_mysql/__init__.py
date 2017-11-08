@@ -147,7 +147,7 @@ def open_connection(config):
         return conn
 
     LOGGER.info("Attempting connection without SSL")
-    conn = pymysql.Connection(defer_connect= True, **args)
+    conn = pymysql.Connection(defer_connect=True, **args)
     connect_with_backoff(conn)
     return conn
 
