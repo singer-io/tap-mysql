@@ -48,7 +48,7 @@ or
 $ git clone git@github.com:singer-io/tap-mysql.git
 $ cd tap-mysql
 $ mkvirtualenv -p python3 tap-mysql
-$ python setup.py install
+$ python install .
 ```
 
 ### Have a source database
