@@ -13,6 +13,7 @@ import copy
 import ssl
 
 import attr
+import backoff
 import pendulum
 
 import pymysql
@@ -64,6 +65,12 @@ def parse_internal_hostname(hostname):
 
     return hostname
 
+@backoff.on_exception(backoff.expo,
+                      (pymysql.err.OperationalError),
+                      max_tries=5,
+                      factor=2)
+def connect_with_backoff(connection):
+    connection.connect()
 
 def open_connection(config):
     # Google Cloud's SSL involves a self-signed certificate. This certificate's
@@ -123,7 +130,9 @@ def open_connection(config):
             parsed_hostname = parse_internal_hostname(config["internal_hostname"])
             ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
-            return pymysql.connect(ssl=ssl_arg, **args)
+            conn = pymysql.Connection(defer_connect=True, ssl=ssl_arg, **args)
+            connect_with_backoff(conn)
+            return conn
 
     # Attempt SSL
     if config.get("ssl") == 'true':
@@ -134,11 +143,13 @@ def open_connection(config):
         conn.ctx.check_hostname = False
         conn.ctx.verify_mode = ssl.CERT_NONE
         conn.client_flag |= CLIENT.SSL
-        conn.connect()
+        connect_with_backoff(conn)
         return conn
 
-    LOGGER.info("Attempting unencrypted connection")
-    return pymysql.connect(**args)
+    LOGGER.info("Attempting connection without SSL")
+    conn = pymysql.Connection(defer_connect= True, **args)
+    connect_with_backoff(conn)
+    return conn
 
 
 STRING_TYPES = set([
