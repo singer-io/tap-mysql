@@ -664,7 +664,7 @@ def generate_messages(con, catalog, state):
         replication_key = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
-        
+
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
