@@ -432,7 +432,7 @@ def get_stream_version(tap_stream_id, state):
 
     return stream_version
 
-def row_to_singer_record(catalog_entry, version, row, columns):
+def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
     row_to_persist = ()
     for idx, elem in enumerate(row):
         property_type = catalog_entry.schema.properties[columns[idx]].type
@@ -464,7 +464,8 @@ def row_to_singer_record(catalog_entry, version, row, columns):
     return singer.RecordMessage(
         stream=catalog_entry.stream,
         record=rec,
-        version=version)
+        version=version,
+        time_extracted=time_extracted)
 
 def log_engine(connection, catalog_entry):
     if catalog_entry.is_view:
@@ -546,6 +547,8 @@ def sync_table(connection, catalog_entry, state):
             select += ' ORDER BY `{}` ASC'.format(replication_key)
 
         query_string = cursor.mogrify(select, params)
+
+        time_extracted = utils.now()
         LOGGER.info('Running %s', query_string)
         cursor.execute(select, params)
         row = cursor.fetchone()
@@ -560,7 +563,8 @@ def sync_table(connection, catalog_entry, state):
                 record_message = row_to_singer_record(catalog_entry,
                                                       stream_version,
                                                       row,
-                                                      columns)
+                                                      columns,
+                                                      time_extracted)
                 yield record_message
                 if replication_key is not None:
                     state = singer.write_bookmark(state,
@@ -657,11 +661,16 @@ def generate_messages(con, catalog, state):
         # Emit a state message to indicate that we've started this stream
         yield singer.StateMessage(value=copy.deepcopy(state))
 
+        replication_key = singer.get_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'replication_key')
+        
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
             schema=catalog_entry.schema.to_dict(),
-            key_properties=catalog_entry.key_properties)
+            key_properties=catalog_entry.key_properties,
+            bookmark_properties=replication_key)
 
         # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
