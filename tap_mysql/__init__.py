@@ -330,6 +330,7 @@ def discover_catalog(connection):
                         'information_schema',
                         'performance_schema',
                         'mysql')
+               ORDER BY table_schema, table_name
         """)
 
         columns = []
