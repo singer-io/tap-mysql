@@ -454,8 +454,12 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
             row_to_persist += (boolean_representation,)
 
         elif 'boolean' in property_type or property_type == 'boolean':
-            # for TINYINT(1) value, treat 0 as False and anything else as True
-            boolean_representation = elem != 0
+            if elem is None:
+                boolean_representation = None
+            elif elem == 0:
+                boolean_representation = False
+            else:
+                boolean_representation = True
             row_to_persist += (boolean_representation,)
 
         else:
