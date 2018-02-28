@@ -26,6 +26,7 @@ from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
 from singer import metadata
+import pdb
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -185,14 +186,15 @@ def build_state(raw_state, catalog):
     for catalog_entry in catalog.streams:
         catalog_metadata = metadata.to_map(catalog_entry.metadata)
 
+
         replication_key = catalog_metadata.get((), {}).get('replication-key')
 
         if replication_key:
+
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key',
-                                          catalog_entry.replication_key)
-
+                                          replication_key)
             # Only keep the existing replication_key_value if the
             # replication_key hasn't changed.
             raw_replication_key = singer.get_bookmark(raw_state,
@@ -217,7 +219,6 @@ def build_state(raw_state, catalog):
                                           catalog_entry.tap_stream_id,
                                           'version',
                                           raw_stream_version)
-
     return state
 
 
@@ -521,7 +522,6 @@ def sync_table(connection, catalog_entry, state):
         replication_key = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
-
         bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
 
         stream_version = get_stream_version(catalog_entry.tap_stream_id, state)
@@ -545,6 +545,7 @@ def sync_table(connection, catalog_entry, state):
             yield activate_version_message
 
         if replication_key_value is not None:
+            pdb.set_trace()
             if catalog_entry.schema.properties[replication_key].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
 
@@ -661,7 +662,6 @@ def resolve_catalog(con, catalog, state):
 
 def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
-
     for catalog_entry in catalog.streams:
         state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 

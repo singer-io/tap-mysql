@@ -9,8 +9,20 @@ from singer.schema import Schema
 
 DB_NAME='tap_mysql_test'
 
-def get_test_connection():
 
+def set_replication_method_and_key(stream, r_method, r_key):
+    new_md = singer.metadata.to_map(stream.metadata)
+    old_md = new_md.get(())
+    if r_method:
+        old_md.update({'replication-method': r_method})
+
+    if r_key:
+        old_md.update({'replication-key': r_key})
+
+    stream.metadata = singer.metadata.to_list(new_md)
+    return stream
+
+def get_test_connection():
     creds = {}
     creds['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
     creds['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
@@ -427,7 +439,7 @@ class TestIncrementalReplication(unittest.TestCase):
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            stream.replication_key = 'updated'
+            set_replication_method_and_key(stream, None, 'updated')
 
     def tearDown(self):
         if self.con:
@@ -467,6 +479,9 @@ class TestIncrementalReplication(unittest.TestCase):
                 }
             }
         }, self.catalog)
+        import pdb
+        pdb.set_trace()
+
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
@@ -592,3 +607,10 @@ class TestUnsupportedPK(unittest.TestCase):
         catalog = discover_catalog(self.con)
         self.assertIsNone(catalog.streams[0].key_properties, None)
         self.assertEqual(catalog.streams[1].key_properties, ['good_pk'])
+
+
+
+if __name__== "__main__":
+    test1 = TestIncrementalReplication()
+    test1.setUp()
+    test1.test_with_state()
