@@ -183,7 +183,11 @@ def build_state(raw_state, catalog):
         state = singer.set_currently_syncing(state, currently_syncing)
 
     for catalog_entry in catalog.streams:
-        if catalog_entry.replication_key:
+        catalog_metadata = metadata.to_map(catalog_entry.metadata)
+
+        replication_key = catalog_metadata.get((), {}).get('replication-key')
+
+        if replication_key:
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key',
@@ -194,7 +198,7 @@ def build_state(raw_state, catalog):
             raw_replication_key = singer.get_bookmark(raw_state,
                                                       catalog_entry.tap_stream_id,
                                                       'replication_key')
-            if raw_replication_key == catalog_entry.replication_key:
+            if raw_replication_key == replication_key:
                 raw_replication_key_value = singer.get_bookmark(raw_state,
                                                                 catalog_entry.tap_stream_id,
                                                                 'replication_key_value')
@@ -590,7 +594,6 @@ def sync_table(connection, catalog_entry, state):
 
         yield singer.StateMessage(value=copy.deepcopy(state))
 
-# TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, state):
     '''Returns the Catalog of data we're going to sync.
 
@@ -645,7 +648,6 @@ def resolve_catalog(con, catalog, state):
             stream=catalog_entry.stream,
             database=catalog_entry.database,
             table=catalog_entry.table,
-            replication_key=catalog_entry.replication_key,
             is_view=catalog_entry.is_view,
             schema=Schema(
                 type='object',
@@ -675,7 +677,8 @@ def generate_messages(con, catalog, state):
             stream=catalog_entry.stream,
             schema=catalog_entry.schema.to_dict(),
             key_properties=catalog_entry.key_properties,
-            bookmark_properties=replication_key)
+            bookmark_properties=replication_key
+        )
 
         # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
