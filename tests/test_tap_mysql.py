@@ -479,8 +479,6 @@ class TestIncrementalReplication(unittest.TestCase):
                 }
             }
         }, self.catalog)
-        import pdb
-        pdb.set_trace()
 
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))

@@ -545,7 +545,6 @@ def sync_table(connection, catalog_entry, state):
             yield activate_version_message
 
         if replication_key_value is not None:
-            pdb.set_trace()
             if catalog_entry.schema.properties[replication_key].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
 
@@ -631,6 +630,8 @@ def resolve_catalog(con, catalog, state):
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
     for catalog_entry in streams:
+        catalog_metadata = metadata.to_map(catalog_entry.metadata)
+        replication_key = catalog_metadata.get((), {}).get('replication-key')
 
         discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
         if not discovered_table:
@@ -638,7 +639,7 @@ def resolve_catalog(con, catalog, state):
                            catalog_entry.database, catalog_entry.table)
             continue
         selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if v.selected or k == catalog_entry.replication_key])
+                        if v.selected or k == replication_key])
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
