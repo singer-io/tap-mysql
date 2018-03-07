@@ -26,7 +26,6 @@ from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
 from singer import metadata
-import pdb
 
 Column = collections.namedtuple('Column', [
     "table_schema",
