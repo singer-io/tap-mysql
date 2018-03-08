@@ -363,7 +363,7 @@ def discover_catalog(connection):
             )
             key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
             if key_properties:
-                entry.key_properties = key_properties
+                md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
 
             if table_schema in table_info and table_name in table_info[table_schema]:
                 entry.row_count = table_info[table_schema][table_name]['row_count']
@@ -645,7 +645,7 @@ def resolve_catalog(con, catalog, state):
 
         result.streams.append(CatalogEntry(
             tap_stream_id=catalog_entry.tap_stream_id,
-            key_properties=catalog_entry.key_properties,
+            metadata=catalog_entry.metadata,
             stream=catalog_entry.stream,
             database=catalog_entry.database,
             table=catalog_entry.table,
@@ -672,11 +672,16 @@ def generate_messages(con, catalog, state):
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
 
+        if catalog_entry.is_view:
+            key_properties = metadata.to_map(catalog_entry.metadata).get((), {}).get('view-key-properties')
+        else:
+            key_properties = metadata.to_map(catalog_entry.metadata).get((), {}).get('table-key-properties')
+
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
             schema=catalog_entry.schema.to_dict(),
-            key_properties=catalog_entry.key_properties,
+            key_properties=key_properties,
             bookmark_properties=replication_key
         )
 
