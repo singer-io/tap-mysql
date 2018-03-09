@@ -4,7 +4,7 @@ import tap_mysql
 import copy
 import singer
 import os
-
+import singer.metadata
 from singer.schema import Schema
 
 DB_NAME='tap_mysql_test'
@@ -538,31 +538,14 @@ class TestViews(unittest.TestCase):
 
     def test_do_not_discover_key_properties_for_view(self):
         catalog = discover_catalog(self.con)
-        discovered_key_properties = {
-            s.table: s.key_properties
-            for s in catalog.streams
-        }
+        primary_keys = {}
+        for c in catalog.streams:
+            primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
+
         self.assertEqual(
-            discovered_key_properties,
+            primary_keys,
             {'a_table': ['id'],
              'a_view': None})
-
-    def test_can_set_key_properties_for_view(self):
-        catalog = discover_catalog(self.con)
-        for stream in catalog.streams:
-            stream.stream = stream.table
-
-            if stream.table == 'a_view':
-                stream.key_properties = ['id']
-                stream.schema.selected = True
-                stream.schema.properties['a'].selected = True
-
-        messages = list(tap_mysql.generate_messages(self.con, catalog, tap_mysql.build_state({}, catalog)))
-        schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
-        self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-        self.assertEqual(schema_message.key_properties, ['id'])
-
-
 
 class TestEscaping(unittest.TestCase):
 
@@ -603,12 +586,17 @@ class TestUnsupportedPK(unittest.TestCase):
 
     def runTest(self):
         catalog = discover_catalog(self.con)
-        self.assertIsNone(catalog.streams[0].key_properties, None)
-        self.assertEqual(catalog.streams[1].key_properties, ['good_pk'])
+
+        primary_keys = {}
+        for c in catalog.streams:
+            primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
+
+        self.assertEqual(primary_keys, {'good_pk_tab': ['good_pk'], 'bad_pk_tab': None})
+
 
 
 
 if __name__== "__main__":
-    test1 = TestIncrementalReplication()
+    test1 = TestUnsupportedPK()
     test1.setUp()
-    test1.test_with_state()
+    test1.runTest()
