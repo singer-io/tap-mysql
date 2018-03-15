@@ -362,8 +362,7 @@ def discover_catalog(connection):
                 s.properties[c.column_name].inclusion != 'unsupported'
             )
             key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
-            if key_properties:
-                md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
+            md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
 
             if table_schema in table_info and table_name in table_info[table_schema]:
                 entry.row_count = table_info[table_schema][table_name]['row_count']
