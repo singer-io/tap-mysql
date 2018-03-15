@@ -183,18 +183,23 @@ def build_state(raw_state, catalog):
         state = singer.set_currently_syncing(state, currently_syncing)
 
     for catalog_entry in catalog.streams:
-        if catalog_entry.replication_key:
+        catalog_metadata = metadata.to_map(catalog_entry.metadata)
+
+
+        replication_key = catalog_metadata.get((), {}).get('replication-key')
+
+        if replication_key:
+
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key',
-                                          catalog_entry.replication_key)
-
+                                          replication_key)
             # Only keep the existing replication_key_value if the
             # replication_key hasn't changed.
             raw_replication_key = singer.get_bookmark(raw_state,
                                                       catalog_entry.tap_stream_id,
                                                       'replication_key')
-            if raw_replication_key == catalog_entry.replication_key:
+            if raw_replication_key == replication_key:
                 raw_replication_key_value = singer.get_bookmark(raw_state,
                                                                 catalog_entry.tap_stream_id,
                                                                 'replication_key_value')
@@ -213,7 +218,6 @@ def build_state(raw_state, catalog):
                                           catalog_entry.tap_stream_id,
                                           'version',
                                           raw_stream_version)
-
     return state
 
 
@@ -359,7 +363,7 @@ def discover_catalog(connection):
             )
             key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
             if key_properties:
-                entry.key_properties = key_properties
+                md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
 
             if table_schema in table_info and table_name in table_info[table_schema]:
                 entry.row_count = table_info[table_schema][table_name]['row_count']
@@ -517,7 +521,6 @@ def sync_table(connection, catalog_entry, state):
         replication_key = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
-
         bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
 
         stream_version = get_stream_version(catalog_entry.tap_stream_id, state)
@@ -590,7 +593,6 @@ def sync_table(connection, catalog_entry, state):
 
         yield singer.StateMessage(value=copy.deepcopy(state))
 
-# TODO: Maybe put in a singer-db-utils library.
 def resolve_catalog(con, catalog, state):
     '''Returns the Catalog of data we're going to sync.
 
@@ -627,6 +629,8 @@ def resolve_catalog(con, catalog, state):
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
     for catalog_entry in streams:
+        catalog_metadata = metadata.to_map(catalog_entry.metadata)
+        replication_key = catalog_metadata.get((), {}).get('replication-key')
 
         discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
         if not discovered_table:
@@ -634,18 +638,17 @@ def resolve_catalog(con, catalog, state):
                            catalog_entry.database, catalog_entry.table)
             continue
         selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if v.selected or k == catalog_entry.replication_key])
+                        if v.selected or k == replication_key])
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
 
         result.streams.append(CatalogEntry(
             tap_stream_id=catalog_entry.tap_stream_id,
-            key_properties=catalog_entry.key_properties,
+            metadata=catalog_entry.metadata,
             stream=catalog_entry.stream,
             database=catalog_entry.database,
             table=catalog_entry.table,
-            replication_key=catalog_entry.replication_key,
             is_view=catalog_entry.is_view,
             schema=Schema(
                 type='object',
@@ -659,7 +662,6 @@ def resolve_catalog(con, catalog, state):
 
 def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
-
     for catalog_entry in catalog.streams:
         state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 
@@ -670,12 +672,18 @@ def generate_messages(con, catalog, state):
                                               catalog_entry.tap_stream_id,
                                               'replication_key')
 
+        if catalog_entry.is_view:
+            key_properties = metadata.to_map(catalog_entry.metadata).get((), {}).get('view-key-properties')
+        else:
+            key_properties = metadata.to_map(catalog_entry.metadata).get((), {}).get('table-key-properties')
+
         # Emit a SCHEMA message before we sync any records
         yield singer.SchemaMessage(
             stream=catalog_entry.stream,
             schema=catalog_entry.schema.to_dict(),
-            key_properties=catalog_entry.key_properties,
-            bookmark_properties=replication_key)
+            key_properties=key_properties,
+            bookmark_properties=replication_key
+        )
 
         # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:

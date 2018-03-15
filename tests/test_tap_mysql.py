@@ -4,13 +4,25 @@ import tap_mysql
 import copy
 import singer
 import os
-
+import singer.metadata
 from singer.schema import Schema
 
 DB_NAME='tap_mysql_test'
 
-def get_test_connection():
 
+def set_replication_method_and_key(stream, r_method, r_key):
+    new_md = singer.metadata.to_map(stream.metadata)
+    old_md = new_md.get(())
+    if r_method:
+        old_md.update({'replication-method': r_method})
+
+    if r_key:
+        old_md.update({'replication-key': r_key})
+
+    stream.metadata = singer.metadata.to_list(new_md)
+    return stream
+
+def get_test_connection():
     creds = {}
     creds['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
     creds['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
@@ -427,7 +439,7 @@ class TestIncrementalReplication(unittest.TestCase):
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            stream.replication_key = 'updated'
+            set_replication_method_and_key(stream, None, 'updated')
 
     def tearDown(self):
         if self.con:
@@ -467,6 +479,7 @@ class TestIncrementalReplication(unittest.TestCase):
                 }
             }
         }, self.catalog)
+
         (message_types, versions) = message_types_and_versions(
             tap_mysql.generate_messages(self.con, self.catalog, state))
         self.assertEqual(
@@ -525,31 +538,14 @@ class TestViews(unittest.TestCase):
 
     def test_do_not_discover_key_properties_for_view(self):
         catalog = discover_catalog(self.con)
-        discovered_key_properties = {
-            s.table: s.key_properties
-            for s in catalog.streams
-        }
+        primary_keys = {}
+        for c in catalog.streams:
+            primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
+
         self.assertEqual(
-            discovered_key_properties,
+            primary_keys,
             {'a_table': ['id'],
              'a_view': None})
-
-    def test_can_set_key_properties_for_view(self):
-        catalog = discover_catalog(self.con)
-        for stream in catalog.streams:
-            stream.stream = stream.table
-
-            if stream.table == 'a_view':
-                stream.key_properties = ['id']
-                stream.schema.selected = True
-                stream.schema.properties['a'].selected = True
-
-        messages = list(tap_mysql.generate_messages(self.con, catalog, tap_mysql.build_state({}, catalog)))
-        schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
-        self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-        self.assertEqual(schema_message.key_properties, ['id'])
-
-
 
 class TestEscaping(unittest.TestCase):
 
@@ -590,5 +586,17 @@ class TestUnsupportedPK(unittest.TestCase):
 
     def runTest(self):
         catalog = discover_catalog(self.con)
-        self.assertIsNone(catalog.streams[0].key_properties, None)
-        self.assertEqual(catalog.streams[1].key_properties, ['good_pk'])
+
+        primary_keys = {}
+        for c in catalog.streams:
+            primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
+
+        self.assertEqual(primary_keys, {'good_pk_tab': ['good_pk'], 'bad_pk_tab': None})
+
+
+
+
+if __name__== "__main__":
+    test1 = TestUnsupportedPK()
+    test1.setUp()
+    test1.runTest()
