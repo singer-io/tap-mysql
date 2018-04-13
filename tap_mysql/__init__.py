@@ -557,8 +557,8 @@ def generate_messages(con, catalog, state):
             elif replication_method == 'FULL_TABLE':
                 for message in full_table.sync_table(con, catalog_entry, state):
                     yield message
-                else:
-                    raise Exception("only INCREMENTAL and FULL TABLE replication methods are supported")
+            else:
+                raise Exception("only INCREMENTAL and FULL TABLE replication methods are supported")
 
     # if we get here, we've finished processing all the streams, so clear
     # currently_syncing from the state and emit a state message.

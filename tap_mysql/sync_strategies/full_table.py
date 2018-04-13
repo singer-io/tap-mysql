@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 
+import copy
 import singer
 
 import tap_mysql.sync_strategies.common as common
 
-def sync_table(connection, catalog, state):
-    columns = common.generate_column_list(catalog)
+LOGGER = singer.get_logger()
+
+def sync_table(connection, catalog_entry, state):
+    columns = common.generate_column_list(catalog_entry)
 
     if not columns:
         LOGGER.warning(
             'There are no columns selected for table %s, skipping it',
-            catalog.table)
+            catalog_entry.table)
         return
 
-    bookmark_is_empty = state.get('bookmarks', {}).get(catalog.tap_stream_id) is None
+    bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
 
 
-    stream_version = common.get_stream_version(catalog.tap_stream_id, state)
+    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
     state = singer.write_bookmark(state,
-                                  catalog.tap_stream_id,
+                                  catalog_entry.tap_stream_id,
                                   'version',
                                   stream_version)
 
     activate_version_message = singer.ActivateVersionMessage(
-        stream=catalog.stream,
+        stream=catalog_entry.stream,
         version=stream_version
     )
 
@@ -34,12 +37,18 @@ def sync_table(connection, catalog, state):
        yield activate_version_message
 
     with connection.cursor() as cursor:
-        select = common.generate_select(catalog, columns)
-        select += ' ORDER BY `{}` ASC'.format(replication_key)
+        select_sql = common.generate_select_sql(catalog_entry, columns)
 
         params = {}
 
-        common.sync_query(cursor, catalog, state, select, params)
+        for message in common.sync_query(cursor,
+                                         catalog_entry,
+                                         state,
+                                         select_sql,
+                                         columns,
+                                         stream_version,
+                                         params):
+            yield message
 
     # Clear the stream's version from the state so that subsequent invocations will
     # emit a distinct stream version.

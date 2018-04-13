@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
 import copy
+import datetime
 import singer
 import time
 
+import singer.metrics as metrics
 from singer import utils
+
+LOGGER = singer.get_logger()
 
 def escape(string):
     if '`' in string:
@@ -22,21 +26,21 @@ def get_stream_version(tap_stream_id, state):
     return stream_version
 
 
-def generate_column_list(catalog):
-    return list(catalog.schema.properties.keys())
+def generate_column_list(catalog_entry):
+    return list(catalog_entry.schema.properties.keys())
 
 
-def generate_select(catalog, columns):
-    escaped_db = escape(catalog.database)
-    escaped_table = escape(catalog.table)
+def generate_select_sql(catalog_entry, columns):
+    escaped_db = escape(catalog_entry.database)
+    escaped_table = escape(catalog_entry.table)
     escaped_columns = [escape(c) for c in columns]
 
-    select = 'SELECT {} FROM {}.{}'.format(
+    select_sql = 'SELECT {} FROM {}.{}'.format(
         ','.join(escaped_columns),
         escaped_db,
         escaped_table)
 
-    return select
+    return select_sql
 
 
 def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
@@ -79,17 +83,17 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
         time_extracted=time_extracted)
 
 
-def sync_query(cursor, catalog, state, select_sql, params):
+def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params):
     replication_key = singer.get_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key')
 
-    query_string = cursor.mogrify(select, params)
+    query_string = cursor.mogrify(select_sql, params)
 
     time_extracted = utils.now()
 
     LOGGER.info('Running %s', query_string)
-    cursor.execute(select, params)
+    cursor.execute(select_sql, params)
 
     row = cursor.fetchone()
     rows_saved = 0
