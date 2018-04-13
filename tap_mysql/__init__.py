@@ -70,6 +70,7 @@ def parse_internal_hostname(hostname):
 def connect_with_backoff(connection):
     connection.connect()
 
+
 def open_connection(config):
     # Google Cloud's SSL involves a self-signed certificate. This certificate's
     # hostname matches the form {instance}:{box}. The hostname displayed in the
@@ -290,6 +291,7 @@ def create_column_metadata(cols):
 
     return metadata.to_list(mdata)
 
+
 def discover_catalog(connection):
     '''Returns a Catalog describing the structure of the database.'''
 
@@ -420,45 +422,6 @@ def desired_columns(selected, table_schema):
     return selected.intersection(available).union(automatic)
 
 
-def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
-    row_to_persist = ()
-    for idx, elem in enumerate(row):
-        property_type = catalog_entry.schema.properties[columns[idx]].type
-        if isinstance(elem, datetime.datetime):
-            row_to_persist += (elem.isoformat() + '+00:00',)
-
-        elif isinstance(elem, datetime.date):
-            row_to_persist += (elem.isoformat() + 'T00:00:00+00:00',)
-
-        elif isinstance(elem, datetime.timedelta):
-            epoch = datetime.datetime.utcfromtimestamp(0)
-            timedelta_from_epoch = epoch + elem
-            row_to_persist += (timedelta_from_epoch.isoformat() + '+00:00',)
-
-        elif isinstance(elem, bytes):
-            # for BIT value, treat 0 as False and anything else as True
-            boolean_representation = elem != b'\x00'
-            row_to_persist += (boolean_representation,)
-
-        elif 'boolean' in property_type or property_type == 'boolean':
-            if elem is None:
-                boolean_representation = None
-            elif elem == 0:
-                boolean_representation = False
-            else:
-                boolean_representation = True
-            row_to_persist += (boolean_representation,)
-
-        else:
-            row_to_persist += (elem,)
-    rec = dict(zip(columns, row_to_persist))
-
-    return singer.RecordMessage(
-        stream=catalog_entry.stream,
-        record=rec,
-        version=version,
-        time_extracted=time_extracted)
-
 def log_engine(connection, catalog_entry):
     if catalog_entry.is_view:
         LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database, catalog_entry.table)
@@ -479,10 +442,12 @@ def log_engine(connection, catalog_entry):
                             catalog_entry.database,
                             catalog_entry.table)
 
+
 def is_selected(stream):
     table_md = metadata.to_map(stream.metadata).get((), {})
 
     return table_md.get('selected') or stream.is_selected()
+
 
 def resolve_catalog(con, catalog, state):
     '''Returns the Catalog of data we're going to sync.
@@ -550,6 +515,7 @@ def resolve_catalog(con, catalog, state):
 
     return result
 
+
 def generate_messages(con, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
@@ -579,14 +545,22 @@ def generate_messages(con, catalog, state):
             bookmark_properties=replication_key
         )
 
-        # Emit a RECORD message for each record in the result set
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
-            for message in sync_table(con, catalog_entry, state):
-                yield message
 
-    # If we get here, we've finished processing all the streams, so clear
+            log_engine(con, catalog_entry)
+
+            if replication_method == 'INCREMENTAL':
+                for message in incremental.sync_table(con, catalog_entry, state):
+                    yield message
+            elif replication_method == 'FULL_TABLE':
+                for message in full_table.sync_table(con, catalog_entry, state):
+                    yield message
+                else:
+                    raise Exception("only INCREMENTAL and FULL TABLE replication methods are supported")
+
+    # if we get here, we've finished processing all the streams, so clear
     # currently_syncing from the state and emit a state message.
     state = singer.set_currently_syncing(state, None)
     yield singer.StateMessage(value=copy.deepcopy(state))
@@ -595,6 +569,7 @@ def generate_messages(con, catalog, state):
 def do_sync(con, catalog, state):
     for message in generate_messages(con, catalog, state):
         singer.write_message(message)
+
 
 def log_server_params(con):
     try:
