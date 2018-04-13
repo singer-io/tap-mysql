@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-arguments,duplicate-code
 
 import copy
 import datetime
