@@ -14,8 +14,7 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-.eggs/
-lib/
+.eggs/ lib/
 lib64/
 parts/
 sdist/
@@ -102,3 +101,5 @@ ENV/
 
 # Emacs
 .tramp_history
+
+config.json
