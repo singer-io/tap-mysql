@@ -22,6 +22,7 @@ from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
 from singer import metadata
 
+import tap_mysql.sync_strategies.binlog as binlog
 import tap_mysql.sync_strategies.full_table as full_table
 import tap_mysql.sync_strategies.incremental as incremental
 
@@ -554,11 +555,14 @@ def generate_messages(con, catalog, state):
             if replication_method == 'INCREMENTAL':
                 for message in incremental.sync_table(con, catalog_entry, state):
                     yield message
+            elif replication_method == 'LOG_BASED':
+                for message in binlog.sync_table(con, catalog_entry, state):
+                    yield message
             elif replication_method == 'FULL_TABLE':
                 for message in full_table.sync_table(con, catalog_entry, state):
                     yield message
             else:
-                raise Exception("only INCREMENTAL and FULL TABLE replication methods are supported")
+                raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
     # if we get here, we've finished processing all the streams, so clear
     # currently_syncing from the state and emit a state message.
