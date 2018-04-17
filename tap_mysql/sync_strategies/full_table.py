@@ -51,9 +51,4 @@ def sync_table(connection, catalog_entry, state):
                                          params):
             yield message
 
-    # Clear the stream's version from the state so that subsequent invocations will
-    # emit a distinct stream version.
-    state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
-
     yield activate_version_message
-    yield singer.StateMessage(value=copy.deepcopy(state))

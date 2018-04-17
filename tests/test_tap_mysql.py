@@ -5,6 +5,9 @@ import copy
 import singer
 import os
 import singer.metadata
+
+import tap_mysql.sync_strategies.binlog as binlog
+
 from singer.schema import Schema
 
 DB_NAME='tap_mysql_test'
@@ -513,6 +516,50 @@ class TestIncrementalReplication(unittest.TestCase):
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['version'], 1)
 
+class TestBinlogReplication(unittest.TestCase):
+
+    def setUp(self):
+        self.con = get_test_connection()
+
+        with self.con.cursor() as cursor:
+            cursor.execute('CREATE TABLE binlog (id int, updated datetime)')
+            cursor.execute('INSERT INTO binlog (id, updated) VALUES (1, \'2017-06-01\')')
+            cursor.execute('INSERT INTO binlog (id, updated) VALUES (2, \'2017-06-20\')')
+            cursor.execute('INSERT INTO binlog (id, updated) VALUES (3, \'2017-09-22\')')
+
+        self.catalog = discover_catalog(self.con)
+
+        for stream in self.catalog.streams:
+            stream.schema.selected = True
+            stream.key_properties = []
+            stream.schema.properties['id'].selected = True
+            stream.schema.properties['updated'].selected = True
+            stream.stream = stream.table
+            set_replication_method_and_key(stream, 'LOG_BASED', None)
+
+    def tearDown(self):
+        if self.con:
+            self.con.close()
+
+    def test_initial_full_table(self):
+        state = tap_mysql.build_state({}, self.catalog)
+        expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.con)
+
+        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
+        activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
+
+        self.assertEqual(len(record_messages), 3)
+        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog', 'log_file'),
+                         expected_log_file)
+
+        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog', 'log_pos'),
+                         expected_log_pos)
+
+        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog', 'version'),
+                         activate_version_message.version)
+
+
 class TestViews(unittest.TestCase):
     def setUp(self):
         self.con = get_test_connection()
@@ -611,6 +658,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestEscaping()
+    test1 = TestBinlogReplication()
     test1.setUp()
-    test1.runTest()
+    test1.test_initial_full_table()

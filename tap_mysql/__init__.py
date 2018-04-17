@@ -553,14 +553,49 @@ def generate_messages(con, catalog, state):
             log_engine(con, catalog_entry)
 
             if replication_method == 'INCREMENTAL':
+                LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
+
                 for message in incremental.sync_table(con, catalog_entry, state):
                     yield message
             elif replication_method == 'LOG_BASED':
-                for message in binlog.sync_table(con, catalog_entry, state):
-                    yield message
+                LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
+                log_file = singer.get_bookmark(state,
+                                               catalog_entry.tap_stream_id,
+                                               'log_file')
+
+                log_pos = singer.get_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'log_pos')
+
+                if log_file and log_pos:
+                    for message in binlog.sync_table(con, catalog_entry, state):
+                        yield message
+                else:
+                    LOGGER.info("Performing initial full table sync")
+                    log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'log_file',
+                                                  log_file)
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'log_pos',
+                                                  log_pos)
+
+                    for message in full_table.sync_table(con, catalog_entry, state):
+                        yield message
             elif replication_method == 'FULL_TABLE':
+                LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
+
                 for message in full_table.sync_table(con, catalog_entry, state):
                     yield message
+
+                # Clear the stream's version from the state so that subsequent invocations will
+                # emit a distinct stream version.
+                state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
+                yield singer.StateMessage(value=copy.deepcopy(state))
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
