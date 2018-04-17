@@ -6,9 +6,7 @@ import collections
 import itertools
 from itertools import dropwhile
 import copy
-import ssl
 
-import backoff
 import pendulum
 
 import pymysql
@@ -17,6 +15,9 @@ from pymysql.constants import CLIENT
 import singer
 import singer.metrics as metrics
 import singer.schema
+
+from tap_mysql.connection import MySQLConnection
+
 from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
@@ -46,12 +47,6 @@ REQUIRED_CONFIG_KEYS = [
 
 LOGGER = singer.get_logger()
 
-CONNECT_TIMEOUT_SECONDS = 300
-READ_TIMEOUT_SECONDS = 3600
-
-# We need to hold onto this for self-signed SSL
-match_hostname = ssl.match_hostname
-
 pymysql.converters.conversions[pendulum.Pendulum] = pymysql.converters.escape_datetime
 
 def parse_internal_hostname(hostname):
@@ -63,93 +58,6 @@ def parse_internal_hostname(hostname):
         return parts[0] + ":" + parts[1]
 
     return hostname
-
-@backoff.on_exception(backoff.expo,
-                      (pymysql.err.OperationalError),
-                      max_tries=5,
-                      factor=2)
-def connect_with_backoff(connection):
-    connection.connect()
-
-
-def open_connection(config):
-    # Google Cloud's SSL involves a self-signed certificate. This certificate's
-    # hostname matches the form {instance}:{box}. The hostname displayed in the
-    # Google Cloud UI is of the form {instance}:{region}:{box} which
-    # necessitates the "parse_internal_hostname" function to get the correct
-    # hostname to match.
-    # The "internal_hostname" config variable allows for matching the SSL
-    # against a host that doesn't match the host we are connecting to. In the
-    # case of Google Cloud, we will be connecting to an IP, not the hostname
-    # the SSL certificate expects.
-    # The "ssl.match_hostname" function is patched to check against the
-    # internal hostname rather than the host of the connection. In the event
-    # that the connection fails, the patch is reverted by reassigning the
-    # patched out method to it's original spot.
-
-    args = {
-        "user": config["user"],
-        "password": config["password"],
-        "host": config["host"],
-        "port": int(config["port"]),
-        "cursorclass": pymysql.cursors.SSCursor,
-        "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-        "read_timeout": READ_TIMEOUT_SECONDS,
-        "charset": "utf8",
-    }
-
-    if config.get("database"):
-        args["database"] = config["database"]
-
-    # Attempt self-signed SSL if config vars are present
-    if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
-        LOGGER.info("Using custom certificate authority")
-
-        # The SSL module requires files not data, so we have to write out the
-        # data to files. After testing with `tempfile.NamedTemporaryFile`
-        # objects, I kept getting "File name too long" errors as the temp file
-        # names were > 99 chars long in some cases. Since the box is ephemeral,
-        # we don't need to worry about cleaning them up.
-        with open("ca.pem", "wb") as ca_file:
-            ca_file.write(config["ssl_ca"].encode('utf-8'))
-
-        with open("cert.pem", "wb") as cert_file:
-            cert_file.write(config["ssl_cert"].encode('utf-8'))
-
-        with open("key.pem", "wb") as key_file:
-            key_file.write(config["ssl_key"].encode('utf-8'))
-
-        ssl_arg = {
-            "ca": "./ca.pem",
-            "cert": "./cert.pem",
-            "key": "./key.pem",
-        }
-
-        # override match hostname for google cloud
-        if config.get("internal_hostname"):
-            parsed_hostname = parse_internal_hostname(config["internal_hostname"])
-            ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
-
-            conn = pymysql.Connection(defer_connect=True, ssl=ssl_arg, **args)
-            connect_with_backoff(conn)
-            return conn
-
-    # Attempt SSL
-    if config.get("ssl") == 'true':
-        LOGGER.info("Attempting SSL connection")
-        conn = pymysql.Connection(defer_connect=True, **args)
-        conn.ssl = True
-        conn.ctx = ssl.create_default_context()
-        conn.ctx.check_hostname = False
-        conn.ctx.verify_mode = ssl.CERT_NONE
-        conn.client_flag |= CLIENT.SSL
-        connect_with_backoff(conn)
-        return conn
-
-    LOGGER.info("Attempting connection without SSL")
-    conn = pymysql.Connection(defer_connect=True, **args)
-    connect_with_backoff(conn)
-    return conn
 
 
 STRING_TYPES = set([
@@ -633,7 +541,7 @@ def log_server_params(con):
 
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-    connection = open_connection(args.config)
+    connection = MySQLConnection(args.config)
     warnings = []
     with connection.cursor() as cur:
         try:
