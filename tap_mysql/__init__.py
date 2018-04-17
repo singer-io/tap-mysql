@@ -116,16 +116,34 @@ def build_state(raw_state, catalog):
                                               'replication_key_value',
                                               raw_replication_key_value)
 
-        # Persist any existing version, even if it's None
         if raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id):
             raw_stream_version = singer.get_bookmark(raw_state,
                                                      catalog_entry.tap_stream_id,
                                                      'version')
 
+            raw_log_file = singer.get_bookmark(raw_state,
+                                               catalog_entry.tap_stream_id,
+                                               'log_file')
+
+            raw_log_pos = singer.get_bookmark(raw_state,
+                                              catalog_entry.tap_stream_id,
+                                              'log_pos')
+
+            # Persist any existing version, even if it's None
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'version',
                                           raw_stream_version)
+
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'log_file',
+                                          raw_log_file)
+
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'log_pos',
+                                          raw_log_pos)
     return state
 
 
@@ -425,7 +443,7 @@ def resolve_catalog(con, catalog, state):
     return result
 
 
-def generate_messages(con, catalog, state):
+def generate_messages(con, config, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
@@ -476,7 +494,7 @@ def generate_messages(con, catalog, state):
                                               'log_pos')
 
                 if log_file and log_pos:
-                    for message in binlog.sync_table(con, catalog_entry, state):
+                    for message in binlog.sync_table(con, config, catalog_entry, state):
                         yield message
                 else:
                     LOGGER.info("Performing initial full table sync")
@@ -513,8 +531,8 @@ def generate_messages(con, catalog, state):
     yield singer.StateMessage(value=copy.deepcopy(state))
 
 
-def do_sync(con, catalog, state):
-    for message in generate_messages(con, catalog, state):
+def do_sync(con, config, catalog, state):
+    for message in generate_messages(con, config, catalog, state):
         singer.write_message(message)
 
 
@@ -576,7 +594,7 @@ def main_impl():
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
         state = build_state(args.state, catalog)
-        do_sync(connection, catalog, state)
+        do_sync(connection, args.config, catalog, state)
     else:
         LOGGER.info("No properties were selected")
 

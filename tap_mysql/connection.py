@@ -98,3 +98,11 @@ class MySQLConnection(pymysql.connections.Connection):
         super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
         connect_with_backoff(self)
+
+
+def make_connection_wrapper(config):
+    class ConnectionWrapper(MySQLConnection):
+        def __init__(self, *args, **kwargs):
+            super().__init__(config)
+
+    return ConnectionWrapper
