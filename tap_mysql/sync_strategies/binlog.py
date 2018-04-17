@@ -33,6 +33,15 @@ def verify_binlog_config(connection, catalog_entry):
            Unable to replicate with binlog for stream({}) because binlog_row_image is not set to 'FULL': {}.
            """.format(catalog_entry.stream, binlog_row_image))
 
+def fetch_current_log_file_and_pos(connection):
+    cur = connection.cursor()
+    cur.execute("SHOW MASTER STATUS")
+    result = cur.fetchone()
+
+    current_log_file, current_log_pos = result[0:2]
+
+    return current_log_file, current_log_pos
+
 def sync_table(connection, catalog_entry, state):
     verify_binlog_config(connection, catalog_entry)
 
@@ -43,3 +52,22 @@ def sync_table(connection, catalog_entry, state):
             'There are no columns selected for table %s, skipping it',
             catalog_entry.table)
         return
+
+    log_file = singer.get_bookmark(state,
+                                   catalog_entry.tap_stream_id,
+                                   'log_file')
+
+    log_pos = singer.get_bookmark(state,
+                                  catalog_entry.tap_stream_id,
+                                  'log_pos')
+
+    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+    state = singer.write_bookmark(state,
+                                  catalog_entry.tap_stream_id,
+                                  'version',
+                                  stream_version)
+
+    yield singer.ActivateVersionMessage(
+        stream=catalog_entry.stream,
+        version=stream_version
+    )
