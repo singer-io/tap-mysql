@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # pylint: disable=duplicate-code
 
+import copy
+
 from datetime import datetime
 
 import pytz
@@ -24,7 +26,10 @@ from pymysqlreplication.row_event import (
     )
 
 LOGGER = singer.get_logger()
+
 SDC_DELETED_AT = "_sdc_deleted_at"
+
+UPDATE_BOOKMARK_PERIOD = 1000
 
 def add_automatic_properties(catalog_entry):
     catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
@@ -125,6 +130,8 @@ def sync_table(connection, config, catalog_entry, state):
 
     LOGGER.info("Starting binlog replication with log_file=%s, log_pos=%s", log_file, log_pos)
 
+    rows_saved = 0
+
     for binlog_event in reader:
         if isinstance(binlog_event, RotateEvent):
             #TODO
@@ -137,6 +144,13 @@ def sync_table(connection, config, catalog_entry, state):
                                                row['values'],
                                                columns,
                                                time_extracted)
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'log_file',
+                                                  log_file)
+                    rows_saved = rows_saved + 1
+
+
             elif isinstance(binlog_event, UpdateRowsEvent):
                 for row in binlog_event.rows:
                     yield row_to_singer_record(catalog_entry,
@@ -144,6 +158,7 @@ def sync_table(connection, config, catalog_entry, state):
                                                row['after_values'],
                                                columns,
                                                time_extracted)
+                    rows_saved = rows_saved + 1
             elif isinstance(binlog_event, DeleteRowsEvent):
                 for row in binlog_event.rows:
                     event_ts = datetime.utcfromtimestamp(binlog_event.timestamp).replace(tzinfo=pytz.UTC)
@@ -156,3 +171,19 @@ def sync_table(connection, config, catalog_entry, state):
                                                vals,
                                                columns,
                                                time_extracted)
+                    rows_saved = rows_saved + 1
+
+            state = singer.write_bookmark(state,
+                                      catalog_entry.tap_stream_id,
+                                      'log_file',
+                                      reader.log_file)
+
+            state = singer.write_bookmark(state,
+                                      catalog_entry.tap_stream_id,
+                                      'log_pos',
+                                      reader.log_pos)
+
+            if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
+                yield singer.StateMessage(value=copy.deepcopy(state))
+
+        yield singer.StateMessage(value=copy.deepcopy(state))
