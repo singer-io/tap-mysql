@@ -78,6 +78,7 @@ def row_to_singer_record(catalog_entry, version, vals, columns, time_extracted):
 
     return common.row_to_singer_record(catalog_entry, version, rec_vals, rec_cols, time_extracted)
 
+
 def sync_table(connection, config, catalog_entry, state):
     verify_binlog_config(connection, catalog_entry)
 
@@ -133,6 +134,12 @@ def sync_table(connection, config, catalog_entry, state):
     rows_saved = 0
 
     for binlog_event in reader:
+        if reader.log_file == log_file and reader.log_pos == log_pos:
+            LOGGER.info("Skipping event for log_file=%s and log_pos=%s as it was processed last sync",
+                        reader.log_file,
+                        reader.log_pos)
+            continue
+
         if isinstance(binlog_event, RotateEvent):
             #TODO
             print("ROTATE_EVENT")
