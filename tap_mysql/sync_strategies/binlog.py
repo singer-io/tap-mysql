@@ -141,8 +141,15 @@ def sync_table(connection, config, catalog_entry, state):
             continue
 
         if isinstance(binlog_event, RotateEvent):
-            #TODO
-            print("ROTATE_EVENT")
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'log_file',
+                                          binlog_event.next_binlog)
+            state = singer.write_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'log_pos',
+                                          binlog_event.position)
+
         elif (binlog_event.schema, binlog_event.table) == table_path:
             if isinstance(binlog_event, WriteRowsEvent):
                 for row in binlog_event.rows:
