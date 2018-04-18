@@ -42,7 +42,7 @@ class MySQLConnection(pymysql.connections.Connection):
             "password": config["password"],
             "host": config["host"],
             "port": int(config["port"]),
-            "cursorclass": pymysql.cursors.SSCursor,
+            "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
             "read_timeout": READ_TIMEOUT_SECONDS,
             "charset": "utf8",
@@ -82,27 +82,24 @@ class MySQLConnection(pymysql.connections.Connection):
                 parsed_hostname = parse_internal_hostname(config["internal_hostname"])
                 ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
-
         # Attempt SSL
         if config.get("ssl") == 'true':
             LOGGER.info("Attempting SSL connection")
-            self = super().__init__(defer_connect=True, **args)
             self.ssl = True
             self.ctx = ssl.create_default_context()
             self.ctx.check_hostname = False
             self.ctx.verify_mode = ssl.CERT_NONE
             self.client_flag |= CLIENT.SSL
-            self.connect()
-            return
 
         super().__init__(defer_connect=True, ssl=ssl_arg, **args)
-
-        connect_with_backoff(self)
 
 
 def make_connection_wrapper(config):
     class ConnectionWrapper(MySQLConnection):
         def __init__(self, *args, **kwargs):
+            config["cursorclass"] = kwargs.get('cursorclass')
             super().__init__(config)
+
+            connect_with_backoff(self)
 
     return ConnectionWrapper
