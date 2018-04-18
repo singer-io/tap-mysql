@@ -18,40 +18,40 @@ from pymysqlreplication.row_event import (
 
 LOGGER = singer.get_logger()
 
-
 def verify_binlog_config(connection, catalog_entry):
-    cur = connection.cursor()
-    cur.execute("""
+    with connection.cursor() as cur:
+        cur.execute("""
         SELECT  @@binlog_format    AS binlog_format,
-                @@binlog_row_image AS binlog_row_image;
+        @@binlog_row_image AS binlog_row_nimage;
         """)
-    binlog_format, binlog_row_image = cur.fetchone()
 
-    if binlog_format != 'ROW':
-        raise Exception("""
-           Unable to replicate with binlog for stream({}) because binlog_format is not set to 'ROW': {}.
-           """.format(catalog_entry.stream, binlog_format))
+        binlog_format, binlog_row_image = cur.fetchone()
 
-    if binlog_row_image != 'FULL':
-        raise Exception("""
-           Unable to replicate with binlog for stream({}) because binlog_row_image is not set to 'FULL': {}.
-           """.format(catalog_entry.stream, binlog_row_image))
+        if binlog_format != 'ROW':
+            raise Exception("""
+            Unable to replicate with binlog for stream({}) because binlog_format is not set to 'ROW': {}.
+            """.format(catalog_entry.stream, binlog_format))
+
+        if binlog_row_image != 'FULL':
+            raise Exception("""
+            Unable to replicate with binlog for stream({}) because binlog_row_image is not set to 'FULL': {}.
+            """.format(catalog_entry.stream, binlog_row_image))
 
 def fetch_current_log_file_and_pos(connection):
-    cur = connection.cursor()
-    cur.execute("SHOW MASTER STATUS")
-    result = cur.fetchone()
+    with connection.cursor() as cur:
+        cur.execute("SHOW MASTER STATUS")
 
-    current_log_file, current_log_pos = result[0:2]
+        result = cur.fetchone()
+        current_log_file, current_log_pos = result[0:2]
 
-    return current_log_file, current_log_pos
+        return current_log_file, current_log_pos
 
 def fetch_server_id(connection):
-    cur = connection.cursor()
-    cur.execute("SELECT @@server_id")
-    server_id = cur.fetchone()[0]
+    with connection.cursor() as cur:
+        cur.execute("SELECT @@server_id")
+        server_id = cur.fetchone()[0]
 
-    return server_id
+        return server_id
 
 def sync_table(connection, config, catalog_entry, state):
     verify_binlog_config(connection, catalog_entry)
@@ -95,5 +95,9 @@ def sync_table(connection, config, catalog_entry, state):
         log_file=log_file,
         log_pos=log_pos,
         resume_stream=True,
-        only_events=[DeleteRowsEvent, WriteRowsEvent, UpdateRowsEvent],
-        pymysql_wrapper=connection_wrapper)
+        only_events=[RotateEvent, DeleteRowsEvent, WriteRowsEvent, UpdateRowsEvent],
+        pymysql_wrapper=connection_wrapper
+    )
+
+    for binlog_event in reader:
+        binlog_event.dump()

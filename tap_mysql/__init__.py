@@ -16,7 +16,7 @@ import singer
 import singer.metrics as metrics
 import singer.schema
 
-from tap_mysql.connection import MySQLConnection
+from tap_mysql.connection import connect_with_backoff, MySQLConnection
 
 from singer import utils
 from singer.schema import Schema
@@ -560,6 +560,9 @@ def log_server_params(con):
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
     connection = MySQLConnection(args.config)
+
+    connect_with_backoff(connection)
+
     warnings = []
     with connection.cursor() as cur:
         try:
@@ -590,7 +593,7 @@ def main_impl():
         do_discover(connection)
     elif args.catalog:
         state = build_state(args.state, args.catalog)
-        do_sync(connection, args.catalog, state)
+        do_sync(connection, args.config, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
         state = build_state(args.state, catalog)
