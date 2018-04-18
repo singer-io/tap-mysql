@@ -25,7 +25,7 @@ def set_replication_method_and_key(stream, r_method, r_key):
     stream.metadata = singer.metadata.to_list(new_md)
     return stream
 
-def get_test_connection():
+def get_creds():
     creds = {}
     creds['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
     creds['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
@@ -33,6 +33,12 @@ def get_test_connection():
     creds['charset'] = 'utf8'
     if not creds['password']:
         del creds['password']
+
+    return creds
+
+
+def get_test_connection():
+    creds = get_creds()
 
     con = pymysql.connect(**creds)
 
@@ -297,7 +303,7 @@ class TestSchemaMessages(unittest.TestCase):
             catalog.streams[0].schema.properties['a'].selected = True
             set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
 
-            messages = list(tap_mysql.generate_messages(con, catalog, tap_mysql.build_state({}, catalog)))
+            messages = list(tap_mysql.generate_messages(con, {}, catalog, tap_mysql.build_state({}, catalog)))
             schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), messages))[0]
             self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
             expectedKeys = ['id', 'a']
@@ -338,12 +344,12 @@ class TestCurrentStream(unittest.TestCase):
             self.con.close()
     def test_emit_currently_syncing(self):
         state = tap_mysql.build_state({}, self.catalog)
-        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        messages = list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertRegexpMatches(currently_syncing_seq(messages), '^a+b+_+')
 
     def test_start_at_currently_syncing(self):
         state = tap_mysql.build_state({'currently_syncing': 'tap_mysql_test-b'}, self.catalog)
-        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        messages = list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertRegexpMatches(currently_syncing_seq(messages), '^b+_+')
 
 def message_types_and_versions(messages):
@@ -380,7 +386,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
     def test_with_no_state(self):
         state = tap_mysql.build_state({}, self.catalog)
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertEqual(['ActivateVersionMessage', 'RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
@@ -394,7 +400,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             }
         }, self.catalog)
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
@@ -409,7 +415,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
         }, self.catalog)
 
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
 
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertEqual(versions, [1, 1])
@@ -423,7 +429,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             }
         }, self.catalog)
 
-        list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-full_table']['version'], None)
 
@@ -459,7 +465,7 @@ class TestIncrementalReplication(unittest.TestCase):
     def test_with_no_state(self):
         state = tap_mysql.build_state({}, self.catalog)
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertEqual(
             ['ActivateVersionMessage',
              'RecordMessage',
@@ -491,7 +497,7 @@ class TestIncrementalReplication(unittest.TestCase):
         }, self.catalog)
 
         (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, self.catalog, state))
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         self.assertEqual(
             ['ActivateVersionMessage',
              'RecordMessage',
@@ -512,7 +518,7 @@ class TestIncrementalReplication(unittest.TestCase):
             }
         }, self.catalog)
 
-        list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['version'], 1)
 
@@ -545,7 +551,7 @@ class TestBinlogReplication(unittest.TestCase):
         state = tap_mysql.build_state({}, self.catalog)
         expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.con)
 
-        messages = list(tap_mysql.generate_messages(self.con, self.catalog, state))
+        messages = list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
         activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
 
@@ -624,7 +630,7 @@ class TestEscaping(unittest.TestCase):
             self.con.close()
 
     def runTest(self):
-        messages = tap_mysql.generate_messages(self.con, self.catalog, tap_mysql.build_state({}, self.catalog))
+        messages = tap_mysql.generate_messages(self.con, {}, self.catalog, tap_mysql.build_state({}, self.catalog))
 
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))[0]
 
