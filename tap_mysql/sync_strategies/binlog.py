@@ -126,8 +126,12 @@ def sync_table(connection, config, catalog_entry, state):
                                                columns,
                                                time_extracted)
             elif isinstance(binlog_event, UpdateRowsEvent):
-                #TODO
-                print("UPDATE_ROWS_EVENT")
+                for row in binlog_event.rows:
+                    yield row_to_singer_record(catalog_entry,
+                                               stream_version,
+                                               row['after_values'],
+                                               columns,
+                                               time_extracted)
             elif isinstance(binlog_event, DeleteRowsEvent):
                 #TODO
                 print("DELETE_ROWS_EVENT")
