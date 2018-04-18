@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # pylint: disable=duplicate-code
 
+from datetime import datetime
+
+import pytz
+
 import singer
 from singer import metadata
 from singer import utils
@@ -141,5 +145,14 @@ def sync_table(connection, config, catalog_entry, state):
                                                columns,
                                                time_extracted)
             elif isinstance(binlog_event, DeleteRowsEvent):
-                #TODO
-                print("DELETE_ROWS_EVENT")
+                for row in binlog_event.rows:
+                    event_ts = datetime.utcfromtimestamp(binlog_event.timestamp).replace(tzinfo=pytz.UTC)
+
+                    vals = row['values']
+                    vals[SDC_DELETED_AT] = event_ts
+
+                    yield row_to_singer_record(catalog_entry,
+                                               stream_version,
+                                               vals,
+                                               columns,
+                                               time_extracted)
