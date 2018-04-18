@@ -496,11 +496,11 @@ def generate_messages(con, config, catalog, state):
                                               catalog_entry.tap_stream_id,
                                               'log_pos')
 
-                binlog.add_automatic_properties(catalog_entry)
-
                 yield generate_schema_message(catalog_entry, key_properties, [])
 
                 if log_file and log_pos:
+                    binlog.add_automatic_properties(catalog_entry)
+
                     for message in binlog.sync_table(con, config, catalog_entry, state):
                         yield message
                 else:
