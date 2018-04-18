@@ -4,6 +4,7 @@
 import singer
 from singer import metadata
 from singer import utils
+from singer.schema import Schema
 
 import pymysql.connections
 import tap_mysql.sync_strategies.common as common
@@ -19,6 +20,13 @@ from pymysqlreplication.row_event import (
     )
 
 LOGGER = singer.get_logger()
+SDC_DELETED_AT = "_sdc_deleted_at"
+
+def add_automatic_properties(catalog_entry):
+    catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
+        type=["null", "string"],
+        format="date-time"
+        )
 
 def verify_binlog_config(connection, catalog_entry):
     with connection.cursor() as cur:

@@ -443,6 +443,14 @@ def resolve_catalog(con, catalog, state):
 
     return result
 
+def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
+    return singer.SchemaMessage(
+        stream=catalog_entry.stream,
+        schema=catalog_entry.schema.to_dict(),
+        key_properties=key_properties,
+        bookmark_properties=bookmark_properties
+    )
+
 
 def generate_messages(con, config, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
@@ -465,14 +473,6 @@ def generate_messages(con, config, catalog, state):
         else:
             key_properties = md_map.get((), {}).get('table-key-properties')
 
-        # Emit a SCHEMA message before we sync any records
-        yield singer.SchemaMessage(
-            stream=catalog_entry.stream,
-            schema=catalog_entry.schema.to_dict(),
-            key_properties=key_properties,
-            bookmark_properties=replication_key
-        )
-
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
@@ -481,6 +481,8 @@ def generate_messages(con, config, catalog, state):
 
             if replication_method == 'INCREMENTAL':
                 LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
+
+                yield generate_schema_message(catalog_entry, key_properties, [replication_key])
 
                 for message in incremental.sync_table(con, catalog_entry, state):
                     yield message
@@ -493,6 +495,10 @@ def generate_messages(con, config, catalog, state):
                 log_pos = singer.get_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'log_pos')
+
+                binlog.add_automatic_properties(catalog_entry)
+
+                yield generate_schema_message(catalog_entry, key_properties, [])
 
                 if log_file and log_pos:
                     for message in binlog.sync_table(con, config, catalog_entry, state):
@@ -515,6 +521,8 @@ def generate_messages(con, config, catalog, state):
                         yield message
             elif replication_method == 'FULL_TABLE':
                 LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
+
+                yield generate_schema_message(catalog_entry, key_properties, [])
 
                 for message in full_table.sync_table(con, catalog_entry, state):
                     yield message
