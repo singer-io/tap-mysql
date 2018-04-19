@@ -37,6 +37,7 @@ def add_automatic_properties(catalog_entry):
         format="date-time"
         )
 
+
 def verify_binlog_config(connection, catalog_entry):
     with connection.cursor() as cur:
         cur.execute("""
@@ -55,6 +56,26 @@ def verify_binlog_config(connection, catalog_entry):
             raise Exception("""
             Unable to replicate with binlog for stream({}) because binlog_row_image is not set to 'FULL': {}.
             """.format(catalog_entry.stream, binlog_row_image))
+
+
+def verify_log_file_exists(connection, catalog_entry, log_file, log_pos):
+    with connection.cursor() as cur:
+        cur.execute("SHOW BINARY LOGS")
+        result = cur.fetchall()
+
+        existing_log_file = list(filter(lambda log: log[0] == log_file, result))
+
+        if not existing_log_file:
+            raise Exception("""
+            Unable to replicate with binlog for stream({}) because log file {} does not exist.
+            """.format(catalog_entry.stream, log_file))
+
+        current_log_pos = existing_log_file[0][1]
+
+        if log_pos > current_log_pos:
+            raise Exception("""
+            Unable to replicate with binlog for stream({}) because requested position ({}) for log file {} is greater than current position ({}).
+            """.format(catalog_entry.stream, log_pos, log_file, current_log_pos))
 
 def fetch_current_log_file_and_pos(connection):
     with connection.cursor() as cur:
@@ -80,7 +101,16 @@ def row_to_singer_record(catalog_entry, version, vals, columns, time_extracted):
 
 
 def sync_table(connection, config, catalog_entry, state):
+    log_file = singer.get_bookmark(state,
+                                   catalog_entry.tap_stream_id,
+                                   'log_file')
+
+    log_pos = singer.get_bookmark(state,
+                                  catalog_entry.tap_stream_id,
+                                  'log_pos')
+
     verify_binlog_config(connection, catalog_entry)
+    verify_log_file_exists(connection, catalog_entry, log_file, log_pos)
 
     columns = common.generate_column_list(catalog_entry)
 
@@ -102,16 +132,6 @@ def sync_table(connection, config, catalog_entry, state):
     )
 
     server_id = fetch_server_id(connection)
-
-
-    log_file = singer.get_bookmark(state,
-                                   catalog_entry.tap_stream_id,
-                                   'log_file')
-
-    log_pos = singer.get_bookmark(state,
-                                  catalog_entry.tap_stream_id,
-                                  'log_pos')
-
 
     connection_wrapper = make_connection_wrapper(config)
 
