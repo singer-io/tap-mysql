@@ -498,8 +498,7 @@ def generate_messages(con, config, catalog, state):
                     yield message
             elif replication_method == 'LOG_BASED':
                 if catalog_entry.is_view:
-                    LOGGER.warning('binlog replication is NOT supported for views. Skipping stream %s', catalog_entry.stream)
-                    continue
+                    raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(catalog_entry.stream))
 
                 LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
                 log_file = singer.get_bookmark(state,

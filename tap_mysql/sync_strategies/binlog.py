@@ -48,14 +48,12 @@ def verify_binlog_config(connection, catalog_entry):
         binlog_format, binlog_row_image = cur.fetchone()
 
         if binlog_format != 'ROW':
-            raise Exception("""
-            Unable to replicate with binlog for stream({}) because binlog_format is not set to 'ROW': {}.
-            """.format(catalog_entry.stream, binlog_format))
+            raise Exception("Unable to replicate stream({}) with binlog because binlog_format is not set to 'ROW': {}."
+                            .format(catalog_entry.stream, binlog_format))
 
         if binlog_row_image != 'FULL':
-            raise Exception("""
-            Unable to replicate with binlog for stream({}) because binlog_row_image is not set to 'FULL': {}.
-            """.format(catalog_entry.stream, binlog_row_image))
+            raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image is not set to 'FULL': {}."
+                            .format(catalog_entry.stream, binlog_row_image))
 
 
 def verify_log_file_exists(connection, catalog_entry, log_file, log_pos):
@@ -66,16 +64,14 @@ def verify_log_file_exists(connection, catalog_entry, log_file, log_pos):
         existing_log_file = list(filter(lambda log: log[0] == log_file, result))
 
         if not existing_log_file:
-            raise Exception("""
-            Unable to replicate with binlog for stream({}) because log file {} does not exist.
-            """.format(catalog_entry.stream, log_file))
+            raise Exception("Unable to replicate stream({}) with binlog because log file {} does not exist."
+                            .format(catalog_entry.stream, log_file))
 
         current_log_pos = existing_log_file[0][1]
 
         if log_pos > current_log_pos:
-            raise Exception("""
-            Unable to replicate with binlog for stream({}) because requested position ({}) for log file {} is greater than current position ({}).
-            """.format(catalog_entry.stream, log_pos, log_file, current_log_pos))
+            raise Exception("Unable to replicate stream({}) with binlog because requested position ({}) for log file {} is greater than current position ({})."
+                            .format(catalog_entry.stream, log_pos, log_file, current_log_pos))
 
 def fetch_current_log_file_and_pos(connection):
     with connection.cursor() as cur:
