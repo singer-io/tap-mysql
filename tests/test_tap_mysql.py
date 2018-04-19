@@ -605,7 +605,7 @@ class TestViews(unittest.TestCase):
         self.assertEqual(
             primary_keys,
             {'a_table': ['id'],
-             'a_view': []})
+             'a_view': None})
 
 class TestEscaping(unittest.TestCase):
 
