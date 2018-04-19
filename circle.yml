@@ -8,4 +8,4 @@ dependencies:
 
 test:
   post:
-    - pylint tap_mysql -d C,W,unexpected-keyword-arg
+    - pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code

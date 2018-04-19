@@ -102,3 +102,5 @@ ENV/
 
 # Emacs
 .tramp_history
+
+config.json

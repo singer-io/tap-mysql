@@ -20,5 +20,5 @@ setup(name='tap-mysql',
           [console_scripts]
           tap-mysql=tap_mysql:main
       ''',
-      packages=['tap_mysql'],
+      packages=['tap_mysql', 'tap_mysql.sync_strategies'],
 )
