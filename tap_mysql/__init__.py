@@ -460,6 +460,12 @@ def generate_messages(con, config, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
+        columns = list(catalog_entry.schema.properties.keys())
+
+        if not columns:
+            LOGGER.warning('There are no columns selected for stream %s, skipping it.', catalog_entry.stream)
+            continue
+
         state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 
         # Emit a state message to indicate that we've started this stream
@@ -488,9 +494,13 @@ def generate_messages(con, config, catalog, state):
 
                 yield generate_schema_message(catalog_entry, key_properties, [replication_key])
 
-                for message in incremental.sync_table(con, catalog_entry, state):
+                for message in incremental.sync_table(con, catalog_entry, state, columns):
                     yield message
             elif replication_method == 'LOG_BASED':
+                if catalog_entry.is_view:
+                    LOGGER.warning('binlog replication is NOT supported for views. Skipping stream %s', catalog_entry.stream)
+                    continue
+
                 LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
                 log_file = singer.get_bookmark(state,
                                                catalog_entry.tap_stream_id,
@@ -505,7 +515,7 @@ def generate_messages(con, config, catalog, state):
                 if log_file and log_pos:
                     binlog.add_automatic_properties(catalog_entry)
 
-                    for message in binlog.sync_table(con, config, catalog_entry, state):
+                    for message in binlog.sync_table(con, config, catalog_entry, state, columns):
                         yield message
                 else:
                     LOGGER.info("Performing initial full table sync")
@@ -521,14 +531,14 @@ def generate_messages(con, config, catalog, state):
                                                   'log_pos',
                                                   log_pos)
 
-                    for message in full_table.sync_table(con, catalog_entry, state):
+                    for message in full_table.sync_table(con, catalog_entry, state, columns):
                         yield message
             elif replication_method == 'FULL_TABLE':
                 LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
 
                 yield generate_schema_message(catalog_entry, key_properties, [])
 
-                for message in full_table.sync_table(con, catalog_entry, state):
+                for message in full_table.sync_table(con, catalog_entry, state, columns):
                     yield message
 
                 # Clear the stream's version from the state so that subsequent invocations will

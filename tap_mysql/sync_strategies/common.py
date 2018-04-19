@@ -27,10 +27,6 @@ def get_stream_version(tap_stream_id, state):
     return stream_version
 
 
-def generate_column_list(catalog_entry):
-    return list(catalog_entry.schema.properties.keys())
-
-
 def generate_select_sql(catalog_entry, columns):
     escaped_db = escape(catalog_entry.database)
     escaped_table = escape(catalog_entry.table)

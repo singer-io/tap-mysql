@@ -8,15 +8,7 @@ import tap_mysql.sync_strategies.common as common
 
 LOGGER = singer.get_logger()
 
-def sync_table(connection, catalog_entry, state):
-    columns = common.generate_column_list(catalog_entry)
-
-    if not columns:
-        LOGGER.warning(
-            'There are no columns selected for table %s, skipping it',
-            catalog_entry.table)
-        return
-
+def sync_table(connection, catalog_entry, state, columns):
     bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
 
 

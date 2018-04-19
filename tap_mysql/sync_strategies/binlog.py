@@ -112,14 +112,6 @@ def sync_table(connection, config, catalog_entry, state):
     verify_binlog_config(connection, catalog_entry)
     verify_log_file_exists(connection, catalog_entry, log_file, log_pos)
 
-    columns = common.generate_column_list(catalog_entry)
-
-    if not columns:
-        LOGGER.warning(
-            'There are no columns selected for table %s, skipping it',
-            catalog_entry.table)
-        return
-
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
     state = singer.write_bookmark(state,
                                   catalog_entry.tap_stream_id,
