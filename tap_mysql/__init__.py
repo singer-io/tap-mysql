@@ -10,7 +10,6 @@ import copy
 import pendulum
 
 import pymysql
-from pymysql.constants import CLIENT
 
 import singer
 import singer.metrics as metrics
@@ -49,16 +48,6 @@ REQUIRED_CONFIG_KEYS = [
 LOGGER = singer.get_logger()
 
 pymysql.converters.conversions[pendulum.Pendulum] = pymysql.converters.escape_datetime
-
-def parse_internal_hostname(hostname):
-    # special handling for google cloud
-    if ":" in hostname:
-        parts = hostname.split(":")
-        if len(parts) == 3:
-            return parts[0] + ":" + parts[2]
-        return parts[0] + ":" + parts[1]
-
-    return hostname
 
 
 STRING_TYPES = set([

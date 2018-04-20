@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 import backoff
+
 import pymysql
+from pymysql.constants import CLIENT
+
 import singer
 import ssl
 
@@ -19,6 +22,17 @@ match_hostname = ssl.match_hostname
                       factor=2)
 def connect_with_backoff(connection):
     connection.connect()
+
+
+def parse_internal_hostname(hostname):
+    # special handling for google cloud
+    if ":" in hostname:
+        parts = hostname.split(":")
+        if len(parts) == 3:
+            return parts[0] + ":" + parts[2]
+        return parts[0] + ":" + parts[1]
+
+    return hostname
 
 
 class MySQLConnection(pymysql.connections.Connection):
