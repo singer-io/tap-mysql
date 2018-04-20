@@ -501,6 +501,7 @@ def generate_messages(con, config, catalog, state):
                     raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(catalog_entry.stream))
 
                 LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
+
                 log_file = singer.get_bookmark(state,
                                                catalog_entry.tap_stream_id,
                                                'log_file')
@@ -512,7 +513,7 @@ def generate_messages(con, config, catalog, state):
                 yield generate_schema_message(catalog_entry, key_properties, [])
 
                 if log_file and log_pos:
-                    binlog.add_automatic_properties(catalog_entry)
+                    columns = binlog.add_automatic_properties(catalog_entry, columns)
 
                     for message in binlog.sync_table(con, config, catalog_entry, state, columns):
                         yield message

@@ -31,11 +31,15 @@ SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
-def add_automatic_properties(catalog_entry):
+def add_automatic_properties(catalog_entry, columns):
     catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
         type=["null", "string"],
         format="date-time"
         )
+
+    columns.append(SDC_DELETED_AT)
+
+    return columns
 
 
 def verify_binlog_config(connection, catalog_entry):
@@ -96,7 +100,7 @@ def row_to_singer_record(catalog_entry, version, vals, columns, time_extracted):
     return common.row_to_singer_record(catalog_entry, version, rec_vals, rec_cols, time_extracted)
 
 
-def sync_table(connection, config, catalog_entry, state):
+def sync_table(connection, config, catalog_entry, state, columns):
     log_file = singer.get_bookmark(state,
                                    catalog_entry.tap_stream_id,
                                    'log_file')
