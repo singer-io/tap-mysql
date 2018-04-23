@@ -9,8 +9,8 @@ import tap_mysql.sync_strategies.common as common
 LOGGER = singer.get_logger()
 
 def sync_table(connection, catalog_entry, state, columns):
-    bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
-
+    bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
+    version_exists = True if 'version' in bookmark else False
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
     state = singer.write_bookmark(state,
@@ -23,11 +23,11 @@ def sync_table(connection, catalog_entry, state, columns):
         version=stream_version
     )
 
-    # If there is no bookmark at all for this stream, assume it is the
+    # If there is no prior version for this stream, assume it is the
     # very first replication. Emity an ACTIVATE_VERSION message at the
     # beginning so the recors show up right away.
-    if bookmark_is_empty:
-       yield activate_version_message
+    if not version_exists:
+        yield activate_version_message
 
     with connection.cursor() as cursor:
         select_sql = common.generate_select_sql(catalog_entry, columns)
