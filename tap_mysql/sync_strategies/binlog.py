@@ -77,6 +77,7 @@ def verify_log_file_exists(connection, catalog_entry, log_file, log_pos):
             raise Exception("Unable to replicate stream({}) with binlog because requested position ({}) for log file {} is greater than current position ({})."
                             .format(catalog_entry.stream, log_pos, log_file, current_log_pos))
 
+
 def fetch_current_log_file_and_pos(connection):
     with connection.cursor() as cur:
         cur.execute("SHOW MASTER STATUS")
@@ -86,12 +87,14 @@ def fetch_current_log_file_and_pos(connection):
 
         return current_log_file, current_log_pos
 
+
 def fetch_server_id(connection):
     with connection.cursor() as cur:
         cur.execute("SELECT @@server_id")
         server_id = cur.fetchone()[0]
 
         return server_id
+
 
 def row_to_singer_record(catalog_entry, version, vals, columns, time_extracted):
     filtered_vals = {k:v for k,v in vals.items() if k in columns}
@@ -212,4 +215,4 @@ def sync_table(connection, config, catalog_entry, state, columns):
             if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
                 yield singer.StateMessage(value=copy.deepcopy(state))
 
-        yield singer.StateMessage(value=copy.deepcopy(state))
+    yield singer.StateMessage(value=copy.deepcopy(state))
