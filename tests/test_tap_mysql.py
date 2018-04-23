@@ -586,10 +586,22 @@ class TestBinlogReplication(unittest.TestCase):
         expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.con)
 
         messages = list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
-        record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
-        activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
 
-        self.assertEqual(len(record_messages), 4)
+        message_types = [type(m) for m in messages]
+
+        self.assertEqual(message_types,
+                         [singer.StateMessage,
+                          singer.SchemaMessage,
+                          singer.ActivateVersionMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.StateMessage,
+                          singer.ActivateVersionMessage,
+                          singer.StateMessage])
+
+        activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
+        record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
+
         self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog', 'log_file'),
                          expected_log_file)
 
@@ -669,6 +681,22 @@ class TestBinlogReplication(unittest.TestCase):
 
         messages = list(tap_mysql.generate_messages(self.con, get_db_config(), self.catalog, self.state))
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
+
+        message_types = [type(m) for m in messages]
+
+        self.assertEqual(message_types,
+                         [singer.StateMessage,
+                          singer.SchemaMessage,
+                          singer.ActivateVersionMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.StateMessage,
+                          singer.StateMessage])
+
+
         activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
 
 
