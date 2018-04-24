@@ -9,6 +9,7 @@ import singer.metadata
 import tap_mysql.sync_strategies.binlog as binlog
 
 from pymysqlreplication import BinLogStreamReader
+from pymysqlreplication.event import RotateEvent
 from pymysqlreplication.row_event import (
         DeleteRowsEvent,
         UpdateRowsEvent,
@@ -672,7 +673,7 @@ class TestBinlogReplication(unittest.TestCase):
         reader = BinLogStreamReader(
             connection_settings=get_db_config(),
             server_id=binlog.fetch_server_id(self.con),
-            only_events=[WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
+            only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
         )
 
         for _ in reader:
