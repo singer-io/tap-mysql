@@ -3,9 +3,9 @@
 
 import copy
 
-from datetime import datetime
-
+import datetime
 import pytz
+import tzlocal
 
 import singer
 from singer import metadata
@@ -17,6 +17,7 @@ import tap_mysql.sync_strategies.common as common
 
 from tap_mysql.connection import make_connection_wrapper
 
+from pymysqlreplication.constants import FIELD_TYPE
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.event import RotateEvent
 from pymysqlreplication.row_event import (
@@ -30,6 +31,11 @@ LOGGER = singer.get_logger()
 SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
+
+mysql_timestamp_types = {
+    FIELD_TYPE.TIMESTAMP,
+    FIELD_TYPE.TIMESTAMP2
+}
 
 def add_automatic_properties(catalog_entry, columns):
     catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
@@ -96,11 +102,55 @@ def fetch_server_id(connection):
         return server_id
 
 
-def row_to_singer_record(catalog_entry, version, vals, columns, time_extracted):
-    filtered_vals = {k:v for k,v in vals.items() if k in columns}
-    rec_cols, rec_vals = zip(*filtered_vals.items())
+def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extracted):
+    row_to_persist = {}
 
-    return common.row_to_singer_record(catalog_entry, version, rec_vals, rec_cols, time_extracted)
+    for column_name, val in row.items():
+        property_type = catalog_entry.schema.properties[column_name].type
+        db_column_type = db_column_map[column_name]
+
+        if isinstance(val, datetime.datetime):
+            if db_column_type in mysql_timestamp_types:
+                # The mysql-replication library creates datetimes from TIMESTAMP columns using fromtimestamp
+                # which will use the local timezone thus we must set tzinfo accordingly
+                # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
+                timezone = tzlocal.get_localzone()
+                local_datetime = timezone.localize(val)
+                utc_datetime = local_datetime.astimezone(pytz.UTC)
+                row_to_persist[column_name] = utc_datetime.isoformat()
+            else:
+                row_to_persist[column_name] = val.isoformat() + '+00:00'
+
+        elif isinstance(val, datetime.date):
+            row_to_persist[column_name] = val.isoformat() + 'T00:00:00+00:00'
+
+        elif isinstance(val, datetime.timedelta):
+            epoch = datetime.datetime.utcfromtimestamp(0)
+            timedelta_from_epoch = epoch + val
+            row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
+
+        elif isinstance(val, bytes):
+            # for BIT value, treat 0 as False and anything else as True
+            boolean_representation = val != b'\x00'
+            row_to_persist[column_name] = boolean_representation
+
+        elif 'boolean' in property_type or property_type == 'boolean':
+            if val is None:
+                boolean_representation = None
+            elif val == 0:
+                boolean_representation = False
+            else:
+                boolean_representation = True
+            row_to_persist[column_name] = boolean_representation
+
+        else:
+            row_to_persist[column_name] = val
+
+    return singer.RecordMessage(
+        stream=catalog_entry.stream,
+        record=row_to_persist,
+        version=version,
+        time_extracted=time_extracted)
 
 
 def sync_table(connection, config, catalog_entry, state, columns):
@@ -166,40 +216,50 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                           binlog_event.position)
 
         elif (binlog_event.schema, binlog_event.table) == table_path:
+            db_column_types = {c.name:c.type for c in  binlog_event.columns}
+
             if isinstance(binlog_event, WriteRowsEvent):
                 for row in binlog_event.rows:
+                    filtered_vals = {k:v for k,v in row['values'].items()
+                                    if k in columns}
+
                     yield row_to_singer_record(catalog_entry,
                                                stream_version,
-                                               row['values'],
-                                               columns,
+                                               db_column_types,
+                                               filtered_vals,
                                                time_extracted)
-                    state = singer.write_bookmark(state,
-                                                  catalog_entry.tap_stream_id,
-                                                  'log_file',
-                                                  log_file)
+
                     rows_saved = rows_saved + 1
 
 
             elif isinstance(binlog_event, UpdateRowsEvent):
                 for row in binlog_event.rows:
+                    filtered_vals = {k:v for k,v in row['after_values'].items()
+                                    if k in columns}
+
                     yield row_to_singer_record(catalog_entry,
                                                stream_version,
-                                               row['after_values'],
-                                               columns,
+                                               db_column_types,
+                                               filtered_vals,
                                                time_extracted)
+
                     rows_saved = rows_saved + 1
             elif isinstance(binlog_event, DeleteRowsEvent):
                 for row in binlog_event.rows:
-                    event_ts = datetime.utcfromtimestamp(binlog_event.timestamp).replace(tzinfo=pytz.UTC)
+                    event_ts = datetime.datetime.utcfromtimestamp(binlog_event.timestamp).replace(tzinfo=pytz.UTC)
 
                     vals = row['values']
                     vals[SDC_DELETED_AT] = event_ts
 
+                    filtered_vals = {k:v for k,v in vals.items()
+                                    if k in columns}
+
                     yield row_to_singer_record(catalog_entry,
                                                stream_version,
-                                               vals,
-                                               columns,
+                                               db_column_types,
+                                               filtered_vals,
                                                time_extracted)
+
                     rows_saved = rows_saved + 1
 
             state = singer.write_bookmark(state,
