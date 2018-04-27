@@ -107,7 +107,7 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
 
     for column_name, val in row.items():
         property_type = catalog_entry.schema.properties[column_name].type
-        db_column_type = db_column_map[column_name]
+        db_column_type = db_column_map.get(column_name)
 
         if isinstance(val, datetime.datetime):
             if db_column_type in mysql_timestamp_types:
@@ -129,16 +129,13 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
             timedelta_from_epoch = epoch + val
             row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
 
-        elif isinstance(val, bytes):
-            # for BIT value, treat 0 as False and anything else as True
-            boolean_representation = val != b'\x00'
-            row_to_persist[column_name] = boolean_representation
-
         elif 'boolean' in property_type or property_type == 'boolean':
             if val is None:
                 boolean_representation = None
             elif val == 0:
                 boolean_representation = False
+            elif db_column_type == FIELD_TYPE.BIT:
+                boolean_representation = int(val) != 0
             else:
                 boolean_representation = True
             row_to_persist[column_name] = boolean_representation
