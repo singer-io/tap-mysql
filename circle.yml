@@ -5,6 +5,13 @@ machine:
 dependencies:
   pre:
     - pip install pylint
+    - echo "[mysqld]" | sudo tee -a /etc/mysql/my.cnf
+    - echo "server-id = 1" | sudo tee -a /etc/mysql/my.cnf
+    - echo "log_bin = /var/log/mysql/mysql-bin.log" | sudo tee -a /etc/mysql/my.cnf
+    - echo "expire_logs_days = 1" | sudo tee -a /etc/mysql/my.cnf
+    - echo "binlog_format = ROW" | sudo tee -a /etc/mysql/my.cnf
+    - echo "binlog_row_image = FULL" | sudo tee -a /etc/mysql/my.cnf
+    - sudo service mysql restart
 
 test:
   post:
