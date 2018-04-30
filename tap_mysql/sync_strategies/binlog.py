@@ -168,11 +168,6 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                   'version',
                                   stream_version)
 
-    yield singer.ActivateVersionMessage(
-        stream=catalog_entry.stream,
-        version=stream_version
-    )
-
     server_id = fetch_server_id(connection)
 
     connection_wrapper = make_connection_wrapper(config)
