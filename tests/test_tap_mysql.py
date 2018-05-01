@@ -7,6 +7,7 @@ import os
 import singer.metadata
 
 import tap_mysql.sync_strategies.binlog as binlog
+import tap_mysql.sync_strategies.common as common
 
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.event import RotateEvent
@@ -401,27 +402,14 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
 
-    def test_with_no_version_in_state(self):
-        state = tap_mysql.build_state({
-            'bookmarks': {
-                'tap_mysql_test-full_table': {
-                    'version': None,
-                    'last_replication_method': 'FULL_TABLE'
-                }
-            }
-        }, self.catalog)
-        (message_types, versions) = message_types_and_versions(
-            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
-        self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
-        self.assertTrue(isinstance(versions[0], int))
-        self.assertEqual(versions[0], versions[1])
+    def test_with_initial_full_table_complete_in_state(self):
+        common.get_stream_version = lambda a, b: 12345
 
-    def test_with_version_in_state(self):
         state = tap_mysql.build_state({
             'bookmarks': {
                 'tap_mysql_test-full_table': {
-                    'version': 1,
-                    'last_replication_method': 'FULL_TABLE'
+                    'last_replication_method': 'FULL_TABLE',
+                    'initial_full_table_complete': True
                 }
             }
         }, self.catalog)
@@ -430,20 +418,23 @@ class TestStreamVersionFullTable(unittest.TestCase):
             tap_mysql.generate_messages(self.con, {}, self.catalog, state))
 
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
-        self.assertEqual(versions, [1, 1])
+        self.assertEqual(versions, [12345, 12345])
 
     def test_version_cleared_from_state_after_full_table_success(self):
         state = tap_mysql.build_state({
             'bookmarks': {
                 'tap_mysql_test-full_table': {
                     'version': 1,
+                    'last_replication_method': 'FULL_TABLE',
+                    'initial_full_table_complete': True
                 }
             }
         }, self.catalog)
 
         list(tap_mysql.generate_messages(self.con, {}, self.catalog, state))
 
-        self.assertEqual(state['bookmarks']['tap_mysql_test-full_table']['version'], None)
+        self.assertFalse('version' in state['bookmarks']['tap_mysql_test-full_table'].keys())
+        self.assertTrue(state['bookmarks']['tap_mysql_test-full_table']['initial_full_table_complete'])
 
 
 class TestIncrementalReplication(unittest.TestCase):
@@ -811,6 +802,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestBinlogReplication()
+    test1 = TestStreamVersionFullTable()
     test1.setUp()
-    test1.test_binlog_stream()
+    test1.test_version_cleared_from_state_after_full_table_success()
