@@ -156,11 +156,13 @@ def build_state(raw_state, catalog):
                                               raw_replication_key_value)
 
             elif replication_method == 'FULL_TABLE':
-                # TODO: USE initial_full_table_complete state instead
+                raw_initial_full_table_complete = singer.get_bookmark(raw_state,
+                                                                      catalog_entry.tap_stream_id,
+                                                                      'initial_full_table_complete') or False
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
-                                              'version',
-                                              raw_stream_version)
+                                              'initial_full_table_complete',
+                                              raw_initial_full_table_complete)
     return state
 
 
@@ -535,6 +537,7 @@ def generate_messages(con, config, catalog, state):
                         yield message
                 else:
                     LOGGER.info("Performing initial full table sync")
+
                     log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
 
                     state = singer.write_bookmark(state,
@@ -557,10 +560,14 @@ def generate_messages(con, config, catalog, state):
                 for message in full_table.sync_table(con, catalog_entry, state, columns):
                     yield message
 
-                # Clear the stream's version from the state so that subsequent invocations will
-                # emit a distinct stream version.
-                # TODO: Come up with a more obvious way to allow for initial FULL_TABLE?
-                state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
+                # Do not persist version for full table
+                state['bookmarks'].get(catalog_entry.tap_stream_id, {}).pop('version', None)
+
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'initial_full_table_complete',
+                                              True)
+
                 yield singer.StateMessage(value=copy.deepcopy(state))
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
