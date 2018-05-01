@@ -406,6 +406,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-full_table': {
                     'version': None,
+                    'last_replication_method': 'FULL_TABLE'
                 }
             }
         }, self.catalog)
@@ -420,6 +421,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-full_table': {
                     'version': 1,
+                    'last_replication_method': 'FULL_TABLE'
                 }
             }
         }, self.catalog)
@@ -496,12 +498,14 @@ class TestIncrementalReplication(unittest.TestCase):
                 'tap_mysql_test-incremental': {
                     'version': 1,
                     'replication_key_value': '2017-06-20',
-                    'replication_key': 'updated'
+                    'replication_key': 'updated',
+                    'last_replication_method': 'INCREMENTAL'
                 },
                 'tap_mysql_test-integer_incremental': {
                     'version': 1,
                     'replication_key_value': 3,
-                    'replication_key': 'updated'
+                    'replication_key': 'updated',
+                    'last_replication_method': 'INCREMENTAL'
                 }
             }
         }, self.catalog)
@@ -524,6 +528,9 @@ class TestIncrementalReplication(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-incremental': {
                     'version': 1,
+                    'replication_key_value': '2017-06-20',
+                    'replication_key': 'updated',
+                    'last_replication_method': 'INCREMENTAL'
                 }
             }
         }, self.catalog)
@@ -636,23 +643,19 @@ class TestBinlogReplication(unittest.TestCase):
 
     def test_fail_if_log_file_does_not_exist(self):
         log_file = 'chicken'
-
         stream = self.catalog.streams[0]
+        state = tap_mysql.build_state({
+            'bookmarks': {
+                stream.tap_stream_id: {
+                    'version': singer.utils.now(),
+                    'log_file': log_file,
+                    'log_pos': 1,
+                    'last_replication_method': 'LOG_BASED'
+                }
+            }
+        }, self.catalog)
+
         state = tap_mysql.build_state({}, self.catalog)
-        state = singer.write_bookmark(state,
-                                      stream.tap_stream_id,
-                                      'version',
-                                      singer.utils.now())
-
-        state = singer.write_bookmark(state,
-                                      stream.tap_stream_id,
-                                      'log_file',
-                                      log_file)
-
-        state = singer.write_bookmark(state,
-                                      stream.tap_stream_id,
-                                      'log_pos',
-                                      1)
 
         failed = False
         exception_message = None
@@ -670,6 +673,11 @@ class TestBinlogReplication(unittest.TestCase):
 
 
     def test_binlog_stream(self):
+        stream = self.catalog.streams[0]
+        state = singer.write_bookmark(self.state,
+                                      stream.tap_stream_id,
+                                      'last_replication_method',
+                                      'LOG_BASED')
         reader = BinLogStreamReader(
             connection_settings=get_db_config(),
             server_id=binlog.fetch_server_id(self.con),
@@ -680,7 +688,7 @@ class TestBinlogReplication(unittest.TestCase):
             expected_log_file = reader.log_file
             expected_log_pos = reader.log_pos
 
-        messages = list(tap_mysql.generate_messages(self.con, get_db_config(), self.catalog, self.state))
+        messages = list(tap_mysql.generate_messages(self.con, get_db_config(), self.catalog, state))
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), messages))
 
         message_types = [type(m) for m in messages]
@@ -688,7 +696,6 @@ class TestBinlogReplication(unittest.TestCase):
         self.assertEqual(message_types,
                          [singer.StateMessage,
                           singer.SchemaMessage,
-                          singer.ActivateVersionMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
@@ -696,10 +703,6 @@ class TestBinlogReplication(unittest.TestCase):
                           singer.RecordMessage,
                           singer.StateMessage,
                           singer.StateMessage])
-
-
-        activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), messages))[0]
-
 
         self.assertEqual([(1, False), (2, False), (3, False), (3, False), (2, True)],
                          [(m.record['id'], m.record.get(binlog.SDC_DELETED_AT) is not None)
@@ -710,10 +713,6 @@ class TestBinlogReplication(unittest.TestCase):
 
         self.assertEqual(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_pos'),
                          expected_log_pos)
-
-        self.assertEqual(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'version'),
-                         activate_version_message.version)
-
 class TestViews(unittest.TestCase):
     def setUp(self):
         self.con = get_test_connection()
