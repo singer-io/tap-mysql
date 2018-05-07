@@ -169,10 +169,23 @@ def build_state(raw_state, catalog):
                 raw_initial_full_table_complete = singer.get_bookmark(raw_state,
                                                                       catalog_entry.tap_stream_id,
                                                                       'initial_full_table_complete') or False
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'initial_full_table_complete',
-                                              raw_initial_full_table_complete)
+
+                bookmark = raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
+                version_exists = True if 'version' in bookmark else False
+
+
+                if raw_initial_full_table_complete:
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'initial_full_table_complete',
+                                                  raw_initial_full_table_complete)
+                elif version_exists:
+                    # Self-heal and convert the None version to initial_full_table_complete
+                    singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'initial_full_table_complete',
+                                                  True)
     return state
 
 
@@ -571,7 +584,7 @@ def generate_messages(con, config, catalog, state):
                     yield message
 
                 # Do not persist version for full table
-                state['bookmarks'].get(catalog_entry.tap_stream_id, {}).pop('version', None)
+                singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
 
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
