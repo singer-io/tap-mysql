@@ -96,6 +96,8 @@ class MySQLConnection(pymysql.connections.Connection):
                 parsed_hostname = parse_internal_hostname(config["internal_hostname"])
                 ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
+        super().__init__(defer_connect=True, ssl=ssl_arg, **args)
+
         # Attempt SSL
         if config.get("ssl") == 'true':
             LOGGER.info("Attempting SSL connection")
@@ -104,8 +106,6 @@ class MySQLConnection(pymysql.connections.Connection):
             self.ctx.check_hostname = False
             self.ctx.verify_mode = ssl.CERT_NONE
             self.client_flag |= CLIENT.SSL
-
-        super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
 
 def make_connection_wrapper(config):
