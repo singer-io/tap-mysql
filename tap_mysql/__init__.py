@@ -103,16 +103,16 @@ def build_state(raw_state, catalog):
             continue
 
         else:
-            state = singer.write_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'last_replication_method',
-                                          replication_method)
-
             raw_stream_version = singer.get_bookmark(raw_state,
                                                      catalog_entry.tap_stream_id,
                                                      'version')
 
             if replication_method == 'LOG_BASED':
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'last_replication_method',
+                                              replication_method)
+
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'version',
@@ -139,6 +139,11 @@ def build_state(raw_state, catalog):
             elif replication_method == 'INCREMENTAL':
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
+                                              'last_replication_method',
+                                              replication_method)
+
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
                                               'version',
                                               raw_stream_version)
 
@@ -156,6 +161,11 @@ def build_state(raw_state, catalog):
                                               raw_replication_key_value)
 
             elif replication_method == 'FULL_TABLE':
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'last_replication_method',
+                                              replication_method)
+
                 raw_initial_full_table_complete = singer.get_bookmark(raw_state,
                                                                       catalog_entry.tap_stream_id,
                                                                       'initial_full_table_complete') or False
