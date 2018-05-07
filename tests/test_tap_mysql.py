@@ -402,6 +402,27 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
 
+    def test_with_no_initial_full_table_complete_in_state(self):
+        common.get_stream_version = lambda a, b: 12345
+
+        state = tap_mysql.build_state({
+            'bookmarks': {
+                'tap_mysql_test-full_table': {
+                    'last_replication_method': 'FULL_TABLE',
+                    'version': None
+                }
+            }
+        }, self.catalog)
+
+        (message_types, versions) = message_types_and_versions(
+            tap_mysql.generate_messages(self.con, {}, self.catalog, state))
+
+        self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
+        self.assertEqual(versions, [12345, 12345])
+
+        self.assertFalse('version' in state['bookmarks']['tap_mysql_test-full_table'].keys())
+        self.assertTrue(state['bookmarks']['tap_mysql_test-full_table']['initial_full_table_complete'])
+
     def test_with_initial_full_table_complete_in_state(self):
         common.get_stream_version = lambda a, b: 12345
 
@@ -804,4 +825,4 @@ class TestUnsupportedPK(unittest.TestCase):
 if __name__== "__main__":
     test1 = TestStreamVersionFullTable()
     test1.setUp()
-    test1.test_version_cleared_from_state_after_full_table_success()
+    test1.test_with_no_initial_full_table_complete_in_state()
