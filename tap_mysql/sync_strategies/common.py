@@ -27,10 +27,6 @@ def get_stream_version(tap_stream_id, state):
     return stream_version
 
 
-def generate_column_list(catalog_entry):
-    return list(catalog_entry.schema.properties.keys())
-
-
 def generate_select_sql(catalog_entry, columns):
     escaped_db = escape(catalog_entry.database)
     escaped_table = escape(catalog_entry.table)
@@ -84,6 +80,14 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
         time_extracted=time_extracted)
 
 
+def whitelist_bookmark_keys(bookmark_key_set, tap_stream_id, state):
+    for bk in [non_whitelisted_bookmark_key
+               for non_whitelisted_bookmark_key
+               in state.get('bookmarks', {}).get(tap_stream_id, {}).keys()
+               if non_whitelisted_bookmark_key not in bookmark_key_set]:
+        singer.clear_bookmark(state, tap_stream_id, bk)
+
+
 def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params):
     replication_key = singer.get_bookmark(state,
                                           catalog_entry.tap_stream_id,
@@ -114,6 +118,11 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             yield record_message
 
             if replication_key is not None:
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'replication_key',
+                                              replication_key)
+
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'replication_key_value',

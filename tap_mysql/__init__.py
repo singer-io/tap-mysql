@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
-# pylint: disable=missing-docstring,not-an-iterable,too-many-locals,too-many-arguments,invalid-name,duplicate-code
+# pylint: disable=missing-docstring,not-an-iterable,too-many-locals,too-many-arguments,too-many-branches,invalid-name,duplicate-code,too-many-statements
 
 import datetime
 import collections
 import itertools
 from itertools import dropwhile
 import copy
-import ssl
 
-import backoff
 import pendulum
 
 import pymysql
-from pymysql.constants import CLIENT
 
 import singer
 import singer.metrics as metrics
 import singer.schema
+
+from singer import bookmarks
+from singer import metadata
 from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
-from singer import metadata
 
+import tap_mysql.sync_strategies.binlog as binlog
+import tap_mysql.sync_strategies.common as common
 import tap_mysql.sync_strategies.full_table as full_table
 import tap_mysql.sync_strategies.incremental as incremental
+
+from tap_mysql.connection import connect_with_backoff, MySQLConnection
+
 
 Column = collections.namedtuple('Column', [
     "table_schema",
@@ -45,110 +49,7 @@ REQUIRED_CONFIG_KEYS = [
 
 LOGGER = singer.get_logger()
 
-CONNECT_TIMEOUT_SECONDS = 300
-READ_TIMEOUT_SECONDS = 3600
-
-# We need to hold onto this for self-signed SSL
-match_hostname = ssl.match_hostname
-
 pymysql.converters.conversions[pendulum.Pendulum] = pymysql.converters.escape_datetime
-
-def parse_internal_hostname(hostname):
-    # special handling for google cloud
-    if ":" in hostname:
-        parts = hostname.split(":")
-        if len(parts) == 3:
-            return parts[0] + ":" + parts[2]
-        return parts[0] + ":" + parts[1]
-
-    return hostname
-
-@backoff.on_exception(backoff.expo,
-                      (pymysql.err.OperationalError),
-                      max_tries=5,
-                      factor=2)
-def connect_with_backoff(connection):
-    connection.connect()
-
-
-def open_connection(config):
-    # Google Cloud's SSL involves a self-signed certificate. This certificate's
-    # hostname matches the form {instance}:{box}. The hostname displayed in the
-    # Google Cloud UI is of the form {instance}:{region}:{box} which
-    # necessitates the "parse_internal_hostname" function to get the correct
-    # hostname to match.
-    # The "internal_hostname" config variable allows for matching the SSL
-    # against a host that doesn't match the host we are connecting to. In the
-    # case of Google Cloud, we will be connecting to an IP, not the hostname
-    # the SSL certificate expects.
-    # The "ssl.match_hostname" function is patched to check against the
-    # internal hostname rather than the host of the connection. In the event
-    # that the connection fails, the patch is reverted by reassigning the
-    # patched out method to it's original spot.
-
-    args = {
-        "user": config["user"],
-        "password": config["password"],
-        "host": config["host"],
-        "port": int(config["port"]),
-        "cursorclass": pymysql.cursors.SSCursor,
-        "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-        "read_timeout": READ_TIMEOUT_SECONDS,
-        "charset": "utf8",
-    }
-
-    if config.get("database"):
-        args["database"] = config["database"]
-
-    # Attempt self-signed SSL if config vars are present
-    if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
-        LOGGER.info("Using custom certificate authority")
-
-        # The SSL module requires files not data, so we have to write out the
-        # data to files. After testing with `tempfile.NamedTemporaryFile`
-        # objects, I kept getting "File name too long" errors as the temp file
-        # names were > 99 chars long in some cases. Since the box is ephemeral,
-        # we don't need to worry about cleaning them up.
-        with open("ca.pem", "wb") as ca_file:
-            ca_file.write(config["ssl_ca"].encode('utf-8'))
-
-        with open("cert.pem", "wb") as cert_file:
-            cert_file.write(config["ssl_cert"].encode('utf-8'))
-
-        with open("key.pem", "wb") as key_file:
-            key_file.write(config["ssl_key"].encode('utf-8'))
-
-        ssl_arg = {
-            "ca": "./ca.pem",
-            "cert": "./cert.pem",
-            "key": "./key.pem",
-        }
-
-        # override match hostname for google cloud
-        if config.get("internal_hostname"):
-            parsed_hostname = parse_internal_hostname(config["internal_hostname"])
-            ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
-
-            conn = pymysql.Connection(defer_connect=True, ssl=ssl_arg, **args)
-            connect_with_backoff(conn)
-            return conn
-
-    # Attempt SSL
-    if config.get("ssl") == 'true':
-        LOGGER.info("Attempting SSL connection")
-        conn = pymysql.Connection(defer_connect=True, **args)
-        conn.ssl = True
-        conn.ctx = ssl.create_default_context()
-        conn.ctx.check_hostname = False
-        conn.ctx.verify_mode = ssl.CERT_NONE
-        conn.client_flag |= CLIENT.SSL
-        connect_with_backoff(conn)
-        return conn
-
-    LOGGER.info("Attempting connection without SSL")
-    conn = pymysql.Connection(defer_connect=True, **args)
-    connect_with_backoff(conn)
-    return conn
 
 
 STRING_TYPES = set([
@@ -171,53 +72,6 @@ BYTES_FOR_INTEGER_TYPE = {
 FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
-
-def build_state(raw_state, catalog):
-    LOGGER.info('Building State from raw state %s and catalog %s', raw_state, catalog.to_dict())
-
-    state = {}
-
-    currently_syncing = singer.get_currently_syncing(raw_state)
-    if currently_syncing:
-        state = singer.set_currently_syncing(state, currently_syncing)
-
-    for catalog_entry in catalog.streams:
-        catalog_metadata = metadata.to_map(catalog_entry.metadata)
-
-
-        replication_key = catalog_metadata.get((), {}).get('replication-key')
-
-        if replication_key:
-
-            state = singer.write_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'replication_key',
-                                          replication_key)
-            # Only keep the existing replication_key_value if the
-            # replication_key hasn't changed.
-            raw_replication_key = singer.get_bookmark(raw_state,
-                                                      catalog_entry.tap_stream_id,
-                                                      'replication_key')
-            if raw_replication_key == replication_key:
-                raw_replication_key_value = singer.get_bookmark(raw_state,
-                                                                catalog_entry.tap_stream_id,
-                                                                'replication_key_value')
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'replication_key_value',
-                                              raw_replication_key_value)
-
-        # Persist any existing version, even if it's None
-        if raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id):
-            raw_stream_version = singer.get_bookmark(raw_state,
-                                                     catalog_entry.tap_stream_id,
-                                                     'version')
-
-            state = singer.write_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'version',
-                                          raw_stream_version)
-    return state
 
 
 def schema_for_column(c):
@@ -362,11 +216,15 @@ def discover_catalog(connection):
                 s.properties[c.column_name].inclusion != 'unsupported'
             )
             key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
-            md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
+
+            is_view = table_info[table_schema][table_name]['is_view']
+
+            if not is_view:
+                md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
 
             if table_schema in table_info and table_name in table_info[table_schema]:
                 entry.row_count = table_info[table_schema][table_name]['row_count']
-                entry.is_view = table_info[table_schema][table_name]['is_view']
+                entry.is_view = is_view
             entries.append(entry)
 
         return Catalog(entries)
@@ -515,11 +373,25 @@ def resolve_catalog(con, catalog, state):
 
     return result
 
+def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
+    return singer.SchemaMessage(
+        stream=catalog_entry.stream,
+        schema=catalog_entry.schema.to_dict(),
+        key_properties=key_properties,
+        bookmark_properties=bookmark_properties
+    )
 
-def generate_messages(con, catalog, state):
+
+def generate_messages(con, config, catalog, state):
     catalog = resolve_catalog(con, catalog, state)
 
     for catalog_entry in catalog.streams:
+        columns = list(catalog_entry.schema.properties.keys())
+
+        if not columns:
+            LOGGER.warning('There are no columns selected for stream %s, skipping it.', catalog_entry.stream)
+            continue
+
         state = singer.set_currently_syncing(state, catalog_entry.tap_stream_id)
 
         # Emit a state message to indicate that we've started this stream
@@ -537,14 +409,6 @@ def generate_messages(con, catalog, state):
         else:
             key_properties = md_map.get((), {}).get('table-key-properties')
 
-        # Emit a SCHEMA message before we sync any records
-        yield singer.SchemaMessage(
-            stream=catalog_entry.stream,
-            schema=catalog_entry.schema.to_dict(),
-            key_properties=key_properties,
-            bookmark_properties=replication_key
-        )
-
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = catalog_entry.database
             timer.tags['table'] = catalog_entry.table
@@ -552,13 +416,80 @@ def generate_messages(con, catalog, state):
             log_engine(con, catalog_entry)
 
             if replication_method == 'INCREMENTAL':
-                for message in incremental.sync_table(con, catalog_entry, state):
+                LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
+
+                yield generate_schema_message(catalog_entry, key_properties, [replication_key])
+
+                for message in incremental.sync_table(con, catalog_entry, state, columns):
                     yield message
+            elif replication_method == 'LOG_BASED':
+                if catalog_entry.is_view:
+                    raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(catalog_entry.stream))
+
+                LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
+
+                log_file = singer.get_bookmark(state,
+                                               catalog_entry.tap_stream_id,
+                                               'log_file')
+
+                log_pos = singer.get_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'log_pos')
+
+                yield generate_schema_message(catalog_entry, key_properties, [])
+
+                if log_file and log_pos:
+                    columns = binlog.add_automatic_properties(catalog_entry, columns)
+
+                    for message in binlog.sync_table(con, config, catalog_entry, state, columns):
+                        yield message
+                else:
+                    LOGGER.info("Performing initial full table sync")
+
+                    log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
+
+                    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'version',
+                                                  stream_version)
+
+                    for message in full_table.sync_table(con, catalog_entry, state, columns, stream_version):
+                        yield message
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'log_file',
+                                                  log_file)
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'log_pos',
+                                                  log_pos)
+
+                    yield singer.StateMessage(value=copy.deepcopy(state))
             elif replication_method == 'FULL_TABLE':
-                for message in full_table.sync_table(con, catalog_entry, state):
+                LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
+
+                yield generate_schema_message(catalog_entry, key_properties, [])
+
+                stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+
+                for message in full_table.sync_table(con, catalog_entry, state, columns, stream_version):
                     yield message
+
+                # Prefer initial_full_table_complete going forward
+                singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
+
+                state = singer.write_bookmark(state,
+                                              catalog_entry.tap_stream_id,
+                                              'initial_full_table_complete',
+                                              True)
+
+                yield singer.StateMessage(value=copy.deepcopy(state))
             else:
-                raise Exception("only INCREMENTAL and FULL TABLE replication methods are supported")
+                raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
     # if we get here, we've finished processing all the streams, so clear
     # currently_syncing from the state and emit a state message.
@@ -566,8 +497,8 @@ def generate_messages(con, catalog, state):
     yield singer.StateMessage(value=copy.deepcopy(state))
 
 
-def do_sync(con, catalog, state):
-    for message in generate_messages(con, catalog, state):
+def do_sync(con, config, catalog, state):
+    for message in generate_messages(con, config, catalog, state):
         singer.write_message(message)
 
 
@@ -594,7 +525,10 @@ def log_server_params(con):
 
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-    connection = open_connection(args.config)
+    connection = MySQLConnection(args.config)
+
+    connect_with_backoff(connection)
+
     warnings = []
     with connection.cursor() as cur:
         try:
@@ -624,12 +558,12 @@ def main_impl():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        state = build_state(args.state, args.catalog)
-        do_sync(connection, args.catalog, state)
+        state = args.state or {}
+        do_sync(connection, args.config, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
-        state = build_state(args.state, catalog)
-        do_sync(connection, catalog, state)
+        state = args.state or {}
+        do_sync(connection, args.config, catalog, state)
     else:
         LOGGER.info("No properties were selected")
 

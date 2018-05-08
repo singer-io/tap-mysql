@@ -8,34 +8,31 @@ import tap_mysql.sync_strategies.common as common
 
 LOGGER = singer.get_logger()
 
-def sync_table(connection, catalog_entry, state):
-    columns = common.generate_column_list(catalog_entry)
+BOOKMARK_KEYS = {'version', 'initial_full_table_complete'}
 
-    if not columns:
-        LOGGER.warning(
-            'There are no columns selected for table %s, skipping it',
-            catalog_entry.table)
-        return
+def sync_table(connection, catalog_entry, state, columns, stream_version):
+    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
 
-    bookmark_is_empty = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id) is None
+    bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
+    version_exists = True if 'version' in bookmark else False
 
+    initial_full_table_complete = singer.get_bookmark(state,
+                                                      catalog_entry.tap_stream_id,
+                                                      'initial_full_table_complete')
 
-    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
-    state = singer.write_bookmark(state,
-                                  catalog_entry.tap_stream_id,
-                                  'version',
-                                  stream_version)
+    state_version = singer.get_bookmark(state,
+                                        catalog_entry.tap_stream_id,
+                                        'version')
 
     activate_version_message = singer.ActivateVersionMessage(
         stream=catalog_entry.stream,
         version=stream_version
     )
 
-    # If there is no bookmark at all for this stream, assume it is the
-    # very first replication. Emity an ACTIVATE_VERSION message at the
-    # beginning so the recors show up right away.
-    if bookmark_is_empty:
-       yield activate_version_message
+    # For the initial replication, emit an ACTIVATE_VERSION message
+    # at the beginning so the records show up right away.
+    if not initial_full_table_complete and not (version_exists and state_version is None):
+        yield activate_version_message
 
     with connection.cursor() as cursor:
         select_sql = common.generate_select_sql(catalog_entry, columns)
@@ -51,9 +48,4 @@ def sync_table(connection, catalog_entry, state):
                                          params):
             yield message
 
-    # Clear the stream's version from the state so that subsequent invocations will
-    # emit a distinct stream version.
-    state = singer.write_bookmark(state, catalog_entry.tap_stream_id, 'version', None)
-
     yield activate_version_message
-    yield singer.StateMessage(value=copy.deepcopy(state))
