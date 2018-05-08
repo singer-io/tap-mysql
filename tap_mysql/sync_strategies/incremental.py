@@ -3,19 +3,38 @@
 
 import pendulum
 import singer
+from singer import metadata
 
 import tap_mysql.sync_strategies.common as common
 
 LOGGER = singer.get_logger()
 
-def sync_table(connection, catalog_entry, state, columns):
-    replication_key_value = singer.get_bookmark(state,
-                                                catalog_entry.tap_stream_id,
-                                                'replication_key_value')
+BOOKMARK_KEYS = {'replication_key', 'replication_key_value', 'version'}
 
-    replication_key = singer.get_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'replication_key')
+def sync_table(connection, catalog_entry, state, columns):
+    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
+
+    catalog_metadata = metadata.to_map(catalog_entry.metadata)
+    stream_metadata = catalog_metadata.get((), {})
+
+    replication_key_metadata = stream_metadata.get('replication-key')
+    replication_key_state = singer.get_bookmark(state,
+                                                catalog_entry.tap_stream_id,
+                                                'replication_key')
+
+    replication_key = replication_key_state or replication_key_metadata
+    replication_key_value = None
+
+    if replication_key_metadata == replication_key_state:
+        replication_key_value = singer.get_bookmark(state,
+                                                    catalog_entry.tap_stream_id,
+                                                    'replication_key_value')
+    else:
+        state = singer.write_bookmark(state,
+                                      catalog_entry.tap_stream_id,
+                                      'replication_key',
+                                      replication_key)
+        state = singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'replication_key_value')
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
     state = singer.write_bookmark(state,

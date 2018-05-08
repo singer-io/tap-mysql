@@ -32,6 +32,8 @@ SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
+BOOKMARK_KEYS = {'log_file', 'log_pos', 'version'}
+
 mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP,
     FIELD_TYPE.TIMESTAMP2
@@ -151,6 +153,8 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
 
 
 def sync_table(connection, config, catalog_entry, state, columns):
+    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
+
     log_file = singer.get_bookmark(state,
                                    catalog_entry.tap_stream_id,
                                    'log_file')
