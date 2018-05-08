@@ -400,9 +400,7 @@ def generate_messages(con, config, catalog, state):
         md_map = metadata.to_map(catalog_entry.metadata)
 
         replication_method = md_map.get((), {}).get('replication-method')
-        replication_key = singer.get_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'replication_key')
+        replication_key = md_map.get((), {}).get('replication-key')
 
         if catalog_entry.is_view:
             key_properties = md_map.get((), {}).get('view-key-properties')
