@@ -15,12 +15,14 @@ import singer
 import singer.metrics as metrics
 import singer.schema
 
+from singer import bookmarks
 from singer import metadata
 from singer import utils
 from singer.schema import Schema
 from singer.catalog import Catalog, CatalogEntry
 
 import tap_mysql.sync_strategies.binlog as binlog
+import tap_mysql.sync_strategies.common as common
 import tap_mysql.sync_strategies.full_table as full_table
 import tap_mysql.sync_strategies.incremental as incremental
 
@@ -70,123 +72,6 @@ BYTES_FOR_INTEGER_TYPE = {
 FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
-
-def build_state(raw_state, catalog):
-    LOGGER.info('Building State from raw state %s and catalog %s', raw_state, catalog.to_dict())
-
-    state = {}
-
-    currently_syncing = singer.get_currently_syncing(raw_state)
-    if currently_syncing:
-        state = singer.set_currently_syncing(state, currently_syncing)
-
-    for catalog_entry in catalog.streams:
-        last_replication_method = singer.get_bookmark(raw_state,
-                                                      catalog_entry.tap_stream_id,
-                                                      'last_replication_method')
-
-        catalog_metadata = metadata.to_map(catalog_entry.metadata)
-        stream_metadata = catalog_metadata.get((), {})
-        replication_method = stream_metadata.get('replication-method')
-        replication_key_metadata = stream_metadata.get('replication-key')
-        replication_key_state = singer.get_bookmark(raw_state,
-                                                    catalog_entry.tap_stream_id,
-                                                    'replication_key')
-
-        # If replication method or replication key has changed, clear state for stream
-        if last_replication_method != replication_method:
-            state = singer.reset_stream(state, catalog_entry.tap_stream_id)
-            continue
-
-        elif replication_method == 'INCREMENTAL' and replication_key_metadata != replication_key_state:
-            state = singer.reset_stream(state, catalog_entry.tap_stream_id)
-            continue
-
-        else:
-            raw_stream_version = singer.get_bookmark(raw_state,
-                                                     catalog_entry.tap_stream_id,
-                                                     'version')
-
-            if replication_method == 'LOG_BASED':
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'last_replication_method',
-                                              replication_method)
-
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'version',
-                                              raw_stream_version)
-
-                raw_log_file = singer.get_bookmark(raw_state,
-                                                   catalog_entry.tap_stream_id,
-                                                   'log_file')
-
-                raw_log_pos = singer.get_bookmark(raw_state,
-                                                  catalog_entry.tap_stream_id,
-                                                  'log_pos')
-
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'log_file',
-                                              raw_log_file)
-
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'log_pos',
-                                              raw_log_pos)
-
-            elif replication_method == 'INCREMENTAL':
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'last_replication_method',
-                                              replication_method)
-
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'version',
-                                              raw_stream_version)
-
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'replication_key',
-                                              replication_key_state)
-
-                raw_replication_key_value = singer.get_bookmark(raw_state,
-                                                                catalog_entry.tap_stream_id,
-                                                                'replication_key_value')
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'replication_key_value',
-                                              raw_replication_key_value)
-
-            elif replication_method == 'FULL_TABLE':
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'last_replication_method',
-                                              replication_method)
-
-                raw_initial_full_table_complete = singer.get_bookmark(raw_state,
-                                                                      catalog_entry.tap_stream_id,
-                                                                      'initial_full_table_complete') or False
-
-                bookmark = raw_state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
-                version_exists = True if 'version' in bookmark else False
-
-
-                if raw_initial_full_table_complete:
-                    state = singer.write_bookmark(state,
-                                                  catalog_entry.tap_stream_id,
-                                                  'initial_full_table_complete',
-                                                  raw_initial_full_table_complete)
-                elif version_exists:
-                    # Self-heal and convert the None version to initial_full_table_complete
-                    singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
-                    state = singer.write_bookmark(state,
-                                                  catalog_entry.tap_stream_id,
-                                                  'initial_full_table_complete',
-                                                  True)
-    return state
 
 
 def schema_for_column(c):
@@ -563,6 +448,16 @@ def generate_messages(con, config, catalog, state):
 
                     log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
 
+                    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'version',
+                                                  stream_version)
+
+                    for message in full_table.sync_table(con, catalog_entry, state, columns, stream_version):
+                        yield message
+
                     state = singer.write_bookmark(state,
                                                   catalog_entry.tap_stream_id,
                                                   'log_file',
@@ -573,17 +468,18 @@ def generate_messages(con, config, catalog, state):
                                                   'log_pos',
                                                   log_pos)
 
-                    for message in full_table.sync_table(con, catalog_entry, state, columns):
-                        yield message
+                    yield singer.StateMessage(value=copy.deepcopy(state))
             elif replication_method == 'FULL_TABLE':
                 LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
 
                 yield generate_schema_message(catalog_entry, key_properties, [])
 
-                for message in full_table.sync_table(con, catalog_entry, state, columns):
+                stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+
+                for message in full_table.sync_table(con, catalog_entry, state, columns, stream_version):
                     yield message
 
-                # Do not persist version for full table
+                # Prefer initial_full_table_complete going forward
                 singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
 
                 state = singer.write_bookmark(state,
@@ -662,11 +558,11 @@ def main_impl():
     if args.discover:
         do_discover(connection)
     elif args.catalog:
-        state = build_state(args.state, args.catalog)
+        state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
-        state = build_state(args.state, catalog)
+        state = args.state or {}
         do_sync(connection, args.config, catalog, state)
     else:
         LOGGER.info("No properties were selected")
