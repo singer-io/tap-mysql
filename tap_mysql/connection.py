@@ -68,7 +68,9 @@ class MySQLConnection(pymysql.connections.Connection):
             args["database"] = config["database"]
 
         # Attempt self-signed SSL if config vars are present
-        if config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key"):
+        use_self_signed_ssl = config.get("ssl_ca") and config.get("ssl_cert") and config.get("ssl_key")
+
+        if use_self_signed_ssl:
             LOGGER.info("Using custom certificate authority")
 
             # The SSL module requires files not data, so we have to write out the
@@ -99,7 +101,7 @@ class MySQLConnection(pymysql.connections.Connection):
         super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
         # Attempt SSL
-        if config.get("ssl") == 'true':
+        if config.get("ssl") == 'true' and not use_self_signed_ssl:
             LOGGER.info("Attempting SSL connection")
             self.ssl = True
             self.ctx = ssl.create_default_context()
