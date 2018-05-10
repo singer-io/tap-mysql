@@ -186,7 +186,8 @@ def sync_table(connection, config, catalog_entry, state, columns):
         pymysql_wrapper=connection_wrapper
     )
 
-    table_path = (catalog_entry.database, catalog_entry.stream)
+    database_name = common.get_database_name(catalog_entry)
+    table_path = (database_name, catalog_entry.stream)
 
     time_extracted = utils.now()
 

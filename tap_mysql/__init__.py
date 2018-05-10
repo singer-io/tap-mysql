@@ -204,27 +204,49 @@ def discover_catalog(connection):
             schema = Schema(type='object',
                             properties={c.column_name: schema_for_column(c) for c in cols})
             md = create_column_metadata(cols)
-            entry = CatalogEntry(
-                database=table_schema,
-                table=table_name,
-                stream=table_name,
-                metadata=md,
-                tap_stream_id=table_schema + '-' + table_name,
-                schema=schema)
+            md_map = metadata.to_map(md)
+
+            md_map = metadata.write(md_map,
+                                    (),
+                                    'database-name',
+                                    table_schema)
+
+            is_view = table_info[table_schema][table_name]['is_view']
+
+            if table_schema in table_info and table_name in table_info[table_schema]:
+                row_count = table_info[table_schema][table_name].get('row_count')
+
+                if row_count is not None:
+                    md_map = metadata.write(md_map,
+                                            (),
+                                            'row-count',
+                                            row_count)
+
+                md_map = metadata.write(md_map,
+                                        (),
+                                        'is-view',
+                                        is_view)
+
             column_is_key_prop = lambda c, s: (
                 c.column_key == 'PRI' and
                 s.properties[c.column_name].inclusion != 'unsupported'
             )
+
             key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
 
-            is_view = table_info[table_schema][table_name]['is_view']
-
             if not is_view:
-                md.append({'metadata': {'table-key-properties' : key_properties}, 'breadcrumb': ()})
+                md_map = metadata.write(md_map,
+                                        (),
+                                        'table-key-properties',
+                                        key_properties)
 
-            if table_schema in table_info and table_name in table_info[table_schema]:
-                entry.row_count = table_info[table_schema][table_name]['row_count']
-                entry.is_view = is_view
+            entry = CatalogEntry(
+                table=table_name,
+                stream=table_name,
+                metadata=metadata.to_list(md_map),
+                tap_stream_id=table_schema + '-' + table_name,
+                schema=schema)
+
             entries.append(entry)
 
         return Catalog(entries)
@@ -281,8 +303,11 @@ def desired_columns(selected, table_schema):
 
 
 def log_engine(connection, catalog_entry):
-    if catalog_entry.is_view:
-        LOGGER.info("Beginning sync for view %s.%s", catalog_entry.database, catalog_entry.table)
+    is_view = common.get_is_view(catalog_entry)
+    database_name = common.get_database_name(catalog_entry)
+
+    if is_view:
+        LOGGER.info("Beginning sync for view %s.%s", database_name, catalog_entry.table)
     else:
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -290,14 +315,14 @@ def log_engine(connection, catalog_entry):
                   FROM information_schema.tables
                  WHERE table_schema = %s
                    AND table_name   = %s
-            """, (catalog_entry.database, catalog_entry.table))
+            """, (database_name, catalog_entry.table))
 
             row = cursor.fetchone()
 
             if row:
                 LOGGER.info("Beginning sync for %s table %s.%s",
                             row[0],
-                            catalog_entry.database,
+                            database_name,
                             catalog_entry.table)
 
 
@@ -347,9 +372,11 @@ def resolve_catalog(con, catalog, state):
         replication_key = catalog_metadata.get((), {}).get('replication-key')
 
         discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
+        database_name = common.get_database_name(catalog_entry)
+
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
-                           catalog_entry.database, catalog_entry.table)
+                           database_name, catalog_entry.table)
             continue
         selected = set([k for k, v in catalog_entry.schema.properties.items()
                         if v.selected or k == replication_key])
@@ -361,9 +388,7 @@ def resolve_catalog(con, catalog, state):
             tap_stream_id=catalog_entry.tap_stream_id,
             metadata=catalog_entry.metadata,
             stream=catalog_entry.stream,
-            database=catalog_entry.database,
             table=catalog_entry.table,
-            is_view=catalog_entry.is_view,
             schema=Schema(
                 type='object',
                 properties={col: discovered_table.schema.properties[col]
@@ -403,13 +428,17 @@ def do_sync(con, config, catalog, state):
         replication_method = md_map.get((), {}).get('replication-method')
         replication_key = md_map.get((), {}).get('replication-key')
 
-        if catalog_entry.is_view:
+        is_view = common.get_is_view(catalog_entry)
+
+        if is_view:
             key_properties = md_map.get((), {}).get('view-key-properties')
         else:
             key_properties = md_map.get((), {}).get('table-key-properties')
 
+        database_name = common.get_database_name(catalog_entry)
+
         with metrics.job_timer('sync_table') as timer:
-            timer.tags['database'] = catalog_entry.database
+            timer.tags['database'] = database_name
             timer.tags['table'] = catalog_entry.table
 
             log_engine(con, catalog_entry)
@@ -421,7 +450,7 @@ def do_sync(con, config, catalog, state):
 
                 incremental.sync_table(con, catalog_entry, state, columns)
             elif replication_method == 'LOG_BASED':
-                if catalog_entry.is_view:
+                if is_view:
                     raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(catalog_entry.stream))
 
                 LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
