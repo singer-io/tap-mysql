@@ -77,7 +77,15 @@ def get_test_connection():
 
 def discover_catalog(connection):
     catalog = tap_mysql.discover_catalog(connection)
-    catalog.streams = [s for s in catalog.streams if s.database == DB_NAME]
+    streams = []
+
+    for stream in catalog.streams:
+        database_name = common.get_database_name(stream)
+
+        if database_name == DB_NAME:
+            streams.append(stream)
+
+    catalog.streams = streams
 
     return catalog
 
@@ -667,7 +675,8 @@ class TestBinlogReplication(unittest.TestCase):
 
     def test_fail_on_view(self):
         for stream in self.catalog.streams:
-            stream.is_view = True
+            md = singer.metadata.to_map(stream.metadata)
+            singer.metadata.write(md, (), 'is-view', True)
 
         state = {}
 
@@ -775,8 +784,12 @@ class TestViews(unittest.TestCase):
 
     def test_discovery_sets_is_view(self):
         catalog = discover_catalog(self.con)
+        is_view = {}
 
-        is_view = {s.table: s.is_view for s in catalog.streams}
+        for stream in catalog.streams:
+            md_map = singer.metadata.to_map(stream.metadata)
+            is_view[stream.table] = md_map.get((), {}).get('is-view')
+
         self.assertEqual(
             is_view,
             {'a_table': False,
