@@ -219,12 +219,13 @@ def sync_table(connection, config, catalog_entry, state, columns):
                     filtered_vals = {k:v for k,v in row['values'].items()
                                     if k in columns}
 
-                    yield row_to_singer_record(catalog_entry,
-                                               stream_version,
-                                               db_column_types,
-                                               filtered_vals,
-                                               time_extracted)
+                    record_message = row_to_singer_record(catalog_entry,
+                                                          stream_version,
+                                                          db_column_types,
+                                                          filtered_vals,
+                                                          time_extracted)
 
+                    singer.write_message(record_message)
                     rows_saved = rows_saved + 1
 
 
@@ -233,11 +234,13 @@ def sync_table(connection, config, catalog_entry, state, columns):
                     filtered_vals = {k:v for k,v in row['after_values'].items()
                                     if k in columns}
 
-                    yield row_to_singer_record(catalog_entry,
-                                               stream_version,
-                                               db_column_types,
-                                               filtered_vals,
-                                               time_extracted)
+                    record_message = row_to_singer_record(catalog_entry,
+                                                          stream_version,
+                                                          db_column_types,
+                                                          filtered_vals,
+                                                          time_extracted)
+
+                    singer.write_message(record_message)
 
                     rows_saved = rows_saved + 1
             elif isinstance(binlog_event, DeleteRowsEvent):
@@ -250,11 +253,13 @@ def sync_table(connection, config, catalog_entry, state, columns):
                     filtered_vals = {k:v for k,v in vals.items()
                                     if k in columns}
 
-                    yield row_to_singer_record(catalog_entry,
-                                               stream_version,
-                                               db_column_types,
-                                               filtered_vals,
-                                               time_extracted)
+                    record_message = row_to_singer_record(catalog_entry,
+                                                          stream_version,
+                                                          db_column_types,
+                                                          filtered_vals,
+                                                          time_extracted)
+
+                    singer.write_message(record_message)
 
                     rows_saved = rows_saved + 1
 
@@ -269,6 +274,6 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                       reader.log_pos)
 
             if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
-                yield singer.StateMessage(value=copy.deepcopy(state))
+                singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-    yield singer.StateMessage(value=copy.deepcopy(state))
+    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))

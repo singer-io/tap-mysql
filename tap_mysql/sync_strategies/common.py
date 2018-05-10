@@ -115,7 +115,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                                                   row,
                                                   columns,
                                                   time_extracted)
-            yield record_message
+            singer.write_message(record_message)
 
             if replication_key is not None:
                 state = singer.write_bookmark(state,
@@ -128,8 +128,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                                               'replication_key_value',
                                               record_message.record[replication_key])
             if rows_saved % 1000 == 0:
-                yield singer.StateMessage(value=copy.deepcopy(state))
+                singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
             row = cursor.fetchone()
 
-    yield singer.StateMessage(value=copy.deepcopy(state))
+    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))

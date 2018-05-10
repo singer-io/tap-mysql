@@ -32,20 +32,19 @@ def sync_table(connection, catalog_entry, state, columns, stream_version):
     # For the initial replication, emit an ACTIVATE_VERSION message
     # at the beginning so the records show up right away.
     if not initial_full_table_complete and not (version_exists and state_version is None):
-        yield activate_version_message
+        singer.write_message(activate_version_message)
 
     with connection.cursor() as cursor:
         select_sql = common.generate_select_sql(catalog_entry, columns)
 
         params = {}
 
-        for message in common.sync_query(cursor,
-                                         catalog_entry,
-                                         state,
-                                         select_sql,
-                                         columns,
-                                         stream_version,
-                                         params):
-            yield message
+        common.sync_query(cursor,
+                          catalog_entry,
+                          state,
+                          select_sql,
+                          columns,
+                          stream_version,
+                          params)
 
-    yield activate_version_message
+    singer.write_message(activate_version_message)
