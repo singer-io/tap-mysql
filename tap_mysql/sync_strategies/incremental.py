@@ -42,10 +42,13 @@ def sync_table(connection, catalog_entry, state, columns):
                                   'version',
                                   stream_version)
 
-    yield singer.ActivateVersionMessage(
+    activate_version_message = singer.ActivateVersionMessage(
         stream=catalog_entry.stream,
         version=stream_version
     )
+
+    singer.write_message(activate_version_message)
+
 
     with connection.cursor() as cursor:
         select_sql = common.generate_select_sql(catalog_entry, columns)
@@ -63,11 +66,10 @@ def sync_table(connection, catalog_entry, state, columns):
         elif replication_key is not None:
             select_sql += ' ORDER BY `{}` ASC'.format(replication_key)
 
-        for message in common.sync_query(cursor,
-                                         catalog_entry,
-                                         state,
-                                         select_sql,
-                                         columns,
-                                         stream_version,
-                                         params):
-            yield message
+        common.sync_query(cursor,
+                          catalog_entry,
+                          state,
+                          select_sql,
+                          columns,
+                          stream_version,
+                          params)

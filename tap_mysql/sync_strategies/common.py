@@ -7,6 +7,7 @@ import singer
 import time
 
 import singer.metrics as metrics
+from singer import metadata
 from singer import utils
 
 LOGGER = singer.get_logger()
@@ -27,8 +28,20 @@ def get_stream_version(tap_stream_id, state):
     return stream_version
 
 
+def get_is_view(catalog_entry):
+    md_map = metadata.to_map(catalog_entry.metadata)
+
+    return md_map.get((), {}).get('is-view')
+
+
+def get_database_name(catalog_entry):
+    md_map = metadata.to_map(catalog_entry.metadata)
+
+    return md_map.get((), {}).get('database-name')
+
 def generate_select_sql(catalog_entry, columns):
-    escaped_db = escape(catalog_entry.database)
+    database_name = get_database_name(catalog_entry)
+    escaped_db = escape(database_name)
     escaped_table = escape(catalog_entry.table)
     escaped_columns = [escape(c) for c in columns]
 
@@ -103,8 +116,9 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
     row = cursor.fetchone()
     rows_saved = 0
 
+    database_name = get_database_name(catalog_entry)
     with metrics.record_counter(None) as counter:
-        counter.tags['database'] = catalog_entry.database
+        counter.tags['database'] = database_name
         counter.tags['table'] = catalog_entry.table
 
         while row:
@@ -115,7 +129,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                                                   row,
                                                   columns,
                                                   time_extracted)
-            yield record_message
+            singer.write_message(record_message)
 
             if replication_key is not None:
                 state = singer.write_bookmark(state,
@@ -128,8 +142,8 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
                                               'replication_key_value',
                                               record_message.record[replication_key])
             if rows_saved % 1000 == 0:
-                yield singer.StateMessage(value=copy.deepcopy(state))
+                singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
             row = cursor.fetchone()
 
-    yield singer.StateMessage(value=copy.deepcopy(state))
+    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
