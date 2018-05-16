@@ -91,6 +91,10 @@ def fetch_current_log_file_and_pos(connection):
         cur.execute("SHOW MASTER STATUS")
 
         result = cur.fetchone()
+
+        if result is None:
+            raise Exception("MySQL binary logging is not enabled.")
+
         current_log_file, current_log_pos = result[0:2]
 
         return current_log_file, current_log_pos
