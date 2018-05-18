@@ -1,0 +1,29 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: 218546966473.dkr.ecr.us-east-1.amazonaws.com/circle-ci:tap-tester
+    steps:
+      - checkout
+      - run:
+          name: 'Setup virtual env'
+          command: |
+            virtualenv -p python3 ~/.virtualenvs/tap-mysql
+            source ~/.virtualenvs/tap-mysql/bin/activate
+            pip install .
+            pip install pylint
+            pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
+      #- run:
+      #    name: 'Unit Tests'
+      #    command: |
+      #      source ~/.virtualenvs/tap-salesforce/bin/activate
+      #      pip install nose
+      #      nosetests
+      - add_ssh_keys
+      - run:
+          name: 'Integration Tests'
+          command: |
+            aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/sandbox dev_env.sh
+            source dev_env.sh
+            source ~/.virtualenvs/tap-tester/bin/activate
+            run-a-test --tap=tap-mysql tap_tester_mysql_binlog
