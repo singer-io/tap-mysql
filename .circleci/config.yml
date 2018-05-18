@@ -26,4 +26,8 @@ jobs:
             aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/sandbox dev_env.sh
             source dev_env.sh
             source ~/.virtualenvs/tap-tester/bin/activate
-            run-a-test --tap=tap-mysql tap_tester_mysql_binlog
+            run-a-test --tap=tap-mysql \
+                       --email=harrison+sandboxtest@stitchdata.com \
+                       --password=$SANDBOX_PASSWORD
+                       --client-id=50 \
+                       tap_tester_mysql_binlog
