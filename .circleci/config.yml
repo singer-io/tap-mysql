@@ -6,10 +6,9 @@ jobs:
     steps:
       - checkout
       - run:
-          name: 'Setup environment variables'
+          name: 'Get environment variables'
           command: |
             aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/sandbox dev_env.sh
-            source dev_env.sh
       - run:
           name: 'Setup virtual env'
           command: |
@@ -23,12 +22,14 @@ jobs:
           command: |
             source ~/.virtualenvs/tap-mysql/bin/activate
             pip install nose
+            source dev_env.sh
             nosetests
       - add_ssh_keys
       - run:
           name: 'Integration Tests'
           command: |
             source ~/.virtualenvs/tap-tester/bin/activate
+            source dev_env.sh
             run-a-test --tap=tap-mysql \
                        --target=target-stitch \
                        --orchestrator=stitch-orchestrator \
