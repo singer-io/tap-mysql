@@ -13,12 +13,12 @@ jobs:
             pip install .
             pip install pylint
             pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
-      #- run:
-      #    name: 'Unit Tests'
-      #    command: |
-      #      source ~/.virtualenvs/tap-salesforce/bin/activate
-      #      pip install nose
-      #      nosetests
+      - run:
+          name: 'Unit Tests'
+          command: |
+            source ~/.virtualenvs/tap-salesforce/bin/activate
+            pip install nose
+            nosetests
       - add_ssh_keys
       - run:
           name: 'Integration Tests'
