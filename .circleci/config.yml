@@ -27,6 +27,8 @@ jobs:
             source dev_env.sh
             source ~/.virtualenvs/tap-tester/bin/activate
             run-a-test --tap=tap-mysql \
+                       --target=target-stitch \
+                       --orchestrator=stitch-orchestrator \
                        --email=harrison+sandboxtest@stitchdata.com \
                        --password=$SANDBOX_PASSWORD \
                        --client-id=50 \
