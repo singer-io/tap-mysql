@@ -44,10 +44,10 @@ def set_replication_method_and_key(stream, r_method, r_key):
 
 def get_db_config():
     config = {}
-    config['host'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_HOST')
-    config['port'] = int(os.environ.get('SINGER_TAP_MYSQL_TEST_DB_PORT'))
-    config['user'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_USER')
-    config['password'] = os.environ.get('SINGER_TAP_MYSQL_TEST_DB_PASSWORD')
+    config['host'] = os.environ.get('TAP_MYSQL_HOST')
+    config['port'] = int(os.environ.get('TAP_MYSQL_PORT'))
+    config['user'] = os.environ.get('TAP_MYSQL_USER')
+    config['password'] = os.environ.get('TAP_MYSQL_PASSWORD')
     config['charset'] = 'utf8'
     if not config['password']:
         del config['password']
