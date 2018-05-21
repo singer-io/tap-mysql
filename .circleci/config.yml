@@ -16,7 +16,7 @@ jobs:
       - run:
           name: 'Unit Tests'
           command: |
-            source ~/.virtualenvs/tap-salesforce/bin/activate
+            source ~/.virtualenvs/tap-mysql/bin/activate
             pip install nose
             nosetests
       - add_ssh_keys
