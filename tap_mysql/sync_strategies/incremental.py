@@ -22,7 +22,6 @@ def sync_table(connection, catalog_entry, state, columns):
                                                 catalog_entry.tap_stream_id,
                                                 'replication_key')
 
-    replication_key = replication_key_state or replication_key_metadata
     replication_key_value = None
 
     if replication_key_metadata == replication_key_state:
@@ -33,7 +32,7 @@ def sync_table(connection, catalog_entry, state, columns):
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'replication_key',
-                                      replication_key)
+                                      replication_key_metadata)
         state = singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'replication_key_value')
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
@@ -55,16 +54,16 @@ def sync_table(connection, catalog_entry, state, columns):
         params = {}
 
         if replication_key_value is not None:
-            if catalog_entry.schema.properties[replication_key].format == 'date-time':
+            if catalog_entry.schema.properties[replication_key_metadata].format == 'date-time':
                 replication_key_value = pendulum.parse(replication_key_value)
 
             select_sql += ' WHERE `{}` >= %(replication_key_value)s ORDER BY `{}` ASC'.format(
-                replication_key,
-                replication_key)
+                replication_key_metadata,
+                replication_key_metadata)
 
             params['replication_key_value'] = replication_key_value
-        elif replication_key is not None:
-            select_sql += ' ORDER BY `{}` ASC'.format(replication_key)
+        elif replication_key_metadata is not None:
+            select_sql += ' ORDER BY `{}` ASC'.format(replication_key_metadata)
 
         common.sync_query(cursor,
                           catalog_entry,
