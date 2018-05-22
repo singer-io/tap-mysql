@@ -431,9 +431,9 @@ def do_sync(con, config, catalog, state):
         is_view = common.get_is_view(catalog_entry)
 
         if is_view:
-            key_properties = md_map.get((), {}).get('view-key-properties')
+            key_properties = md_map.get((), {}).get('view-key-properties', [])
         else:
-            key_properties = md_map.get((), {}).get('table-key-properties')
+            key_properties = md_map.get((), {}).get('table-key-properties', [])
 
         database_name = common.get_database_name(catalog_entry)
 
