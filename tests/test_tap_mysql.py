@@ -575,6 +575,27 @@ class TestIncrementalReplication(unittest.TestCase):
         self.assertEqual(versions[0], versions[1])
         self.assertEqual(versions[1], 1)
 
+    def test_change_replication_key(self):
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-incremental': {
+                    'version': 1,
+                    'replication_key_value': '2017-06-20',
+                    'replication_key': 'updated'
+                }
+            }
+        }
+
+        stream = [x for x in self.catalog.streams if x.stream == 'incremental'][0]
+
+        set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
+        stream.schema.properties['updated'].selected = True
+        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+
+        self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key'], 'val')
+        self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key_value'], 3)
+        self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['version'], 1)
+
     def test_version_not_cleared_from_state_after_incremental_success(self):
         state = {
             'bookmarks': {
@@ -857,6 +878,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestStreamVersionFullTable()
+    test1 = TestIncrementalReplication()
     test1.setUp()
-    test1.test_with_no_initial_full_table_complete_in_state()
+    test1.test_change_replication_key()
