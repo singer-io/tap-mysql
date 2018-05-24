@@ -129,10 +129,6 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema.properties['c_decimal'],
                          Schema(['null', 'number'],
                                 inclusion='available',
-                                maximum=10000000000,
-                                exclusiveMaximum=True,
-                                minimum=-10000000000,
-                                exclusiveMinimum=True,
                                 multipleOf=1))
         self.assertEqual(self.get_metadata_for_column('c_decimal'),
                          {'selected-by-default': True,
@@ -142,9 +138,6 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema.properties['c_decimal_2_unsigned'],
                          Schema(['null', 'number'],
                                 inclusion='available',
-                                maximum=1000,
-                                exclusiveMaximum=True,
-                                minimum=0,
                                 multipleOf=0.01))
         self.assertEqual(self.get_metadata_for_column('c_decimal_2_unsigned'),
                          {'selected-by-default': True,
@@ -154,10 +147,6 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.schema.properties['c_decimal_2'],
                          Schema(['null', 'number'],
                                 inclusion='available',
-                                maximum=1000000000,
-                                exclusiveMaximum=True,
-                                minimum=-1000000000,
-                                exclusiveMinimum=True,
                                 multipleOf=0.01))
         self.assertEqual(self.get_metadata_for_column('c_decimal_2'),
                          {'selected-by-default': True,
