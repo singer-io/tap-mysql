@@ -44,13 +44,12 @@ def get_key_properties(catalog_entry):
     catalog_metadata = metadata.to_map(catalog_entry.metadata)
     stream_metadata = catalog_metadata.get((), {})
 
-    is_view = common.get_is_view(catalog_entry)
+    is_view = get_is_view(catalog_entry)
 
     if is_view:
-        return md_map.get((), {}).get('view-key-properties', [])
+        return stream_metadata.get('view-key-properties', [])
     else:
-        return md_map.get((), {}).get('table-key-properties', [])
-
+        return stream_metadata.get('table-key-properties', [])
 
 
 def generate_select_sql(catalog_entry, columns):
