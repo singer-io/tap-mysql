@@ -78,18 +78,23 @@ def generate_pk_clause(catalog_entry, state):
                                         catalog_entry.tap_stream_id,
                                         'max_pk_values')
 
-    pk_comparisons = ["{} <= {}".format(common.escape(pk), max_pk_values[pk])
-                      for pk in key_properties]
-
     last_pk_fetched = singer.get_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'last_pk_fetched')
 
     if last_pk_fetched:
-        last_pk_values = ""
+        pk_comparisons = ["({} > {} AND {} <= {})".format(common.escape(pk),
+                                                          last_pk_fetched[pk],
+                                                          common.escape(pk),
+                                                          max_pk_values[pk])
+                          for pk in key_properties]
     else:
-        sql = " WHERE {} ORDER BY {} ASC".format(" AND ".join(pk_comparisons),
-                                                 ", ".join(escaped_columns))
+        pk_comparisons = ["{} <= {}".format(common.escape(pk), max_pk_values[pk])
+                          for pk in key_properties]
+
+    sql = " WHERE {} ORDER BY {} ASC".format(" AND ".join(pk_comparisons),
+                                             ", ".join(escaped_columns))
+
     return sql
 
 
