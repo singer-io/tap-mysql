@@ -78,7 +78,7 @@ def generate_pk_clause(catalog_entry, state):
                                         catalog_entry.tap_stream_id,
                                         'max_pk_values')
 
-    pk_comparisons = ["{} < {}".format(common.escape(pk), max_pk_values[pk])
+    pk_comparisons = ["{} <= {}".format(common.escape(pk), max_pk_values[pk])
                       for pk in key_properties]
 
     last_pk_fetched = singer.get_bookmark(state,
