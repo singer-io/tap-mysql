@@ -10,6 +10,39 @@ LOGGER = singer.get_logger()
 
 BOOKMARK_KEYS = {'version', 'initial_full_table_complete'}
 
+
+def pks_are_autoincrementing(connection, catalog_entry, key_properties):
+    database_name = common.get_database_name(catalog_entry)
+    escaped_db = escape(database_name)
+    escaped_table = escape(catalog_entry.table)
+
+    if not key_properties:
+        return False
+
+    sql = """SELECT 1
+               FROM information_schema.columns
+              WHERE table_schema = '{}'
+                AND table_name = '{}'
+                AND column_name = '{}'
+                AND extra LIKE '%auto_increment%'
+"""
+
+    with connection.cursor() as cur:
+        for pk in key_properties:
+            import pdb
+            pdb.set_trace()
+            cur.execute(sql.format(escaped_db,
+                                   escaped_table,
+                                   common.escape(pk)))
+
+            result = cur.fetchone()
+
+            if not result:
+                return False
+
+    return True
+
+
 def sync_table(connection, catalog_entry, state, columns, stream_version):
     common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
 

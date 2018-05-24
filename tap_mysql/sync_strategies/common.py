@@ -39,6 +39,20 @@ def get_database_name(catalog_entry):
 
     return md_map.get((), {}).get('database-name')
 
+
+def get_key_properties(catalog_entry):
+    catalog_metadata = metadata.to_map(catalog_entry.metadata)
+    stream_metadata = catalog_metadata.get((), {})
+
+    is_view = common.get_is_view(catalog_entry)
+
+    if is_view:
+        return md_map.get((), {}).get('view-key-properties', [])
+    else:
+        return md_map.get((), {}).get('table-key-properties', [])
+
+
+
 def generate_select_sql(catalog_entry, columns):
     database_name = get_database_name(catalog_entry)
     escaped_db = escape(database_name)

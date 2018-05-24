@@ -430,12 +430,8 @@ def do_sync(con, config, catalog, state):
 
         is_view = common.get_is_view(catalog_entry)
 
-        if is_view:
-            key_properties = md_map.get((), {}).get('view-key-properties', [])
-        else:
-            key_properties = md_map.get((), {}).get('table-key-properties', [])
-
         database_name = common.get_database_name(catalog_entry)
+        key_properties = common.get_key_properties(catalog_entry)
 
         with metrics.job_timer('sync_table') as timer:
             timer.tags['database'] = database_name
