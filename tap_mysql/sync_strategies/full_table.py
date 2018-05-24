@@ -156,4 +156,8 @@ def sync_table(connection, catalog_entry, state, columns, stream_version):
                           stream_version,
                           params)
 
+    # clear max pk value and last pk fetched upon successful sync
+    singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
+    singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'last_pk_fetched')
+
     singer.write_message(activate_version_message)
