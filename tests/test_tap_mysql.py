@@ -155,7 +155,9 @@ class TestTypeMapping(unittest.TestCase):
     def test_tinyint(self):
         self.assertEqual(self.schema.properties['c_tinyint'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=-128,
+                                maximum=127))
         self.assertEqual(self.get_metadata_for_column('c_tinyint'),
                          {'selected-by-default': True,
                           'sql-datatype': 'tinyint(4)'})
@@ -179,7 +181,9 @@ class TestTypeMapping(unittest.TestCase):
     def test_smallint(self):
         self.assertEqual(self.schema.properties['c_smallint'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=-32768,
+                                maximum=32767))
         self.assertEqual(self.get_metadata_for_column('c_smallint'),
                          {'selected-by-default': True,
                           'sql-datatype': 'smallint(6)'})
@@ -187,7 +191,9 @@ class TestTypeMapping(unittest.TestCase):
     def test_mediumint(self):
         self.assertEqual(self.schema.properties['c_mediumint'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=-8388608,
+                                maximum=8388607))
         self.assertEqual(self.get_metadata_for_column('c_mediumint'),
                          {'selected-by-default': True,
                           'sql-datatype': 'mediumint(9)'})
@@ -195,7 +201,9 @@ class TestTypeMapping(unittest.TestCase):
     def test_int(self):
         self.assertEqual(self.schema.properties['c_int'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=-2147483648,
+                                maximum=2147483647))
         self.assertEqual(self.get_metadata_for_column('c_int'),
                          {'selected-by-default': True,
                           'sql-datatype': 'int(11)'})
@@ -203,7 +211,9 @@ class TestTypeMapping(unittest.TestCase):
     def test_bigint(self):
         self.assertEqual(self.schema.properties['c_bigint'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=-9223372036854775808,
+                                maximum=9223372036854775807))
         self.assertEqual(self.get_metadata_for_column('c_bigint'),
                          {'selected-by-default': True,
                           'sql-datatype': 'bigint(20)'})
@@ -211,7 +221,10 @@ class TestTypeMapping(unittest.TestCase):
     def test_bigint_unsigned(self):
         self.assertEqual(self.schema.properties['c_bigint_unsigned'],
                          Schema(['null', 'integer'],
-                                inclusion='available'))
+                                inclusion='available',
+                                minimum=0,
+                                maximum=18446744073709551615))
+        
         self.assertEqual(self.get_metadata_for_column('c_bigint_unsigned'),
                          {'selected-by-default': True,
                           'sql-datatype': 'bigint(20) unsigned'})
