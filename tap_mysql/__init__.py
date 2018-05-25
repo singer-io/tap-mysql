@@ -104,14 +104,7 @@ def schema_for_column(c):
 
     elif data_type == 'decimal':
         result.type = ['null', 'number']
-        result.exclusiveMaximum = True
-        result.maximum = 10 ** (c.numeric_precision - c.numeric_scale)
         result.multipleOf = 10 ** (0 - c.numeric_scale)
-        if 'unsigned' in column_type:
-            result.minimum = 0
-        else:
-            result.exclusiveMinimum = True
-            result.minimum = -10 ** (c.numeric_precision - c.numeric_scale)
         return result
 
     elif data_type in STRING_TYPES:
