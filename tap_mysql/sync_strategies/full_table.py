@@ -76,7 +76,10 @@ def get_max_pk_values(connection, catalog_entry):
                                order_column_clause))
         result = cur.fetchone()
 
-        return dict(zip(key_properties, result))
+        if result:
+            return dict(zip(key_properties, result))
+        else:
+            return {}
 
 
 def generate_pk_clause(catalog_entry, state):
@@ -144,29 +147,30 @@ def sync_table(connection, catalog_entry, state, columns, stream_version):
             LOGGER.info("Detected auto-incrementing primary key(s) - will replicate incrementally")
             max_pk_values = singer.get_bookmark(state,
                                                 catalog_entry.tap_stream_id,
-                                                'max_pk_values')
+                                                'max_pk_values') or get_max_pk_values(connection, catalog_entry)
+
 
             if not max_pk_values:
-                max_pk_values = get_max_pk_values(connection, catalog_entry)
-
+                LOGGER.info("Skipping table {} - no max value for auto-incrementing PK found".format(catalog_entry.table))
+            else:
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
                                               'max_pk_values',
                                               max_pk_values)
 
-            pk_clause = generate_pk_clause(catalog_entry, state)
+                pk_clause = generate_pk_clause(catalog_entry, state)
 
-            select_sql += pk_clause
+                select_sql += pk_clause
 
-        params = {}
+                params = {}
 
-        common.sync_query(cursor,
-                          catalog_entry,
-                          state,
-                          select_sql,
-                          columns,
-                          stream_version,
-                          params)
+                common.sync_query(cursor,
+                                  catalog_entry,
+                                  state,
+                                  select_sql,
+                                  columns,
+                                  stream_version,
+                                  params)
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
