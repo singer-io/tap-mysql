@@ -149,7 +149,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             stream_metadata = md_map.get((), {})
             replication_method = stream_metadata.get('replication-method')
 
-            if replication_method == 'FULL_TABLE':
+            if replication_method in {'FULL_TABLE', 'LOG_BASED'}:
                 key_properties = get_key_properties(catalog_entry)
 
                 max_pk_values = singer.get_bookmark(state,

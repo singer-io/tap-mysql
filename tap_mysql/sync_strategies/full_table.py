@@ -3,12 +3,24 @@
 
 import copy
 import singer
+from singer import metadata
 
+import tap_mysql.sync_strategies.binlog as binlog
 import tap_mysql.sync_strategies.common as common
 
 LOGGER = singer.get_logger()
 
-BOOKMARK_KEYS = {'last_pk_fetched', 'max_pk_values', 'version', 'initial_full_table_complete'}
+
+def generate_bookmark_keys(catalog_entry):
+    md_map = metadata.to_map(catalog_entry.metadata)
+    stream_metadata = md_map.get((), {})
+    replication_method = stream_metadata.get('replication-method')
+
+    base_bookmark_keys = {'last_pk_fetched', 'max_pk_values', 'version', 'initial_full_table_complete'}
+    if replication_method == 'FULL_TABLE':
+        return base_bookmark_keys
+    else:
+        return base_bookmark_keys.union(binlog.BOOKMARK_KEYS)
 
 
 def pks_are_auto_incrementing(connection, catalog_entry):
@@ -100,7 +112,7 @@ def generate_pk_clause(catalog_entry, state):
 
 
 def sync_table(connection, catalog_entry, state, columns, stream_version):
-    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
+    common.whitelist_bookmark_keys(generate_bookmark_keys(catalog_entry), catalog_entry.tap_stream_id, state)
 
     bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
     version_exists = True if 'version' in bookmark else False
