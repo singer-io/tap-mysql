@@ -6,6 +6,11 @@ import singer
 import os
 import singer.metadata
 
+try:
+    import tests.utils as test_utils
+except ImportError:
+    import utils as test_utils
+
 import tap_mysql.sync_strategies.binlog as binlog
 import tap_mysql.sync_strategies.common as common
 
@@ -19,8 +24,6 @@ from pymysqlreplication.row_event import (
 
 from singer.schema import Schema
 
-DB_NAME='tap_mysql_test'
-
 LOGGER = singer.get_logger()
 
 SINGER_MESSAGES = []
@@ -30,70 +33,11 @@ def accumulate_singer_messages(message):
 
 singer.write_message = accumulate_singer_messages
 
-def set_replication_method_and_key(stream, r_method, r_key):
-    new_md = singer.metadata.to_map(stream.metadata)
-    old_md = new_md.get(())
-    if r_method:
-        old_md.update({'replication-method': r_method})
-
-    if r_key:
-        old_md.update({'replication-key': r_key})
-
-    stream.metadata = singer.metadata.to_list(new_md)
-    return stream
-
-def get_db_config():
-    config = {}
-    config['host'] = os.environ.get('TAP_MYSQL_HOST')
-    config['port'] = int(os.environ.get('TAP_MYSQL_PORT'))
-    config['user'] = os.environ.get('TAP_MYSQL_USER')
-    config['password'] = os.environ.get('TAP_MYSQL_PASSWORD')
-    config['charset'] = 'utf8'
-    if not config['password']:
-        del config['password']
-
-    return config
-
-
-def get_test_connection():
-    db_config = get_db_config()
-
-    con = pymysql.connect(**db_config)
-
-    try:
-        with con.cursor() as cur:
-            try:
-                cur.execute('DROP DATABASE {}'.format(DB_NAME))
-            except:
-                pass
-            cur.execute('CREATE DATABASE {}'.format(DB_NAME))
-    finally:
-        con.close()
-
-    db_config['database'] = DB_NAME
-
-    return pymysql.connect(**db_config)
-
-
-def discover_catalog(connection):
-    catalog = tap_mysql.discover_catalog(connection)
-    streams = []
-
-    for stream in catalog.streams:
-        database_name = common.get_database_name(stream)
-
-        if database_name == DB_NAME:
-            streams.append(stream)
-
-    catalog.streams = streams
-
-    return catalog
-
 class TestTypeMapping(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        con = get_test_connection()
+        con = test_utils.get_test_connection()
 
         with con.cursor() as cur:
             cur.execute('''
@@ -118,7 +62,7 @@ class TestTypeMapping(unittest.TestCase):
             c_year YEAR
             )''')
 
-            catalog = discover_catalog(con)
+            catalog = test_utils.discover_catalog(con)
             cls.schema = catalog.streams[0].schema
             cls.metadata = catalog.streams[0].metadata
 
@@ -313,7 +257,7 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
 class TestSchemaMessages(unittest.TestCase):
 
     def runTest(self):
-        con = get_test_connection()
+        con = test_utils.get_test_connection()
         try:
             with con.cursor() as cur:
                 cur.execute('''
@@ -323,11 +267,11 @@ class TestSchemaMessages(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-            catalog = discover_catalog(con)
+            catalog = test_utils.discover_catalog(con)
             catalog.streams[0].stream = 'tab'
             catalog.streams[0].schema.selected = True
             catalog.streams[0].schema.properties['a'].selected = True
-            set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
+            test_utils.set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
 
             SINGER_MESSAGES.clear()
             tap_mysql.do_sync(con, {}, catalog, {})
@@ -351,21 +295,21 @@ def currently_syncing_seq(messages):
 class TestCurrentStream(unittest.TestCase):
 
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE a (val int)')
             cursor.execute('CREATE TABLE b (val int)')
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
 
-        self.catalog = discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con)
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            set_replication_method_and_key(stream, 'FULL_TABLE', None)
+            test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
     def tearDown(self):
         if self.con:
@@ -399,18 +343,18 @@ def message_types_and_versions(messages):
 class TestStreamVersionFullTable(unittest.TestCase):
 
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE full_table (val int)')
             cursor.execute('INSERT INTO full_table (val) VALUES (1)')
 
-        self.catalog = discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con)
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            set_replication_method_and_key(stream, 'FULL_TABLE', None)
+            test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
     def tearDown(self):
         if self.con:
@@ -496,7 +440,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
 class TestIncrementalReplication(unittest.TestCase):
 
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE incremental (val int, updated datetime)')
             cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
@@ -507,14 +451,14 @@ class TestIncrementalReplication(unittest.TestCase):
             cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (2, 2)')
             cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (3, 3)')
 
-        self.catalog = discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con)
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
             stream.schema.properties['val'].selected = True
             stream.stream = stream.table
-            set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
+            test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
 
     def tearDown(self):
         if self.con:
@@ -588,7 +532,7 @@ class TestIncrementalReplication(unittest.TestCase):
 
         stream = [x for x in self.catalog.streams if x.stream == 'incremental'][0]
 
-        set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
+        test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
         stream.schema.properties['updated'].selected = True
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
 
@@ -615,7 +559,7 @@ class TestBinlogReplication(unittest.TestCase):
 
     def setUp(self):
         self.state = {}
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
 
         with self.con.cursor() as cursor:
             log_file, log_pos = binlog.fetch_current_log_file_and_pos(self.con)
@@ -629,7 +573,7 @@ class TestBinlogReplication(unittest.TestCase):
 
         self.con.commit()
 
-        self.catalog = discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con)
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -637,7 +581,7 @@ class TestBinlogReplication(unittest.TestCase):
             stream.schema.properties['id'].selected = True
             stream.schema.properties['updated'].selected = True
             stream.stream = stream.table
-            set_replication_method_and_key(stream, 'LOG_BASED', None)
+            test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
 
             self.state = singer.write_bookmark(self.state,
                                                stream.tap_stream_id,
@@ -741,7 +685,7 @@ class TestBinlogReplication(unittest.TestCase):
     def test_binlog_stream(self):
         stream = self.catalog.streams[0]
         reader = BinLogStreamReader(
-            connection_settings=get_db_config(),
+            connection_settings=test_utils.get_db_config(),
             server_id=binlog.fetch_server_id(self.con),
             only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
         )
@@ -751,7 +695,7 @@ class TestBinlogReplication(unittest.TestCase):
             expected_log_pos = reader.log_pos
 
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, get_db_config(), self.catalog, self.state)
+        tap_mysql.do_sync(self.con, test_utils.get_db_config(), self.catalog, self.state)
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
         message_types = [type(m) for m in SINGER_MESSAGES]
@@ -777,7 +721,7 @@ class TestBinlogReplication(unittest.TestCase):
 
 class TestViews(unittest.TestCase):
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute(
                 '''
@@ -797,7 +741,7 @@ class TestViews(unittest.TestCase):
             self.con.close()
 
     def test_discovery_sets_is_view(self):
-        catalog = discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con)
         is_view = {}
 
         for stream in catalog.streams:
@@ -810,7 +754,7 @@ class TestViews(unittest.TestCase):
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        catalog = discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con)
         primary_keys = {}
         for c in catalog.streams:
             primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
@@ -823,20 +767,19 @@ class TestViews(unittest.TestCase):
 class TestEscaping(unittest.TestCase):
 
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE a (`b c` int)')
             cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
 
-        self.catalog = discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con)
 
-        self.catalog = discover_catalog(self.con)
         self.catalog.streams[0].stream = 'some_stream_name'
         self.catalog.streams[0].schema.selected = True
         self.catalog.streams[0].key_properties = []
         self.catalog.streams[0].schema.properties['b c'].selected = True
 
-        set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
+        test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
 
     def tearDown(self):
         if self.con:
@@ -854,7 +797,7 @@ class TestEscaping(unittest.TestCase):
 class TestUnsupportedPK(unittest.TestCase):
 
     def setUp(self):
-        self.con = get_test_connection()
+        self.con = test_utils.get_test_connection()
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE bad_pk_tab (bad_pk BINARY, age INT, PRIMARY KEY (bad_pk))') # BINARY not presently supported
             cursor.execute('CREATE TABLE good_pk_tab (good_pk INT, age INT, PRIMARY KEY (good_pk))')
@@ -866,7 +809,7 @@ class TestUnsupportedPK(unittest.TestCase):
             self.con.close()
 
     def runTest(self):
-        catalog = discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con)
 
         primary_keys = {}
         for c in catalog.streams:
