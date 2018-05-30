@@ -361,7 +361,11 @@ def resolve_catalog(con, catalog, state):
     # to that stream.
     currently_syncing = singer.get_currently_syncing(state)
     if currently_syncing:
-        streams = dropwhile(lambda s: s.tap_stream_id != currently_syncing, streams)
+        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, streams))
+        other_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, streams))
+
+        streams = currently_syncing_stream + other_streams
+
 
     result = Catalog(streams=[])
 
