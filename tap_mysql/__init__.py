@@ -411,8 +411,10 @@ def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
         bookmark_properties=bookmark_properties
     ))
 
-def do_sync_incremental(con, config, catalog_entry, state, columns):
+def do_sync_incremental(con, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
+    key_properties = common.get_key_properties(catalog_entry)
+
     md_map = metadata.to_map(catalog_entry.metadata)
     replication_key = md_map.get((), {}).get('replication-key')
 
