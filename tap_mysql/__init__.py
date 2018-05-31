@@ -416,6 +416,8 @@ def do_sync_incremental(con, catalog_entry, state, columns):
 
 
 def do_sync_binlog(con, config, catalog_entry, state, columns):
+    binlog.verify_binlog_config(con, catalog_entry)
+
     is_view = common.get_is_view(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
 

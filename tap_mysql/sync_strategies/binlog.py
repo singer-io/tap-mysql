@@ -167,7 +167,6 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                   catalog_entry.tap_stream_id,
                                   'log_pos')
 
-    verify_binlog_config(connection, catalog_entry)
     verify_log_file_exists(connection, catalog_entry, log_file, log_pos)
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
