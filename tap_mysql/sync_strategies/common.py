@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=too-many-arguments,duplicate-code
+# pylint: disable=too-many-arguments,duplicate-code,too-many-locals
 
 import copy
 import datetime
@@ -47,9 +47,11 @@ def get_key_properties(catalog_entry):
     is_view = get_is_view(catalog_entry)
 
     if is_view:
-        return stream_metadata.get('view-key-properties', [])
+        key_properties = stream_metadata.get('view-key-properties', [])
     else:
-        return stream_metadata.get('table-key-properties', [])
+        key_properties = stream_metadata.get('table-key-properties', [])
+
+    return key_properties
 
 
 def generate_select_sql(catalog_entry, columns):

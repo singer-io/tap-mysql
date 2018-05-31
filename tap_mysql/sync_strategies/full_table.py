@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code,too-many-locals
 
 import copy
 import singer
@@ -17,10 +17,13 @@ def generate_bookmark_keys(catalog_entry):
     replication_method = stream_metadata.get('replication-method')
 
     base_bookmark_keys = {'last_pk_fetched', 'max_pk_values', 'version', 'initial_full_table_complete'}
+
     if replication_method == 'FULL_TABLE':
-        return base_bookmark_keys
+        bookmark_keys = base_bookmark_keys
     else:
-        return base_bookmark_keys.union(binlog.BOOKMARK_KEYS)
+        bookmark_keys = base_bookmark_keys.union(binlog.BOOKMARK_KEYS)
+
+    return bookmark_keys
 
 
 def pks_are_auto_incrementing(connection, catalog_entry):
@@ -77,10 +80,11 @@ def get_max_pk_values(connection, catalog_entry):
         result = cur.fetchone()
 
         if result:
-            return dict(zip(key_properties, result))
+            max_pk_values = dict(zip(key_properties, result))
         else:
-            return {}
+            max_pk_values = {}
 
+        return max_pk_values
 
 def generate_pk_clause(catalog_entry, state):
     key_properties = common.get_key_properties(catalog_entry)
@@ -151,7 +155,7 @@ def sync_table(connection, catalog_entry, state, columns, stream_version):
 
 
             if not max_pk_values:
-                LOGGER.info("No max value for auto-incrementing PK found".format(catalog_entry.table))
+                LOGGER.info("No max value for auto-incrementing PK found for table {}".format(catalog_entry.table))
             else:
                 state = singer.write_bookmark(state,
                                               catalog_entry.tap_stream_id,
