@@ -327,7 +327,7 @@ class TestCurrentStream(unittest.TestCase):
 
         SINGER_MESSAGES.clear()
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
-        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+_+')
+        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+a+_+')
 
 def message_types_and_versions(messages):
     message_types = []

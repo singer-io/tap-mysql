@@ -120,7 +120,9 @@ class BinlogInterruption(unittest.TestCase):
 
         self.assertTrue(failed_syncing_table_2)
 
-        record_messages_1 = [[m.stream, m.record] for m in SINGER_MESSAGES if type(m) == singer.RecordMessage]
+        record_messages_1 = [[m.stream, m.record] for m in SINGER_MESSAGES
+                             if isinstance(m, singer.RecordMessage)]
+
         self.assertEqual(record_messages_1,
                          [['table_1', {'id': 1, 'bar': 'abc', 'foo': 100}],
                           ['table_1', {'id': 2, 'bar': 'def', 'foo': 200}],
@@ -156,7 +158,9 @@ class BinlogInterruption(unittest.TestCase):
 
         self.assertFalse(failed_syncing_table_2)
 
-        record_messages_2 = [[m.stream, m.record] for m in SINGER_MESSAGES if type(m) == singer.RecordMessage]
+        record_messages_2 = [[m.stream, m.record] for m in SINGER_MESSAGES
+                             if isinstance(m, singer.RecordMessage)]
+
         self.assertEqual(record_messages_2,
                          [['table_2', {'id': 2, 'bar': 'def', 'foo': 200}],
                           ['table_2', {'id': 3, 'bar': 'abc', 'foo': 100}],
@@ -198,7 +202,9 @@ class BinlogInterruption(unittest.TestCase):
 
         self.assertFalse(failed_syncing_table_2)
 
-        record_messages_3 = [[m.stream, m.record] for m in SINGER_MESSAGES if type(m) == singer.RecordMessage]
+        record_messages_3 = [[m.stream, m.record] for m in SINGER_MESSAGES
+                             if isinstance(m, singer.RecordMessage)]
+
         self.assertEqual(record_messages_3,
                          [['table_1', {'id': 1, 'bar': 'abc', 'foo': 100}],
                           ['table_1', {'id': 2, 'bar': 'def', 'foo': 200}],
@@ -232,7 +238,10 @@ class FullTableInterruption(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
+        global TABLE_2_RECORD_COUNT
         TABLE_2_RECORD_COUNT = 0
+
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
     def tearDown(self):
@@ -253,12 +262,15 @@ class FullTableInterruption(unittest.TestCase):
 
         self.assertTrue(failed_syncing_table_2)
 
-        record_messages_1 = [[m.stream, m.record] for m in SINGER_MESSAGES if type(m) == singer.RecordMessage]
+        record_messages_1 = [[m.stream, m.record] for m in SINGER_MESSAGES
+                             if isinstance(m, singer.RecordMessage)]
+
         self.assertEqual(record_messages_1,
                          [['table_1', {'id': 1, 'bar': 'abc', 'foo': 100}],
                           ['table_1', {'id': 2, 'bar': 'def', 'foo': 200}],
                           ['table_1', {'id': 3, 'bar': 'ghi', 'foo': 300}],
-                          ['table_2', {'id': 1, 'bar': 'ghi', 'foo': 300}]])
+                          ['table_2', {'id': 1, 'bar': 'ghi', 'foo': 300}]
+                         ])
 
         expected_state_1 = {
             'currently_syncing': 'tap_mysql_test-table_2',
@@ -283,7 +295,7 @@ class FullTableInterruption(unittest.TestCase):
 
         self.assertFalse(failed_syncing_table_2)
 
-        record_messages_2 = [[m.stream, m.record] for m in SINGER_MESSAGES if type(m) == singer.RecordMessage]
+        record_messages_2 = [[m.stream, m.record] for m in SINGER_MESSAGES if isinstance(m, singer.RecordMessage)]
         self.assertEqual(record_messages_2,
                          [['table_2', {'id': 2, 'bar': 'def', 'foo': 200}],
                           ['table_2', {'id': 3, 'bar': 'abc', 'foo': 100}],
