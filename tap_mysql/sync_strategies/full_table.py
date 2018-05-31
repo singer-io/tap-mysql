@@ -38,7 +38,7 @@ def pks_are_auto_incrementing(connection, catalog_entry):
               WHERE table_schema = '{}'
                 AND table_name = '{}'
                 AND column_name = '{}'
-
+                AND extra LIKE '%auto_increment%'
     """
 
     with connection.cursor() as cur:
