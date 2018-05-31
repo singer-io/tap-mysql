@@ -36,4 +36,4 @@ jobs:
                        --email=harrison+sandboxtest@stitchdata.com \
                        --password=$SANDBOX_PASSWORD \
                        --client-id=50 \
-                       tap_tester_mysql_binlog
+                       tap_tester.suites.mysql
