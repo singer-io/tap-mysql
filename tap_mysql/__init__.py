@@ -411,6 +411,9 @@ def do_sync_incremental(con, catalog_entry, state, columns):
     md_map = metadata.to_map(catalog_entry.metadata)
     replication_key = md_map.get((), {}).get('replication-key')
 
+    if not replication_key:
+        raise Exception("Cannot use INCREMENTAL replication for table ({}) without a replication key.".format(catalog_entry.stream))
+
     generate_schema_message(catalog_entry, key_properties, [replication_key])
     incremental.sync_table(con, catalog_entry, state, columns)
 
