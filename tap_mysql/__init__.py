@@ -454,9 +454,16 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
         columns = binlog.add_automatic_properties(catalog_entry, columns)
 
         binlog.sync_table(con, config, catalog_entry, state, columns)
+
+        state = singer.write_bookmark(state,
+                                      catalog_entry.tap_stream_id,
+                                      'initial_binlog_complete',
+                                      True)
+
     elif log_file and log_pos and max_pk_values:
         LOGGER.info("Resuming initial full table sync")
         full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+
     else:
         LOGGER.info("Performing initial full table sync")
 
