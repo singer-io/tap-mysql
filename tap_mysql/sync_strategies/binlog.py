@@ -32,7 +32,7 @@ SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
-BOOKMARK_KEYS = {'log_file', 'log_pos', 'version'}
+BOOKMARK_KEYS = {'log_file', 'log_pos', 'version', 'initial_binlog_complete'}
 
 mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP,
@@ -198,8 +198,14 @@ def sync_table(connection, config, catalog_entry, state, columns):
 
     rows_saved = 0
 
+    initial_binlog_complete = singer.get_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'initial_binlog_complete')
+
     for binlog_event in reader:
-        if reader.log_file == log_file and reader.log_pos == log_pos:
+        if (initial_binlog_complete and
+            reader.log_file == log_file and
+            reader.log_pos == log_pos):
             LOGGER.info("Skipping event for log_file=%s and log_pos=%s as it was processed last sync",
                         reader.log_file,
                         reader.log_pos)
