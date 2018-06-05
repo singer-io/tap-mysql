@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code,too-many-locals
+# pylint: disable=duplicate-code,too-many-locals,too-many-arguments
 
 import copy
 
@@ -32,7 +32,7 @@ SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
-BOOKMARK_KEYS = {'log_file', 'log_pos', 'version'}
+BOOKMARK_KEYS = {'log_file', 'log_pos', 'version', 'initial_binlog_complete'}
 
 mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP,
@@ -156,6 +156,90 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         time_extracted=time_extracted)
 
 
+def update_bookmark(state, tap_stream_id, log_file, log_pos):
+    state = singer.write_bookmark(state,
+                                  tap_stream_id,
+                                  'log_file',
+                                  log_file)
+
+    state = singer.write_bookmark(state,
+                                  tap_stream_id,
+                                  'log_pos',
+                                  log_pos)
+
+    return state
+
+
+def get_db_column_types(event):
+    return {c.name:c.type for c in  event.columns}
+
+
+def handle_write_rows_event(event, catalog_entry, state, columns, rows_saved, time_extracted):
+    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+    db_column_types = get_db_column_types(event)
+
+    for row in event.rows:
+        filtered_vals = {k:v for k,v in row['values'].items()
+                         if k in columns}
+
+        record_message = row_to_singer_record(catalog_entry,
+                                              stream_version,
+                                              db_column_types,
+                                              filtered_vals,
+                                              time_extracted)
+
+        singer.write_message(record_message)
+        rows_saved = rows_saved + 1
+
+    return rows_saved
+
+
+def handle_update_rows_event(event, catalog_entry, state, columns, rows_saved, time_extracted):
+    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+    db_column_types = get_db_column_types(event)
+
+    for row in event.rows:
+        filtered_vals = {k:v for k,v in row['after_values'].items()
+                         if k in columns}
+
+        record_message = row_to_singer_record(catalog_entry,
+                                              stream_version,
+                                              db_column_types,
+                                              filtered_vals,
+                                              time_extracted)
+
+        singer.write_message(record_message)
+
+        rows_saved = rows_saved + 1
+
+    return rows_saved
+
+def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, time_extracted):
+    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
+    db_column_types = get_db_column_types(event)
+
+    for row in event.rows:
+        event_ts = datetime.datetime.utcfromtimestamp(event.timestamp).replace(tzinfo=pytz.UTC)
+
+        vals = row['values']
+        vals[SDC_DELETED_AT] = event_ts
+
+        filtered_vals = {k:v for k,v in vals.items()
+                         if k in columns}
+
+        record_message = row_to_singer_record(catalog_entry,
+                                              stream_version,
+                                              db_column_types,
+                                              filtered_vals,
+                                              time_extracted)
+
+        singer.write_message(record_message)
+
+        rows_saved = rows_saved + 1
+
+    return rows_saved
+
+
 def sync_table(connection, config, catalog_entry, state, columns):
     common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
 
@@ -198,84 +282,39 @@ def sync_table(connection, config, catalog_entry, state, columns):
 
     rows_saved = 0
 
+    initial_binlog_complete = singer.get_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'initial_binlog_complete')
+
     for binlog_event in reader:
-        if reader.log_file == log_file and reader.log_pos == log_pos:
+        if (initial_binlog_complete and
+            reader.log_file == log_file and
+            reader.log_pos == log_pos):
             LOGGER.info("Skipping event for log_file=%s and log_pos=%s as it was processed last sync",
                         reader.log_file,
                         reader.log_pos)
             continue
 
         if isinstance(binlog_event, RotateEvent):
-            state = singer.write_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'log_file',
-                                          binlog_event.next_binlog)
-            state = singer.write_bookmark(state,
-                                          catalog_entry.tap_stream_id,
-                                          'log_pos',
-                                          binlog_event.position)
+            state = update_bookmark(state,
+                                    catalog_entry.tap_stream_id,
+                                    binlog_event.next_binlog,
+                                    binlog_event.position)
 
         elif (binlog_event.schema, binlog_event.table) == table_path:
-            db_column_types = {c.name:c.type for c in  binlog_event.columns}
-
             if isinstance(binlog_event, WriteRowsEvent):
-                for row in binlog_event.rows:
-                    filtered_vals = {k:v for k,v in row['values'].items()
-                                    if k in columns}
-
-                    record_message = row_to_singer_record(catalog_entry,
-                                                          stream_version,
-                                                          db_column_types,
-                                                          filtered_vals,
-                                                          time_extracted)
-
-                    singer.write_message(record_message)
-                    rows_saved = rows_saved + 1
-
+                rows_saved = handle_write_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
 
             elif isinstance(binlog_event, UpdateRowsEvent):
-                for row in binlog_event.rows:
-                    filtered_vals = {k:v for k,v in row['after_values'].items()
-                                    if k in columns}
+                rows_saved = handle_update_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
 
-                    record_message = row_to_singer_record(catalog_entry,
-                                                          stream_version,
-                                                          db_column_types,
-                                                          filtered_vals,
-                                                          time_extracted)
-
-                    singer.write_message(record_message)
-
-                    rows_saved = rows_saved + 1
             elif isinstance(binlog_event, DeleteRowsEvent):
-                for row in binlog_event.rows:
-                    event_ts = datetime.datetime.utcfromtimestamp(binlog_event.timestamp).replace(tzinfo=pytz.UTC)
+                rows_saved = handle_delete_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
 
-                    vals = row['values']
-                    vals[SDC_DELETED_AT] = event_ts
-
-                    filtered_vals = {k:v for k,v in vals.items()
-                                    if k in columns}
-
-                    record_message = row_to_singer_record(catalog_entry,
-                                                          stream_version,
-                                                          db_column_types,
-                                                          filtered_vals,
-                                                          time_extracted)
-
-                    singer.write_message(record_message)
-
-                    rows_saved = rows_saved + 1
-
-            state = singer.write_bookmark(state,
-                                      catalog_entry.tap_stream_id,
-                                      'log_file',
-                                      reader.log_file)
-
-            state = singer.write_bookmark(state,
-                                      catalog_entry.tap_stream_id,
-                                      'log_pos',
-                                      reader.log_pos)
+            state = update_bookmark(state,
+                                    catalog_entry.tap_stream_id,
+                                    reader.log_file,
+                                    reader.log_pos)
 
             if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
                 singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
