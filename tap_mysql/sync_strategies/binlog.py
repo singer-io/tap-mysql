@@ -13,6 +13,7 @@ from singer import utils
 from singer.schema import Schema
 
 import pymysql.connections
+import pymysql.err
 import tap_mysql.sync_strategies.common as common
 
 from tap_mysql.connection import make_connection_wrapper
@@ -52,16 +53,22 @@ def add_automatic_properties(catalog_entry, columns):
 
 def verify_binlog_config(connection, catalog_entry):
     with connection.cursor() as cur:
-        cur.execute("""
-        SELECT  @@binlog_format    AS binlog_format,
-        @@binlog_row_image AS binlog_row_nimage;
-        """)
-
-        binlog_format, binlog_row_image = cur.fetchone()
+        cur.execute("SELECT  @@binlog_format")
+        binlog_format = cur.fetchone()[0]
 
         if binlog_format != 'ROW':
             raise Exception("Unable to replicate stream({}) with binlog because binlog_format is not set to 'ROW': {}."
                             .format(catalog_entry.stream, binlog_format))
+
+        try:
+            cur.execute("SELECT  @@binlog_row_image")
+            binlog_row_image = cur.fetchone()[0]
+        except pymysql.err.InternalError as ex:
+            if ex.args[0] == 1193:
+                raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication."
+                                .format(catalog_entry.stream))
+            else:
+                raise ex
 
         if binlog_row_image != 'FULL':
             raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image is not set to 'FULL': {}."
