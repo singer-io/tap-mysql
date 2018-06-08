@@ -772,7 +772,7 @@ class TestEscaping(unittest.TestCase):
             cursor.execute('CREATE TABLE a (`b c` int)')
             cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
 
-        self.catalog = test_utils.discover_catalog(self.con. {})
+        self.catalog = test_utils.discover_catalog(self.con, {})
 
         self.catalog.streams[0].stream = 'some_stream_name'
         self.catalog.streams[0].schema.selected = True
