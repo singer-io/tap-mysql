@@ -142,8 +142,11 @@ def create_column_metadata(cols):
 def discover_catalog(connection, config):
     '''Returns a Catalog describing the structure of the database.'''
 
+
+    filter_dbs = config.get('filter_dbs')
+
     with connection.cursor() as cursor:
-        if config.get('filter_dbs'):
+        if filter_dbs:
             table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs)
         else:
             table_schema_clause = """
