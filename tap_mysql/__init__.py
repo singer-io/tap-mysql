@@ -348,23 +348,38 @@ def resolve_catalog(con, catalog, state):
     discovered = discover_catalog(con)
 
     # Filter catalog to include only selected streams
-    streams = list(filter(lambda stream: is_selected(stream), catalog.streams))
+    streams_with_state = []
+    streams_without_state = []
+
+    for stream in catalog.streams:
+        if is_selected(stream) and state.get('bookmarks', {}).get(stream.tap_stream_id):
+           streams_with_state.append(stream)
+        elif is_selected(stream) and not state.get('bookmarks', {}).get(stream.tap_stream_id):
+           streams_without_state.append(stream)
 
     # If the state says we were in the middle of processing a stream, skip
-    # to that stream.
+    # to that stream. Then process streams without prior state and finally
+    # move onto streams with state (i.e. have been synced in the past)
     currently_syncing = singer.get_currently_syncing(state)
-    if currently_syncing:
-        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, streams))
-        other_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, streams))
 
-        streams = currently_syncing_stream + other_streams
+    # prioritize streams that have not been processed
+    ordered_streams = streams_without_state + streams_with_state
+
+    if currently_syncing:
+        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, ordered_streams))
+        non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
+
+        streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
+    else:
+        # prioritize streams that have not been processed
+        streams_to_sync = ordered_streams
 
 
     result = Catalog(streams=[])
 
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
-    for catalog_entry in streams:
+    for catalog_entry in streams_to_sync:
         catalog_metadata = metadata.to_map(catalog_entry.metadata)
         replication_key = catalog_metadata.get((), {}).get('replication-key')
 
