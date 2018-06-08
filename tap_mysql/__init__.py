@@ -139,21 +139,28 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(connection):
+def discover_catalog(connection, filter_dbs=None):
     '''Returns a Catalog describing the structure of the database.'''
 
     with connection.cursor() as cursor:
+        table_schema_filter = """
+        'information_schema',
+        'performance_schema',
+        'mysql'
+        """
+
+        if filter_dbs:
+            table_schema_filter + "," + filter_dbs
+
         cursor.execute("""
             SELECT table_schema,
                    table_name,
                    table_type,
                    table_rows
                 FROM information_schema.tables
-                WHERE table_schema NOT IN (
-                        'information_schema',
-                        'performance_schema',
-                        'mysql')
-        """)
+                WHERE table_schema NOT IN ({})
+        """.format(table_schema_filter))
+
         table_info = {}
 
         for (db, table, table_type, rows) in cursor.fetchall():
@@ -640,7 +647,7 @@ def main_impl():
 
     log_server_params(connection)
     if args.discover:
-        do_discover(connection)
+        do_discover(connection, args.filter_dbs)
     elif args.catalog:
         state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
