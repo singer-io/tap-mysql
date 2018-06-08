@@ -143,11 +143,14 @@ def discover_catalog(connection, config):
     '''Returns a Catalog describing the structure of the database.'''
 
 
-    filter_dbs = config.get('filter_dbs')
+    filter_dbs_config = config.get('filter_dbs')
 
     with connection.cursor() as cursor:
-        if filter_dbs:
-            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs)
+        if filter_dbs_config:
+            filter_db_clause = ",".join(["'{}'".format(db)
+                                         for db in filter_dbs_config.split(",")])
+
+            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
         else:
             table_schema_clause = """
             WHERE table_schema NOT IN (
