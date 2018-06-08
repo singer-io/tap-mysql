@@ -253,8 +253,8 @@ def discover_catalog(connection, filter_dbs=None):
         return Catalog(entries)
 
 
-def do_discover(connection):
-    discover_catalog(connection).dump()
+def do_discover(connection, filter_dbs):
+    discover_catalog(connection, filter_dbs).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
