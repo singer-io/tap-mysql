@@ -191,12 +191,9 @@ def discover_catalog(connection, config):
                    column_type,
                    column_key
                 FROM information_schema.columns
-                WHERE table_schema NOT IN (
-                        'information_schema',
-                        'performance_schema',
-                        'mysql')
-               ORDER BY table_schema, table_name
-        """)
+                {}
+                ORDER BY table_schema, table_name
+        """.format(table_schema_clause))
 
         columns = []
         rec = cursor.fetchone()
