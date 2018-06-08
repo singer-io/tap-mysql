@@ -62,7 +62,7 @@ class TestTypeMapping(unittest.TestCase):
             c_year YEAR
             )''')
 
-            catalog = test_utils.discover_catalog(con)
+            catalog = test_utils.discover_catalog(con, {})
             cls.schema = catalog.streams[0].schema
             cls.metadata = catalog.streams[0].metadata
 
@@ -168,7 +168,7 @@ class TestTypeMapping(unittest.TestCase):
                                 inclusion='available',
                                 minimum=0,
                                 maximum=18446744073709551615))
-        
+
         self.assertEqual(self.get_metadata_for_column('c_bigint_unsigned'),
                          {'selected-by-default': True,
                           'sql-datatype': 'bigint(20) unsigned'})
@@ -257,7 +257,7 @@ class TestSchemaMessages(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-            catalog = test_utils.discover_catalog(con)
+            catalog = test_utils.discover_catalog(con, {})
             catalog.streams[0].stream = 'tab'
             catalog.streams[0].schema.selected = True
             catalog.streams[0].schema.properties['a'].selected = True
@@ -289,10 +289,12 @@ class TestCurrentStream(unittest.TestCase):
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE a (val int)')
             cursor.execute('CREATE TABLE b (val int)')
+            cursor.execute('CREATE TABLE c (val int)')
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
+            cursor.execute('INSERT INTO c (val) VALUES (1)')
 
-        self.catalog = test_utils.discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -310,14 +312,22 @@ class TestCurrentStream(unittest.TestCase):
         SINGER_MESSAGES.clear()
 
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
-        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+_+')
+        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+c+_+')
 
     def test_start_at_currently_syncing(self):
-        state = {'currently_syncing': 'tap_mysql_test-b'}
+        state = {
+            'currently_syncing': 'tap_mysql_test-b',
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'version': 123
+                }
+            }
+        }
 
         SINGER_MESSAGES.clear()
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
-        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+a+_+')
+
+        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+c+a+_+')
 
 def message_types_and_versions(messages):
     message_types = []
@@ -338,7 +348,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
             cursor.execute('CREATE TABLE full_table (val int)')
             cursor.execute('INSERT INTO full_table (val) VALUES (1)')
 
-        self.catalog = test_utils.discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con, {})
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
@@ -441,7 +451,7 @@ class TestIncrementalReplication(unittest.TestCase):
             cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (2, 2)')
             cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (3, 3)')
 
-        self.catalog = test_utils.discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -563,7 +573,7 @@ class TestBinlogReplication(unittest.TestCase):
 
         self.con.commit()
 
-        self.catalog = test_utils.discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -731,7 +741,7 @@ class TestViews(unittest.TestCase):
             self.con.close()
 
     def test_discovery_sets_is_view(self):
-        catalog = test_utils.discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con, {})
         is_view = {}
 
         for stream in catalog.streams:
@@ -744,7 +754,7 @@ class TestViews(unittest.TestCase):
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        catalog = test_utils.discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con, {})
         primary_keys = {}
         for c in catalog.streams:
             primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
@@ -762,7 +772,7 @@ class TestEscaping(unittest.TestCase):
             cursor.execute('CREATE TABLE a (`b c` int)')
             cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
 
-        self.catalog = test_utils.discover_catalog(self.con)
+        self.catalog = test_utils.discover_catalog(self.con, {})
 
         self.catalog.streams[0].stream = 'some_stream_name'
         self.catalog.streams[0].schema.selected = True
@@ -799,7 +809,7 @@ class TestUnsupportedPK(unittest.TestCase):
             self.con.close()
 
     def runTest(self):
-        catalog = test_utils.discover_catalog(self.con)
+        catalog = test_utils.discover_catalog(self.con, {})
 
         primary_keys = {}
         for c in catalog.streams:

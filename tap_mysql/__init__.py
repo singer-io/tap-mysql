@@ -139,21 +139,32 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(connection):
+def discover_catalog(connection, config):
     '''Returns a Catalog describing the structure of the database.'''
 
+
+    filter_dbs = config.get('filter_dbs')
+
     with connection.cursor() as cursor:
+        if filter_dbs:
+            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs)
+        else:
+            table_schema_clause = """
+            WHERE table_schema NOT IN (
+            'information_schema',
+            'performance_schema',
+            'mysql'
+            )"""
+
         cursor.execute("""
             SELECT table_schema,
                    table_name,
                    table_type,
                    table_rows
                 FROM information_schema.tables
-                WHERE table_schema NOT IN (
-                        'information_schema',
-                        'performance_schema',
-                        'mysql')
-        """)
+                {}
+        """.format(table_schema_clause))
+
         table_info = {}
 
         for (db, table, table_type, rows) in cursor.fetchall():
@@ -245,8 +256,8 @@ def discover_catalog(connection):
         return Catalog(entries)
 
 
-def do_discover(connection):
-    discover_catalog(connection).dump()
+def do_discover(connection, config):
+    discover_catalog(connection, config).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -325,7 +336,7 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(con, catalog, state):
+def resolve_catalog(con, catalog, config, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -345,26 +356,41 @@ def resolve_catalog(con, catalog, state):
         columns used as replication keys.
 
     '''
-    discovered = discover_catalog(con)
+    discovered = discover_catalog(con, config)
 
     # Filter catalog to include only selected streams
-    streams = list(filter(lambda stream: is_selected(stream), catalog.streams))
+    streams_with_state = []
+    streams_without_state = []
+
+    for stream in catalog.streams:
+        if is_selected(stream) and state.get('bookmarks', {}).get(stream.tap_stream_id):
+           streams_with_state.append(stream)
+        elif is_selected(stream) and not state.get('bookmarks', {}).get(stream.tap_stream_id):
+           streams_without_state.append(stream)
 
     # If the state says we were in the middle of processing a stream, skip
-    # to that stream.
+    # to that stream. Then process streams without prior state and finally
+    # move onto streams with state (i.e. have been synced in the past)
     currently_syncing = singer.get_currently_syncing(state)
-    if currently_syncing:
-        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, streams))
-        other_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, streams))
 
-        streams = currently_syncing_stream + other_streams
+    # prioritize streams that have not been processed
+    ordered_streams = streams_without_state + streams_with_state
+
+    if currently_syncing:
+        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, ordered_streams))
+        non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
+
+        streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
+    else:
+        # prioritize streams that have not been processed
+        streams_to_sync = ordered_streams
 
 
     result = Catalog(streams=[])
 
     # Iterate over the streams in the input catalog and match each one up
     # with the same stream in the discovered catalog.
-    for catalog_entry in streams:
+    for catalog_entry in streams_to_sync:
         catalog_metadata = metadata.to_map(catalog_entry.metadata)
         replication_key = catalog_metadata.get((), {}).get('replication-key')
 
@@ -530,7 +556,7 @@ def do_sync_full_table(con, catalog_entry, state, columns):
 
 
 def do_sync(con, config, catalog, state):
-    catalog = resolve_catalog(con, catalog, state)
+    catalog = resolve_catalog(con, catalog, config, state)
 
     for catalog_entry in catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
@@ -625,7 +651,7 @@ def main_impl():
 
     log_server_params(connection)
     if args.discover:
-        do_discover(connection)
+        do_discover(connection, args.config)
     elif args.catalog:
         state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
