@@ -143,14 +143,15 @@ def discover_catalog(connection, filter_dbs=None):
     '''Returns a Catalog describing the structure of the database.'''
 
     with connection.cursor() as cursor:
-        table_schema_filter = """
-        'information_schema',
-        'performance_schema',
-        'mysql'
-        """
-
         if filter_dbs:
-            table_schema_filter + "," + filter_dbs
+            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs)
+        else:
+            table_schema_clause = """
+            WHERE table_schema NOT IN (
+            'information_schema',
+            'performance_schema',
+            'mysql'
+            )"""
 
         cursor.execute("""
             SELECT table_schema,
@@ -158,8 +159,8 @@ def discover_catalog(connection, filter_dbs=None):
                    table_type,
                    table_rows
                 FROM information_schema.tables
-                WHERE table_schema NOT IN ({})
-        """.format(table_schema_filter))
+                {}
+        """.format(table_schema_clause))
 
         table_info = {}
 
