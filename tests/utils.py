@@ -40,8 +40,8 @@ def get_test_connection():
     return pymysql.connect(**db_config)
 
 
-def discover_catalog(connection):
-    catalog = tap_mysql.discover_catalog(connection)
+def discover_catalog(connection, catalog):
+    catalog = tap_mysql.discover_catalog(connection, catalog)
     streams = []
 
     for stream in catalog.streams:

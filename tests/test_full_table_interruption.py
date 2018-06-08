@@ -74,7 +74,7 @@ def init_tables(conn):
         for record in TABLE_2_DATA:
             insert_record(cur, 'table_2', record)
 
-    catalog = test_utils.discover_catalog(conn)
+    catalog = test_utils.discover_catalog(conn, {})
 
     return catalog
 
