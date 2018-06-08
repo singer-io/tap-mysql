@@ -336,7 +336,7 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(con, catalog, state):
+def resolve_catalog(con, catalog, config, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -356,7 +356,7 @@ def resolve_catalog(con, catalog, state):
         columns used as replication keys.
 
     '''
-    discovered = discover_catalog(con)
+    discovered = discover_catalog(con, config)
 
     # Filter catalog to include only selected streams
     streams_with_state = []
@@ -556,7 +556,7 @@ def do_sync_full_table(con, catalog_entry, state, columns):
 
 
 def do_sync(con, config, catalog, state):
-    catalog = resolve_catalog(con, catalog, state)
+    catalog = resolve_catalog(con, catalog, config, state)
 
     for catalog_entry in catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
