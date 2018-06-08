@@ -168,7 +168,7 @@ class TestTypeMapping(unittest.TestCase):
                                 inclusion='available',
                                 minimum=0,
                                 maximum=18446744073709551615))
-        
+
         self.assertEqual(self.get_metadata_for_column('c_bigint_unsigned'),
                          {'selected-by-default': True,
                           'sql-datatype': 'bigint(20) unsigned'})
@@ -289,8 +289,10 @@ class TestCurrentStream(unittest.TestCase):
         with self.con.cursor() as cursor:
             cursor.execute('CREATE TABLE a (val int)')
             cursor.execute('CREATE TABLE b (val int)')
+            cursor.execute('CREATE TABLE c (val int)')
             cursor.execute('INSERT INTO a (val) VALUES (1)')
             cursor.execute('INSERT INTO b (val) VALUES (1)')
+            cursor.execute('INSERT INTO c (val) VALUES (1)')
 
         self.catalog = test_utils.discover_catalog(self.con)
 
@@ -310,14 +312,22 @@ class TestCurrentStream(unittest.TestCase):
         SINGER_MESSAGES.clear()
 
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
-        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+_+')
+        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+c+_+')
 
     def test_start_at_currently_syncing(self):
-        state = {'currently_syncing': 'tap_mysql_test-b'}
+        state = {
+            'currently_syncing': 'tap_mysql_test-b',
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'version': 123
+                }
+            }
+        }
 
         SINGER_MESSAGES.clear()
         tap_mysql.do_sync(self.con, {}, self.catalog, state)
-        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+a+_+')
+
+        self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+c+a+_+')
 
 def message_types_and_versions(messages):
     message_types = []
