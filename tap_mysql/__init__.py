@@ -139,11 +139,11 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(connection, filter_dbs=None):
+def discover_catalog(connection, config):
     '''Returns a Catalog describing the structure of the database.'''
 
     with connection.cursor() as cursor:
-        if filter_dbs:
+        if config.get('filter_dbs'):
             table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs)
         else:
             table_schema_clause = """
@@ -253,8 +253,8 @@ def discover_catalog(connection, filter_dbs=None):
         return Catalog(entries)
 
 
-def do_discover(connection, filter_dbs):
-    discover_catalog(connection, filter_dbs).dump()
+def do_discover(connection, config):
+    discover_catalog(connection, config).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -648,7 +648,7 @@ def main_impl():
 
     log_server_params(connection)
     if args.discover:
-        do_discover(connection, args.filter_dbs)
+        do_discover(connection, args.config)
     elif args.catalog:
         state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
