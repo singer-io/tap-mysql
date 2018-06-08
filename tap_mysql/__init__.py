@@ -147,7 +147,7 @@ def discover_catalog(connection, config):
 
     with connection.cursor() as cursor:
         if filter_dbs_config:
-            filter_db_clause = ",".join(["'{}'".format(db)
+            filter_dbs_clause = ",".join(["'{}'".format(db)
                                          for db in filter_dbs_config.split(",")])
 
             table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
