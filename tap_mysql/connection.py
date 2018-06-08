@@ -59,7 +59,7 @@ class MySQLConnection(pymysql.connections.Connection):
             "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
             "read_timeout": READ_TIMEOUT_SECONDS,
-            "charset": "utf8",
+            "charset": config.get("encoding", "utf8"),
         }
 
         ssl_arg = None
