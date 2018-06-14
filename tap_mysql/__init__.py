@@ -139,125 +139,124 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(connection, config):
+def discover_catalog(cursor, config):
     '''Returns a Catalog describing the structure of the database.'''
 
 
     filter_dbs_config = config.get('filter_dbs')
 
-    with connection.cursor() as cursor:
-        if filter_dbs_config:
-            filter_dbs_clause = ",".join(["'{}'".format(db)
+
+    if filter_dbs_config:
+        filter_dbs_clause = ",".join(["'{}'".format(db)
                                          for db in filter_dbs_config.split(",")])
 
-            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
-        else:
-            table_schema_clause = """
-            WHERE table_schema NOT IN (
-            'information_schema',
-            'performance_schema',
-            'mysql'
-            )"""
+        table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
+    else:
+        table_schema_clause = """
+        WHERE table_schema NOT IN (
+        'information_schema',
+        'performance_schema',
+        'mysql'
+        )"""
 
-        cursor.execute("""
-            SELECT table_schema,
-                   table_name,
-                   table_type,
-                   table_rows
-                FROM information_schema.tables
-                {}
-        """.format(table_schema_clause))
+    cursor.execute("""
+        SELECT table_schema,
+               table_name,
+               table_type,
+               table_rows
+            FROM information_schema.tables
+            {}
+    """.format(table_schema_clause))
 
-        table_info = {}
+    table_info = {}
 
-        for (db, table, table_type, rows) in cursor.fetchall():
-            if db not in table_info:
-                table_info[db] = {}
-            table_info[db][table] = {
-                'row_count': rows,
-                'is_view': table_type == 'VIEW'
-            }
+    for (db, table, table_type, rows) in cursor.fetchall():
+        if db not in table_info:
+            table_info[db] = {}
+        table_info[db][table] = {
+            'row_count': rows,
+            'is_view': table_type == 'VIEW'
+        }
 
-    with connection.cursor() as cursor:
+    cursor.execute("""
+        SELECT table_schema,
+               table_name,
+               column_name,
+               data_type,
+               character_maximum_length,
+               numeric_precision,
+               numeric_scale,
+               column_type,
+               column_key
+            FROM information_schema.columns
+            {}
+            ORDER BY table_schema, table_name
+    """.format(table_schema_clause))
 
-        cursor.execute("""
-            SELECT table_schema,
-                   table_name,
-                   column_name,
-                   data_type,
-                   character_maximum_length,
-                   numeric_precision,
-                   numeric_scale,
-                   column_type,
-                   column_key
-                FROM information_schema.columns
-                {}
-                ORDER BY table_schema, table_name
-        """.format(table_schema_clause))
-
-        columns = []
+    columns = []
+    rec = cursor.fetchone()
+    while rec is not None:
+        columns.append(Column(*rec))
         rec = cursor.fetchone()
-        while rec is not None:
-            columns.append(Column(*rec))
-            rec = cursor.fetchone()
 
-        entries = []
-        for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
-            cols = list(cols)
-            (table_schema, table_name) = k
-            schema = Schema(type='object',
-                            properties={c.column_name: schema_for_column(c) for c in cols})
-            md = create_column_metadata(cols)
-            md_map = metadata.to_map(md)
+    entries = []
+    for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
+        cols = list(cols)
+        (table_schema, table_name) = k
+        schema = Schema(type='object',
+                        properties={c.column_name: schema_for_column(c) for c in cols})
+        md = create_column_metadata(cols)
+        md_map = metadata.to_map(md)
+
+        md_map = metadata.write(md_map,
+                                (),
+                                'database-name',
+                                table_schema)
+
+        is_view = table_info[table_schema][table_name]['is_view']
+
+        if table_schema in table_info and table_name in table_info[table_schema]:
+            row_count = table_info[table_schema][table_name].get('row_count')
+
+            if row_count is not None:
+                md_map = metadata.write(md_map,
+                                        (),
+                                        'row-count',
+                                        row_count)
 
             md_map = metadata.write(md_map,
                                     (),
-                                    'database-name',
-                                    table_schema)
+                                    'is-view',
+                                    is_view)
 
-            is_view = table_info[table_schema][table_name]['is_view']
+        column_is_key_prop = lambda c, s: (
+            c.column_key == 'PRI' and
+            s.properties[c.column_name].inclusion != 'unsupported'
+        )
 
-            if table_schema in table_info and table_name in table_info[table_schema]:
-                row_count = table_info[table_schema][table_name].get('row_count')
+        key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
 
-                if row_count is not None:
-                    md_map = metadata.write(md_map,
-                                            (),
-                                            'row-count',
-                                            row_count)
+        if not is_view:
+            md_map = metadata.write(md_map,
+                                    (),
+                                    'table-key-properties',
+                                    key_properties)
 
-                md_map = metadata.write(md_map,
-                                        (),
-                                        'is-view',
-                                        is_view)
+        entry = CatalogEntry(
+            table=table_name,
+            stream=table_name,
+            metadata=metadata.to_list(md_map),
+            tap_stream_id=table_schema + '-' + table_name,
+            schema=schema)
 
-            column_is_key_prop = lambda c, s: (
-                c.column_key == 'PRI' and
-                s.properties[c.column_name].inclusion != 'unsupported'
-            )
+        entries.append(entry)
 
-            key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
-
-            if not is_view:
-                md_map = metadata.write(md_map,
-                                        (),
-                                        'table-key-properties',
-                                        key_properties)
-
-            entry = CatalogEntry(
-                table=table_name,
-                stream=table_name,
-                metadata=metadata.to_list(md_map),
-                tap_stream_id=table_schema + '-' + table_name,
-                schema=schema)
-
-            entries.append(entry)
-
-        return Catalog(entries)
+    return Catalog(entries)
 
 
-def do_discover(connection, config):
-    discover_catalog(connection, config).dump()
+def do_discover(config):
+    with connect_with_backoff(MySQLConnection(config)) as cur:
+        discover_catalog(cur, config).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -597,35 +596,31 @@ def do_sync(con, config, catalog, state):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def log_server_params(con):
+def log_server_params(cursor):
     try:
-        with con.cursor() as cur:
-            cur.execute('''
-                SELECT VERSION() as version,
-                    @@session.wait_timeout as wait_timeout,
-                    @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
-                    @@session.max_allowed_packet as max_allowed_packet,
-                    @@session.interactive_timeout as interactive_timeout''')
-            row = cur.fetchone()
-            LOGGER.info('Server Parameters: ' +
-                        'version: %s, ' +
-                        'wait_timeout: %s, ' +
-                        'innodb_lock_wait_timeout: %s, ' +
-                        'max_allowed_packet: %s, ' +
-                        'interactive_timeout: %s',
-                        *row)
+        cursor.execute('''
+        SELECT VERSION() as version,
+               @@session.wait_timeout as wait_timeout,
+               @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+               @@session.max_allowed_packet as max_allowed_packet,
+               @@session.interactive_timeout as interactive_timeout''')
+        row = cursor.fetchone()
+        LOGGER.info('Server Parameters: ' +
+                    'version: %s, ' +
+                    'wait_timeout: %s, ' +
+                    'innodb_lock_wait_timeout: %s, ' +
+                    'max_allowed_packet: %s, ' +
+                    'interactive_timeout: %s',
+                    *row)
     except pymysql.err.InternalError as e:
         LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
 
 
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-    connection = MySQLConnection(args.config)
-
-    connect_with_backoff(connection)
 
     warnings = []
-    with connection.cursor() as cur:
+    with connect_with_backoff(MySQLConnection(args.config)) as cur:
         try:
             cur.execute('SET @@session.time_zone="+0:00"')
         except pymysql.err.InternalError as e:
@@ -643,15 +638,16 @@ def main_impl():
                 'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
                 )
 
-    if warnings:
-        LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
-                     "impact performance:"))
-    for w in warnings:
-        LOGGER.warning(w)
+        if warnings:
+            LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
+                         "impact performance:"))
+        for w in warnings:
+            LOGGER.warning(w)
 
-    log_server_params(connection)
+        log_server_params(cur)
+
     if args.discover:
-        do_discover(connection, args.config)
+        do_discover(args.config)
     elif args.catalog:
         state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
