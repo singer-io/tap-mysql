@@ -288,6 +288,7 @@ def sync_table(connection, config, catalog_entry, state, columns):
     LOGGER.info("Starting binlog replication with log_file=%s, log_pos=%s", log_file, log_pos)
 
     rows_saved = 0
+    events_skipped = 0
 
     initial_binlog_complete = singer.get_bookmark(state,
                                                   catalog_entry.tap_stream_id,
@@ -308,6 +309,15 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                     binlog_event.next_binlog,
                                     binlog_event.position)
 
+        elif (binlog_event.schema, binlog_event.table) != table_path:
+            events_skipped = events_skipped + 1
+
+            if events_skipped % 10 == 0:
+                LOGGER.info("Skipped %s events so far as they were not for table %s.%s",
+                            events_skipped,
+                            database_name,
+                            catalog_entry.stream)
+
         elif (binlog_event.schema, binlog_event.table) == table_path:
             if isinstance(binlog_event, WriteRowsEvent):
                 rows_saved = handle_write_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
@@ -317,6 +327,10 @@ def sync_table(connection, config, catalog_entry, state, columns):
 
             elif isinstance(binlog_event, DeleteRowsEvent):
                 rows_saved = handle_delete_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
+            else:
+                LOGGER.info("Skipping event for table %s.%s as it is not an INSERT, UPDATE, or DELETE",
+                            database_name,
+                            catalog_entry.stream)
 
             state = update_bookmark(state,
                                     catalog_entry.tap_stream_id,
