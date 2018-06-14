@@ -23,6 +23,8 @@ match_hostname = ssl.match_hostname
 def connect_with_backoff(connection):
     connection.connect()
 
+    return connection
+
 
 def parse_internal_hostname(hostname):
     # special handling for google cloud
