@@ -332,12 +332,13 @@ def sync_table(connection, config, catalog_entry, state, columns):
                             database_name,
                             catalog_entry.stream)
 
-            state = update_bookmark(state,
-                                    catalog_entry.tap_stream_id,
-                                    reader.log_file,
-                                    reader.log_pos)
+        state = update_bookmark(state,
+                                catalog_entry.tap_stream_id,
+                                reader.log_file,
+                                reader.log_pos)
 
-            if rows_saved % UPDATE_BOOKMARK_PERIOD == 0:
-                singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+        if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
+            (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
+            singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
