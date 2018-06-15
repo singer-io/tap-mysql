@@ -5,6 +5,7 @@ import copy
 import singer
 import os
 import singer.metadata
+from tap_mysql.connection import connect_with_backoff
 
 try:
     import tests.utils as test_utils
@@ -37,34 +38,35 @@ class TestTypeMapping(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        con = test_utils.get_test_connection()
+        conn = test_utils.get_test_connection()
 
-        with con.cursor() as cur:
-            cur.execute('''
-            CREATE TABLE test_type_mapping (
-            c_pk INTEGER PRIMARY KEY,
-            c_decimal DECIMAL,
-            c_decimal_2_unsigned DECIMAL(5, 2) UNSIGNED,
-            c_decimal_2 DECIMAL(11, 2),
-            c_tinyint TINYINT,
-            c_tinyint_1 TINYINT(1),
-            c_tinyint_1_unsigned TINYINT(1) UNSIGNED,
-            c_smallint SMALLINT,
-            c_mediumint MEDIUMINT,
-            c_int INT,
-            c_bigint BIGINT,
-            c_bigint_unsigned BIGINT(20) UNSIGNED,
-            c_float FLOAT,
-            c_double DOUBLE,
-            c_bit BIT(4),
-            c_date DATE,
-            c_time TIME,
-            c_year YEAR
-            )''')
+        with connect_with_backoff(conn) as open_conn:
+            with open_conn.cursor() as cur:
+                cur.execute('''
+                CREATE TABLE test_type_mapping (
+                c_pk INTEGER PRIMARY KEY,
+                c_decimal DECIMAL,
+                c_decimal_2_unsigned DECIMAL(5, 2) UNSIGNED,
+                c_decimal_2 DECIMAL(11, 2),
+                c_tinyint TINYINT,
+                c_tinyint_1 TINYINT(1),
+                c_tinyint_1_unsigned TINYINT(1) UNSIGNED,
+                c_smallint SMALLINT,
+                c_mediumint MEDIUMINT,
+                c_int INT,
+                c_bigint BIGINT,
+                c_bigint_unsigned BIGINT(20) UNSIGNED,
+                c_float FLOAT,
+                c_double DOUBLE,
+                c_bit BIT(4),
+                c_date DATE,
+                c_time TIME,
+                c_year YEAR
+                )''')
 
-            catalog = test_utils.discover_catalog(con, {})
-            cls.schema = catalog.streams[0].schema
-            cls.metadata = catalog.streams[0].metadata
+        catalog = test_utils.discover_catalog(conn, {})
+        cls.schema = catalog.streams[0].schema
+        cls.metadata = catalog.streams[0].metadata
 
     def get_metadata_for_column(self, colName):
         return next(md for md in self.metadata if md['breadcrumb'] == ('properties', colName))['metadata']
@@ -247,9 +249,10 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
 class TestSchemaMessages(unittest.TestCase):
 
     def runTest(self):
-        con = test_utils.get_test_connection()
-        try:
-            with con.cursor() as cur:
+        conn = test_utils.get_test_connection()
+
+        with connect_with_backoff(conn) as open_conn:
+            with open_conn.cursor() as cur:
                 cur.execute('''
                     CREATE TABLE tab (
                       id INTEGER PRIMARY KEY,
@@ -257,23 +260,21 @@ class TestSchemaMessages(unittest.TestCase):
                       b INTEGER)
                 ''')
 
-            catalog = test_utils.discover_catalog(con, {})
-            catalog.streams[0].stream = 'tab'
-            catalog.streams[0].schema.selected = True
-            catalog.streams[0].schema.properties['a'].selected = True
-            test_utils.set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
+        catalog = test_utils.discover_catalog(conn, {})
+        catalog.streams[0].stream = 'tab'
+        catalog.streams[0].schema.selected = True
+        catalog.streams[0].schema.properties['a'].selected = True
+        test_utils.set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
 
-            SINGER_MESSAGES.clear()
-            tap_mysql.do_sync(con, {}, catalog, {})
+        global SINGER_MESSAGES
+        SINGER_MESSAGES.clear()
+        tap_mysql.do_sync(conn, {}, catalog, {})
 
-            schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), SINGER_MESSAGES))[0]
-            self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-            expectedKeys = ['id', 'a']
+        schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), SINGER_MESSAGES))[0]
+        self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
+        expectedKeys = ['id', 'a']
 
-            self.assertEqual(schema_message.schema['properties'].keys(), set(expectedKeys))
-
-        finally:
-            con.close()
+        self.assertEqual(schema_message.schema['properties'].keys(), set(expectedKeys))
 
 def currently_syncing_seq(messages):
     return ''.join(
@@ -285,16 +286,18 @@ def currently_syncing_seq(messages):
 class TestCurrentStream(unittest.TestCase):
 
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute('CREATE TABLE a (val int)')
-            cursor.execute('CREATE TABLE b (val int)')
-            cursor.execute('CREATE TABLE c (val int)')
-            cursor.execute('INSERT INTO a (val) VALUES (1)')
-            cursor.execute('INSERT INTO b (val) VALUES (1)')
-            cursor.execute('INSERT INTO c (val) VALUES (1)')
+        self.conn = test_utils.get_test_connection()
 
-        self.catalog = test_utils.discover_catalog(self.con, {})
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE a (val int)')
+                cursor.execute('CREATE TABLE b (val int)')
+                cursor.execute('CREATE TABLE c (val int)')
+                cursor.execute('INSERT INTO a (val) VALUES (1)')
+                cursor.execute('INSERT INTO b (val) VALUES (1)')
+                cursor.execute('INSERT INTO c (val) VALUES (1)')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -303,15 +306,13 @@ class TestCurrentStream(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
     def test_emit_currently_syncing(self):
         state = {}
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
         self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+c+_+')
 
     def test_start_at_currently_syncing(self):
@@ -324,8 +325,9 @@ class TestCurrentStream(unittest.TestCase):
             }
         }
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^b+c+a+_+')
 
@@ -343,12 +345,14 @@ def message_types_and_versions(messages):
 class TestStreamVersionFullTable(unittest.TestCase):
 
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute('CREATE TABLE full_table (val int)')
-            cursor.execute('INSERT INTO full_table (val) VALUES (1)')
+        self.conn = test_utils.get_test_connection()
 
-        self.catalog = test_utils.discover_catalog(self.con, {})
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE full_table (val int)')
+                cursor.execute('INSERT INTO full_table (val) VALUES (1)')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
         for stream in self.catalog.streams:
             stream.schema.selected = True
             stream.key_properties = []
@@ -356,15 +360,12 @@ class TestStreamVersionFullTable(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
-
     def test_with_no_state(self):
         state = {}
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
         self.assertEqual(['ActivateVersionMessage', 'RecordMessage', 'ActivateVersionMessage'], message_types)
@@ -382,8 +383,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
             }
         }
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
 
@@ -405,8 +407,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
             }
         }
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
 
@@ -425,8 +428,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
             }
         }
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
 
@@ -440,18 +444,20 @@ class TestStreamVersionFullTable(unittest.TestCase):
 class TestIncrementalReplication(unittest.TestCase):
 
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute('CREATE TABLE incremental (val int, updated datetime)')
-            cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
-            cursor.execute('INSERT INTO incremental (val, updated) VALUES (2, \'2017-06-20\')')
-            cursor.execute('INSERT INTO incremental (val, updated) VALUES (3, \'2017-09-22\')')
-            cursor.execute('CREATE TABLE integer_incremental (val int, updated int)')
-            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (1, 1)')
-            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (2, 2)')
-            cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (3, 3)')
+        self.conn = test_utils.get_test_connection()
 
-        self.catalog = test_utils.discover_catalog(self.con, {})
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE incremental (val int, updated datetime)')
+                cursor.execute('INSERT INTO incremental (val, updated) VALUES (1, \'2017-06-01\')')
+                cursor.execute('INSERT INTO incremental (val, updated) VALUES (2, \'2017-06-20\')')
+                cursor.execute('INSERT INTO incremental (val, updated) VALUES (3, \'2017-09-22\')')
+                cursor.execute('CREATE TABLE integer_incremental (val int, updated int)')
+                cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (1, 1)')
+                cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (2, 2)')
+                cursor.execute('INSERT INTO integer_incremental (val, updated) VALUES (3, 3)')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -460,16 +466,13 @@ class TestIncrementalReplication(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
-
-
     def test_with_no_state(self):
         state = {}
+
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
 
@@ -503,8 +506,9 @@ class TestIncrementalReplication(unittest.TestCase):
             }
         }
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
 
@@ -534,7 +538,7 @@ class TestIncrementalReplication(unittest.TestCase):
 
         test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
         stream.schema.properties['updated'].selected = True
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key'], 'val')
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key_value'], 3)
@@ -551,7 +555,7 @@ class TestIncrementalReplication(unittest.TestCase):
             }
         }
 
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['version'], 1)
 
@@ -559,21 +563,22 @@ class TestBinlogReplication(unittest.TestCase):
 
     def setUp(self):
         self.state = {}
-        self.con = test_utils.get_test_connection()
+        self.conn = test_utils.get_test_connection()
 
-        with self.con.cursor() as cursor:
-            log_file, log_pos = binlog.fetch_current_log_file_and_pos(self.con)
+        log_file, log_pos = binlog.fetch_current_log_file_and_pos(self.conn)
 
-            cursor.execute('CREATE TABLE binlog (id int, updated datetime)')
-            cursor.execute('INSERT INTO binlog (id, updated) VALUES (1, \'2017-06-01\')')
-            cursor.execute('INSERT INTO binlog (id, updated) VALUES (2, \'2017-06-20\')')
-            cursor.execute('INSERT INTO binlog (id, updated) VALUES (3, \'2017-09-22\')')
-            cursor.execute('UPDATE binlog set updated=\'2018-04-20\' WHERE id = 3')
-            cursor.execute('DELETE FROM binlog WHERE id = 2')
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE binlog (id int, updated datetime)')
+                cursor.execute('INSERT INTO binlog (id, updated) VALUES (1, \'2017-06-01\')')
+                cursor.execute('INSERT INTO binlog (id, updated) VALUES (2, \'2017-06-20\')')
+                cursor.execute('INSERT INTO binlog (id, updated) VALUES (3, \'2017-09-22\')')
+                cursor.execute('UPDATE binlog set updated=\'2018-04-20\' WHERE id = 3')
+                cursor.execute('DELETE FROM binlog WHERE id = 2')
 
-        self.con.commit()
+            open_conn.commit()
 
-        self.catalog = test_utils.discover_catalog(self.con, {})
+        self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
             stream.schema.selected = True
@@ -598,16 +603,13 @@ class TestBinlogReplication(unittest.TestCase):
                                                'version',
                                                singer.utils.now())
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
-
     def test_initial_full_table(self):
         state = {}
-        expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.con)
+        expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.conn)
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, state)
+        tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         message_types = [type(m) for m in SINGER_MESSAGES]
 
@@ -644,7 +646,7 @@ class TestBinlogReplication(unittest.TestCase):
         expected_exception_message = "Unable to replicate stream({}) with binlog because it is a view.".format(self.catalog.streams[0].stream)
 
         try:
-            tap_mysql.do_sync(self.con, {}, self.catalog, state)
+            tap_mysql.do_sync(self.conn, {}, self.catalog, state)
         except Exception as e:
             failed = True
             exception_message = str(e)
@@ -675,7 +677,7 @@ class TestBinlogReplication(unittest.TestCase):
             )
 
         try:
-            tap_mysql.do_sync(self.con, {}, self.catalog, state)
+            tap_mysql.do_sync(self.conn, {}, self.catalog, state)
         except Exception as e:
             failed = True
             exception_message = str(e)
@@ -686,7 +688,7 @@ class TestBinlogReplication(unittest.TestCase):
         stream = self.catalog.streams[0]
         reader = BinLogStreamReader(
             connection_settings=test_utils.get_db_config(),
-            server_id=binlog.fetch_server_id(self.con),
+            server_id=binlog.fetch_server_id(self.conn),
             only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
         )
 
@@ -694,8 +696,9 @@ class TestBinlogReplication(unittest.TestCase):
             expected_log_file = reader.log_file
             expected_log_pos = reader.log_pos
 
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, test_utils.get_db_config(), self.catalog, self.state)
+        tap_mysql.do_sync(self.conn, test_utils.get_db_config(), self.catalog, self.state)
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
         message_types = [type(m) for m in SINGER_MESSAGES]
@@ -721,27 +724,25 @@ class TestBinlogReplication(unittest.TestCase):
 
 class TestViews(unittest.TestCase):
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute(
-                '''
-                CREATE TABLE a_table (
-                  id int primary key,
-                  a int,
-                  b int)
-                ''')
+        self.conn = test_utils.get_test_connection()
 
-            cursor.execute(
-                '''
-                CREATE VIEW a_view AS SELECT id, a FROM a_table
-                ''')
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute(
+                    '''
+                    CREATE TABLE a_table (
+                      id int primary key,
+                      a int,
+                      b int)
+                    ''')
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
+                cursor.execute(
+                    '''
+                    CREATE VIEW a_view AS SELECT id, a FROM a_table
+                    ''')
 
     def test_discovery_sets_is_view(self):
-        catalog = test_utils.discover_catalog(self.con, {})
+        catalog = test_utils.discover_catalog(self.conn, {})
         is_view = {}
 
         for stream in catalog.streams:
@@ -754,7 +755,7 @@ class TestViews(unittest.TestCase):
              'a_view': True})
 
     def test_do_not_discover_key_properties_for_view(self):
-        catalog = test_utils.discover_catalog(self.con, {})
+        catalog = test_utils.discover_catalog(self.conn, {})
         primary_keys = {}
         for c in catalog.streams:
             primary_keys[c.table] = singer.metadata.to_map(c.metadata).get((), {}).get('table-key-properties')
@@ -767,12 +768,14 @@ class TestViews(unittest.TestCase):
 class TestEscaping(unittest.TestCase):
 
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute('CREATE TABLE a (`b c` int)')
-            cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
+        self.conn = test_utils.get_test_connection()
 
-        self.catalog = test_utils.discover_catalog(self.con, {})
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE a (`b c` int)')
+                cursor.execute('INSERT INTO a (`b c`) VALUES (1)')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
 
         self.catalog.streams[0].stream = 'some_stream_name'
         self.catalog.streams[0].schema.selected = True
@@ -781,13 +784,10 @@ class TestEscaping(unittest.TestCase):
 
         test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
-
     def runTest(self):
+        global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-        tap_mysql.do_sync(self.con, {}, self.catalog, {})
+        tap_mysql.do_sync(self.conn, {}, self.catalog, {})
 
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))[0]
 
@@ -797,19 +797,17 @@ class TestEscaping(unittest.TestCase):
 class TestUnsupportedPK(unittest.TestCase):
 
     def setUp(self):
-        self.con = test_utils.get_test_connection()
-        with self.con.cursor() as cursor:
-            cursor.execute('CREATE TABLE bad_pk_tab (bad_pk BINARY, age INT, PRIMARY KEY (bad_pk))') # BINARY not presently supported
-            cursor.execute('CREATE TABLE good_pk_tab (good_pk INT, age INT, PRIMARY KEY (good_pk))')
-            cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES ('a', 100)")
-            cursor.execute("INSERT INTO good_pk_tab (good_pk, age) VALUES (1, 100)")
+        self.conn = test_utils.get_test_connection()
 
-    def tearDown(self):
-        if self.con:
-            self.con.close()
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE bad_pk_tab (bad_pk BINARY, age INT, PRIMARY KEY (bad_pk))') # BINARY not presently supported
+                cursor.execute('CREATE TABLE good_pk_tab (good_pk INT, age INT, PRIMARY KEY (good_pk))')
+                cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES ('a', 100)")
+                cursor.execute("INSERT INTO good_pk_tab (good_pk, age) VALUES (1, 100)")
 
     def runTest(self):
-        catalog = test_utils.discover_catalog(self.con, {})
+        catalog = test_utils.discover_catalog(self.conn, {})
 
         primary_keys = {}
         for c in catalog.streams:
@@ -821,6 +819,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestIncrementalReplication()
+    test1 = TestEscaping()
     test1.setUp()
-    test1.test_change_replication_key()
+    test1.runTest()

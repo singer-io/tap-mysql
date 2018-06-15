@@ -139,125 +139,126 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(connection, config):
+def discover_catalog(mysql_conn, config):
     '''Returns a Catalog describing the structure of the database.'''
 
 
     filter_dbs_config = config.get('filter_dbs')
 
-    with connection.cursor() as cursor:
-        if filter_dbs_config:
-            filter_dbs_clause = ",".join(["'{}'".format(db)
+
+    if filter_dbs_config:
+        filter_dbs_clause = ",".join(["'{}'".format(db)
                                          for db in filter_dbs_config.split(",")])
 
-            table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
-        else:
-            table_schema_clause = """
-            WHERE table_schema NOT IN (
-            'information_schema',
-            'performance_schema',
-            'mysql'
-            )"""
+        table_schema_clause = "WHERE table_schema IN ({})".format(filter_dbs_clause)
+    else:
+        table_schema_clause = """
+        WHERE table_schema NOT IN (
+        'information_schema',
+        'performance_schema',
+        'mysql'
+        )"""
 
-        cursor.execute("""
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("""
             SELECT table_schema,
                    table_name,
                    table_type,
                    table_rows
                 FROM information_schema.tables
                 {}
-        """.format(table_schema_clause))
+            """.format(table_schema_clause))
 
-        table_info = {}
+            table_info = {}
 
-        for (db, table, table_type, rows) in cursor.fetchall():
-            if db not in table_info:
-                table_info[db] = {}
-            table_info[db][table] = {
-                'row_count': rows,
-                'is_view': table_type == 'VIEW'
-            }
+            for (db, table, table_type, rows) in cur.fetchall():
+                if db not in table_info:
+                    table_info[db] = {}
 
-    with connection.cursor() as cursor:
+                table_info[db][table] = {
+                    'row_count': rows,
+                    'is_view': table_type == 'VIEW'
+                }
 
-        cursor.execute("""
-            SELECT table_schema,
-                   table_name,
-                   column_name,
-                   data_type,
-                   character_maximum_length,
-                   numeric_precision,
-                   numeric_scale,
-                   column_type,
-                   column_key
-                FROM information_schema.columns
-                {}
-                ORDER BY table_schema, table_name
-        """.format(table_schema_clause))
+            cur.execute("""
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       column_type,
+                       column_key
+                    FROM information_schema.columns
+                    {}
+                    ORDER BY table_schema, table_name
+            """.format(table_schema_clause))
 
-        columns = []
-        rec = cursor.fetchone()
-        while rec is not None:
-            columns.append(Column(*rec))
-            rec = cursor.fetchone()
+            columns = []
+            rec = cur.fetchone()
+            while rec is not None:
+                columns.append(Column(*rec))
+                rec = cur.fetchone()
 
-        entries = []
-        for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
-            cols = list(cols)
-            (table_schema, table_name) = k
-            schema = Schema(type='object',
-                            properties={c.column_name: schema_for_column(c) for c in cols})
-            md = create_column_metadata(cols)
-            md_map = metadata.to_map(md)
+            entries = []
+            for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
+                cols = list(cols)
+                (table_schema, table_name) = k
+                schema = Schema(type='object',
+                                properties={c.column_name: schema_for_column(c) for c in cols})
+                md = create_column_metadata(cols)
+                md_map = metadata.to_map(md)
 
-            md_map = metadata.write(md_map,
-                                    (),
-                                    'database-name',
-                                    table_schema)
+                md_map = metadata.write(md_map,
+                                        (),
+                                        'database-name',
+                                        table_schema)
 
-            is_view = table_info[table_schema][table_name]['is_view']
+                is_view = table_info[table_schema][table_name]['is_view']
 
-            if table_schema in table_info and table_name in table_info[table_schema]:
-                row_count = table_info[table_schema][table_name].get('row_count')
+                if table_schema in table_info and table_name in table_info[table_schema]:
+                    row_count = table_info[table_schema][table_name].get('row_count')
 
-                if row_count is not None:
+                    if row_count is not None:
+                        md_map = metadata.write(md_map,
+                                                (),
+                                                'row-count',
+                                                row_count)
+
                     md_map = metadata.write(md_map,
                                             (),
-                                            'row-count',
-                                            row_count)
+                                            'is-view',
+                                            is_view)
 
-                md_map = metadata.write(md_map,
-                                        (),
-                                        'is-view',
-                                        is_view)
+                column_is_key_prop = lambda c, s: (
+                    c.column_key == 'PRI' and
+                    s.properties[c.column_name].inclusion != 'unsupported'
+                )
 
-            column_is_key_prop = lambda c, s: (
-                c.column_key == 'PRI' and
-                s.properties[c.column_name].inclusion != 'unsupported'
-            )
+                key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
 
-            key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
+                if not is_view:
+                    md_map = metadata.write(md_map,
+                                            (),
+                                            'table-key-properties',
+                                            key_properties)
 
-            if not is_view:
-                md_map = metadata.write(md_map,
-                                        (),
-                                        'table-key-properties',
-                                        key_properties)
+                entry = CatalogEntry(
+                    table=table_name,
+                    stream=table_name,
+                    metadata=metadata.to_list(md_map),
+                    tap_stream_id=table_schema + '-' + table_name,
+                    schema=schema)
 
-            entry = CatalogEntry(
-                table=table_name,
-                stream=table_name,
-                metadata=metadata.to_list(md_map),
-                tap_stream_id=table_schema + '-' + table_name,
-                schema=schema)
+                entries.append(entry)
 
-            entries.append(entry)
-
-        return Catalog(entries)
+    return Catalog(entries)
 
 
-def do_discover(connection, config):
-    discover_catalog(connection, config).dump()
+def do_discover(mysql_conn, config):
+    discover_catalog(mysql_conn, config).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -306,28 +307,29 @@ def desired_columns(selected, table_schema):
     return selected.intersection(available).union(automatic)
 
 
-def log_engine(connection, catalog_entry):
+def log_engine(mysql_conn, catalog_entry):
     is_view = common.get_is_view(catalog_entry)
     database_name = common.get_database_name(catalog_entry)
 
     if is_view:
         LOGGER.info("Beginning sync for view %s.%s", database_name, catalog_entry.table)
     else:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT engine
-                  FROM information_schema.tables
-                 WHERE table_schema = %s
-                   AND table_name   = %s
-            """, (database_name, catalog_entry.table))
+        with connect_with_backoff(mysql_conn) as open_conn:
+            with open_conn.cursor() as cur:
+                cur.execute("""
+                    SELECT engine
+                      FROM information_schema.tables
+                     WHERE table_schema = %s
+                       AND table_name   = %s
+                """, (database_name, catalog_entry.table))
 
-            row = cursor.fetchone()
+                row = cur.fetchone()
 
-            if row:
-                LOGGER.info("Beginning sync for %s table %s.%s",
-                            row[0],
-                            database_name,
-                            catalog_entry.table)
+                if row:
+                    LOGGER.info("Beginning sync for %s table %s.%s",
+                                row[0],
+                                database_name,
+                                catalog_entry.table)
 
 
 def is_selected(stream):
@@ -336,7 +338,7 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(con, catalog, config, state):
+def resolve_catalog(mysql_conn, catalog, config, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -356,7 +358,7 @@ def resolve_catalog(con, catalog, config, state):
         columns used as replication keys.
 
     '''
-    discovered = discover_catalog(con, config)
+    discovered = discover_catalog(mysql_conn, config)
 
     # Filter catalog to include only selected streams
     streams_with_state = []
@@ -430,7 +432,7 @@ def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
         bookmark_properties=bookmark_properties
     ))
 
-def do_sync_incremental(con, catalog_entry, state, columns):
+def do_sync_incremental(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -441,11 +443,11 @@ def do_sync_incremental(con, catalog_entry, state, columns):
         raise Exception("Cannot use INCREMENTAL replication for table ({}) without a replication key.".format(catalog_entry.stream))
 
     generate_schema_message(catalog_entry, key_properties, [replication_key])
-    incremental.sync_table(con, catalog_entry, state, columns)
+    incremental.sync_table(mysql_conn, catalog_entry, state, columns)
 
 
-def do_sync_binlog(con, config, catalog_entry, state, columns):
-    binlog.verify_binlog_config(con, catalog_entry)
+def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
+    binlog.verify_binlog_config(mysql_conn, catalog_entry)
 
     is_view = common.get_is_view(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
@@ -479,7 +481,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
         LOGGER.info("Performing pure binlog sync using log file and position")
         columns = binlog.add_automatic_properties(catalog_entry, columns)
 
-        binlog.sync_table(con, config, catalog_entry, state, columns)
+        binlog.sync_table(mysql_conn, config, catalog_entry, state, columns)
 
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
@@ -488,7 +490,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
 
     elif log_file and log_pos and max_pk_values:
         LOGGER.info("Resuming initial full table sync")
-        full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+        full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     else:
         LOGGER.info("Performing initial full table sync")
@@ -498,13 +500,13 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
                                       'initial_binlog_complete',
                                       False)
 
-        log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
+        log_file, log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'version',
                                       stream_version)
 
-        if full_table.pks_are_auto_incrementing(con, catalog_entry):
+        if full_table.pks_are_auto_incrementing(mysql_conn, catalog_entry):
             # We must save log_file and log_pos across FULL_TABLE syncs when using
             # an incrementing PK
             state = singer.write_bookmark(state,
@@ -517,10 +519,10 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
                                           'log_pos',
                                           log_pos)
 
-            full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
         else:
-            full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
@@ -534,7 +536,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
         singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync_full_table(con, catalog_entry, state, columns):
+def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -542,7 +544,7 @@ def do_sync_full_table(con, catalog_entry, state, columns):
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
-    full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+    full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     # Prefer initial_full_table_complete going forward
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
@@ -555,8 +557,8 @@ def do_sync_full_table(con, catalog_entry, state, columns):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync(con, config, catalog, state):
-    catalog = resolve_catalog(con, catalog, config, state)
+def do_sync(mysql_conn, config, catalog, state):
+    catalog = resolve_catalog(mysql_conn, catalog, config, state)
 
     for catalog_entry in catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
@@ -580,14 +582,14 @@ def do_sync(con, config, catalog, state):
             timer.tags['database'] = database_name
             timer.tags['table'] = catalog_entry.table
 
-            log_engine(con, catalog_entry)
+            log_engine(mysql_conn, catalog_entry)
 
             if replication_method == 'INCREMENTAL':
-                do_sync_incremental(con, catalog_entry, state, columns)
+                do_sync_incremental(mysql_conn, catalog_entry, state, columns)
             elif replication_method == 'LOG_BASED':
-                do_sync_binlog(con, config, catalog_entry, state, columns)
+                do_sync_binlog(mysql_conn, config, catalog_entry, state, columns)
             elif replication_method == 'FULL_TABLE':
-                do_sync_full_table(con, catalog_entry, state, columns)
+                do_sync_full_table(mysql_conn, catalog_entry, state, columns)
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
@@ -597,68 +599,43 @@ def do_sync(con, config, catalog, state):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def log_server_params(con):
-    try:
-        with con.cursor() as cur:
-            cur.execute('''
+def log_server_params(mysql_conn):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            try:
+                cur.execute('''
                 SELECT VERSION() as version,
-                    @@session.wait_timeout as wait_timeout,
-                    @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
-                    @@session.max_allowed_packet as max_allowed_packet,
-                    @@session.interactive_timeout as interactive_timeout''')
-            row = cur.fetchone()
-            LOGGER.info('Server Parameters: ' +
-                        'version: %s, ' +
-                        'wait_timeout: %s, ' +
-                        'innodb_lock_wait_timeout: %s, ' +
-                        'max_allowed_packet: %s, ' +
-                        'interactive_timeout: %s',
-                        *row)
-    except pymysql.err.InternalError as e:
-        LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
+                       @@session.wait_timeout as wait_timeout,
+                       @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+                       @@session.max_allowed_packet as max_allowed_packet,
+                       @@session.interactive_timeout as interactive_timeout''')
+                row = cur.fetchone()
+                LOGGER.info('Server Parameters: ' +
+                            'version: %s, ' +
+                            'wait_timeout: %s, ' +
+                            'innodb_lock_wait_timeout: %s, ' +
+                            'max_allowed_packet: %s, ' +
+                            'interactive_timeout: %s',
+                            *row)
+            except pymysql.err.InternalError as e:
+                LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
 
 
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-    connection = MySQLConnection(args.config)
 
-    connect_with_backoff(connection)
+    mysql_conn = MySQLConnection(args.config)
+    log_server_params(mysql_conn)
 
-    warnings = []
-    with connection.cursor() as cur:
-        try:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        except pymysql.err.InternalError as e:
-            warnings.append('Could not set session.time_zone. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute('SET @@session.wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-            warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-            warnings.append(
-                'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
-                )
-
-    if warnings:
-        LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
-                     "impact performance:"))
-    for w in warnings:
-        LOGGER.warning(w)
-
-    log_server_params(connection)
     if args.discover:
-        do_discover(connection, args.config)
+        do_discover(mysql_conn, args.config)
     elif args.catalog:
         state = args.state or {}
-        do_sync(connection, args.config, args.catalog, state)
+        do_sync(mysql_conn, args.config, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
         state = args.state or {}
-        do_sync(connection, args.config, catalog, state)
+        do_sync(mysql_conn, args.config, catalog, state)
     else:
         LOGGER.info("No properties were selected")
 

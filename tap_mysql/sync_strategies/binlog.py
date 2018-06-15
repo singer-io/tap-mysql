@@ -16,8 +16,7 @@ import pymysql.connections
 import pymysql.err
 import tap_mysql.sync_strategies.common as common
 
-from tap_mysql.connection import make_connection_wrapper
-
+from tap_mysql.connection import connect_with_backoff, MySQLConnection, make_connection_wrapper
 from pymysqlreplication.constants import FIELD_TYPE
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.event import RotateEvent
@@ -51,68 +50,72 @@ def add_automatic_properties(catalog_entry, columns):
     return columns
 
 
-def verify_binlog_config(connection, catalog_entry):
-    with connection.cursor() as cur:
-        cur.execute("SELECT  @@binlog_format")
-        binlog_format = cur.fetchone()[0]
+def verify_binlog_config(mysql_conn, catalog_entry):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("SELECT  @@binlog_format")
+            binlog_format = cur.fetchone()[0]
 
-        if binlog_format != 'ROW':
-            raise Exception("Unable to replicate stream({}) with binlog because binlog_format is not set to 'ROW': {}."
-                            .format(catalog_entry.stream, binlog_format))
+            if binlog_format != 'ROW':
+                raise Exception("Unable to replicate stream({}) with binlog because binlog_format is not set to 'ROW': {}."
+                                .format(catalog_entry.stream, binlog_format))
 
-        try:
-            cur.execute("SELECT  @@binlog_row_image")
-            binlog_row_image = cur.fetchone()[0]
-        except pymysql.err.InternalError as ex:
-            if ex.args[0] == 1193:
-                raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication."
-                                .format(catalog_entry.stream))
-            else:
-                raise ex
+            try:
+                cur.execute("SELECT  @@binlog_row_image")
+                binlog_row_image = cur.fetchone()[0]
+            except pymysql.err.InternalError as ex:
+                if ex.args[0] == 1193:
+                    raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication."
+                                    .format(catalog_entry.stream))
+                else:
+                    raise ex
 
-        if binlog_row_image != 'FULL':
-            raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image is not set to 'FULL': {}."
+            if binlog_row_image != 'FULL':
+                raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image is not set to 'FULL': {}."
                             .format(catalog_entry.stream, binlog_row_image))
 
 
-def verify_log_file_exists(connection, catalog_entry, log_file, log_pos):
-    with connection.cursor() as cur:
-        cur.execute("SHOW BINARY LOGS")
-        result = cur.fetchall()
+def verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("SHOW BINARY LOGS")
+            result = cur.fetchall()
 
-        existing_log_file = list(filter(lambda log: log[0] == log_file, result))
+            existing_log_file = list(filter(lambda log: log[0] == log_file, result))
 
-        if not existing_log_file:
-            raise Exception("Unable to replicate stream({}) with binlog because log file {} does not exist."
-                            .format(catalog_entry.stream, log_file))
+            if not existing_log_file:
+                raise Exception("Unable to replicate stream({}) with binlog because log file {} does not exist."
+                                .format(catalog_entry.stream, log_file))
 
-        current_log_pos = existing_log_file[0][1]
+            current_log_pos = existing_log_file[0][1]
 
-        if log_pos > current_log_pos:
-            raise Exception("Unable to replicate stream({}) with binlog because requested position ({}) for log file {} is greater than current position ({})."
-                            .format(catalog_entry.stream, log_pos, log_file, current_log_pos))
-
-
-def fetch_current_log_file_and_pos(connection):
-    with connection.cursor() as cur:
-        cur.execute("SHOW MASTER STATUS")
-
-        result = cur.fetchone()
-
-        if result is None:
-            raise Exception("MySQL binary logging is not enabled.")
-
-        current_log_file, current_log_pos = result[0:2]
-
-        return current_log_file, current_log_pos
+            if log_pos > current_log_pos:
+                raise Exception("Unable to replicate stream({}) with binlog because requested position ({}) for log file {} is greater than current position ({})."
+                                .format(catalog_entry.stream, log_pos, log_file, current_log_pos))
 
 
-def fetch_server_id(connection):
-    with connection.cursor() as cur:
-        cur.execute("SELECT @@server_id")
-        server_id = cur.fetchone()[0]
+def fetch_current_log_file_and_pos(mysql_conn):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("SHOW MASTER STATUS")
 
-        return server_id
+            result = cur.fetchone()
+
+            if result is None:
+                raise Exception("MySQL binary logging is not enabled.")
+
+            current_log_file, current_log_pos = result[0:2]
+
+            return current_log_file, current_log_pos
+
+
+def fetch_server_id(mysql_conn):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("SELECT @@server_id")
+            server_id = cur.fetchone()[0]
+
+            return server_id
 
 
 def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extracted):
@@ -247,7 +250,7 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
     return rows_saved
 
 
-def sync_table(connection, config, catalog_entry, state, columns):
+def sync_table(mysql_conn, config, catalog_entry, state, columns):
     common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
 
     log_file = singer.get_bookmark(state,
@@ -258,7 +261,7 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                   catalog_entry.tap_stream_id,
                                   'log_pos')
 
-    verify_log_file_exists(connection, catalog_entry, log_file, log_pos)
+    verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos)
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
     state = singer.write_bookmark(state,
@@ -266,7 +269,7 @@ def sync_table(connection, config, catalog_entry, state, columns):
                                   'version',
                                   stream_version)
 
-    server_id = fetch_server_id(connection)
+    server_id = fetch_server_id(mysql_conn)
 
     connection_wrapper = make_connection_wrapper(config)
 
