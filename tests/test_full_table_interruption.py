@@ -6,6 +6,8 @@ import singer
 import singer.metadata
 import tap_mysql
 
+from tap_mysql.connection import connect_with_backoff
+
 try:
     import tests.utils as test_utils
 except ImportError:
@@ -23,7 +25,7 @@ TABLE_1_DATA = [[ 100, 'abc' ],
 
 TABLE_2_DATA = TABLE_1_DATA[::-1]
 
-def insert_record(cursor, table_name, record):
+def insert_record(conn, table_name, record):
     value_sql = ",".join(["%s" for i in range(len(record))])
 
     insert_sql = """
@@ -34,7 +36,9 @@ def insert_record(cursor, table_name, record):
             table_name,
             value_sql)
 
-    cursor.execute(insert_sql, record)
+    with connect_with_backoff(conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute(insert_sql, record)
 
 
 def singer_write_message_no_table_2(message):
@@ -53,26 +57,27 @@ def singer_write_message_ok(message):
     SINGER_MESSAGES.append(message)
 
 def init_tables(conn):
-    with conn.cursor() as cur:
-        cur.execute("""
-        CREATE TABLE table_1 (
-        id  BIGINT AUTO_INCREMENT PRIMARY KEY,
-        foo BIGINT,
-        bar VARCHAR(10)
-        )""")
+    with connect_with_backoff(conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("""
+            CREATE TABLE table_1 (
+            id  BIGINT AUTO_INCREMENT PRIMARY KEY,
+            foo BIGINT,
+            bar VARCHAR(10)
+            )""")
 
-        cur.execute("""
-        CREATE TABLE table_2 (
-        id  BIGINT AUTO_INCREMENT PRIMARY KEY,
-        foo BIGINT,
-        bar VARCHAR(10)
-        )""")
+            cur.execute("""
+            CREATE TABLE table_2 (
+            id  BIGINT AUTO_INCREMENT PRIMARY KEY,
+            foo BIGINT,
+            bar VARCHAR(10)
+            )""")
 
-        for record in TABLE_1_DATA:
-            insert_record(cur, 'table_1', record)
+    for record in TABLE_1_DATA:
+        insert_record(conn, 'table_1', record)
 
-        for record in TABLE_2_DATA:
-            insert_record(cur, 'table_2', record)
+    for record in TABLE_2_DATA:
+        insert_record(conn, 'table_2', record)
 
     catalog = test_utils.discover_catalog(conn, {})
 
@@ -101,10 +106,6 @@ class BinlogInterruption(unittest.TestCase):
 
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-
-    def tearDown(self):
-        if self.conn:
-            self.conn.close()
 
     def test_table_2_interrupted(self):
         singer.write_message = singer_write_message_no_table_2
@@ -191,9 +192,8 @@ class BinlogInterruption(unittest.TestCase):
         new_table_2_records = [[ 400, 'jkl' ],
                                [ 500, 'mno' ]]
 
-        with self.conn.cursor() as cur:
-            for record in new_table_2_records:
-                insert_record(cur, 'table_2', record)
+        for record in new_table_2_records:
+            insert_record(self.conn, 'table_2', record)
 
         TABLE_2_RECORD_COUNT = 0
         SINGER_MESSAGES.clear()
@@ -243,10 +243,6 @@ class FullTableInterruption(unittest.TestCase):
 
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
-
-    def tearDown(self):
-        if self.conn:
-            self.conn.close()
 
     def test_table_2_interrupted(self):
         singer.write_message = singer_write_message_no_table_2
