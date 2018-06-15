@@ -3,6 +3,7 @@ import pymysql
 import singer
 import tap_mysql
 import tap_mysql.sync_strategies.common as common
+from tap_mysql.connection import MySQLConnection
 
 DB_NAME='tap_mysql_test'
 
@@ -37,7 +38,10 @@ def get_test_connection():
     db_config['database'] = DB_NAME
     db_config['autocommit'] = True
 
-    return pymysql.connect(**db_config)
+    mysql_conn = MySQLConnection(db_config)
+    mysql_conn.autocommit_mode = True
+
+    return mysql_conn
 
 
 def discover_catalog(connection, catalog):
