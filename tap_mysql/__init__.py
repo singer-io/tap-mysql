@@ -139,7 +139,7 @@ def create_column_metadata(cols):
     return metadata.to_list(mdata)
 
 
-def discover_catalog(cursor, config):
+def discover_catalog(mysql_conn, config):
     '''Returns a Catalog describing the structure of the database.'''
 
 
@@ -159,104 +159,106 @@ def discover_catalog(cursor, config):
         'mysql'
         )"""
 
-    cursor.execute("""
-        SELECT table_schema,
-               table_name,
-               table_type,
-               table_rows
-            FROM information_schema.tables
-            {}
-    """.format(table_schema_clause))
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("""
+            SELECT table_schema,
+                   table_name,
+                   table_type,
+                   table_rows
+                FROM information_schema.tables
+                {}
+            """.format(table_schema_clause))
 
-    table_info = {}
+            table_info = {}
 
-    for (db, table, table_type, rows) in cursor.fetchall():
-        if db not in table_info:
-            table_info[db] = {}
-        table_info[db][table] = {
-            'row_count': rows,
-            'is_view': table_type == 'VIEW'
-        }
+            for (db, table, table_type, rows) in cur.fetchall():
+                if db not in table_info:
+                    table_info[db] = {}
 
-    cursor.execute("""
-        SELECT table_schema,
-               table_name,
-               column_name,
-               data_type,
-               character_maximum_length,
-               numeric_precision,
-               numeric_scale,
-               column_type,
-               column_key
-            FROM information_schema.columns
-            {}
-            ORDER BY table_schema, table_name
-    """.format(table_schema_clause))
+                table_info[db][table] = {
+                    'row_count': rows,
+                    'is_view': table_type == 'VIEW'
+                }
 
-    columns = []
-    rec = cursor.fetchone()
-    while rec is not None:
-        columns.append(Column(*rec))
-        rec = cursor.fetchone()
+            cur.execute("""
+                SELECT table_schema,
+                       table_name,
+                       column_name,
+                       data_type,
+                       character_maximum_length,
+                       numeric_precision,
+                       numeric_scale,
+                       column_type,
+                       column_key
+                    FROM information_schema.columns
+                    {}
+                    ORDER BY table_schema, table_name
+            """.format(table_schema_clause))
 
-    entries = []
-    for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
-        cols = list(cols)
-        (table_schema, table_name) = k
-        schema = Schema(type='object',
-                        properties={c.column_name: schema_for_column(c) for c in cols})
-        md = create_column_metadata(cols)
-        md_map = metadata.to_map(md)
+            columns = []
+            rec = cur.fetchone()
+            while rec is not None:
+                columns.append(Column(*rec))
+                rec = cur.fetchone()
 
-        md_map = metadata.write(md_map,
-                                (),
-                                'database-name',
-                                table_schema)
+            entries = []
+            for (k, cols) in itertools.groupby(columns, lambda c: (c.table_schema, c.table_name)):
+                cols = list(cols)
+                (table_schema, table_name) = k
+                schema = Schema(type='object',
+                                properties={c.column_name: schema_for_column(c) for c in cols})
+                md = create_column_metadata(cols)
+                md_map = metadata.to_map(md)
 
-        is_view = table_info[table_schema][table_name]['is_view']
-
-        if table_schema in table_info and table_name in table_info[table_schema]:
-            row_count = table_info[table_schema][table_name].get('row_count')
-
-            if row_count is not None:
                 md_map = metadata.write(md_map,
                                         (),
-                                        'row-count',
-                                        row_count)
+                                        'database-name',
+                                        table_schema)
 
-            md_map = metadata.write(md_map,
-                                    (),
-                                    'is-view',
-                                    is_view)
+                is_view = table_info[table_schema][table_name]['is_view']
 
-        column_is_key_prop = lambda c, s: (
-            c.column_key == 'PRI' and
-            s.properties[c.column_name].inclusion != 'unsupported'
-        )
+                if table_schema in table_info and table_name in table_info[table_schema]:
+                    row_count = table_info[table_schema][table_name].get('row_count')
 
-        key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
+                    if row_count is not None:
+                        md_map = metadata.write(md_map,
+                                                (),
+                                                'row-count',
+                                                row_count)
 
-        if not is_view:
-            md_map = metadata.write(md_map,
-                                    (),
-                                    'table-key-properties',
-                                    key_properties)
+                    md_map = metadata.write(md_map,
+                                            (),
+                                            'is-view',
+                                            is_view)
 
-        entry = CatalogEntry(
-            table=table_name,
-            stream=table_name,
-            metadata=metadata.to_list(md_map),
-            tap_stream_id=table_schema + '-' + table_name,
-            schema=schema)
+                column_is_key_prop = lambda c, s: (
+                    c.column_key == 'PRI' and
+                    s.properties[c.column_name].inclusion != 'unsupported'
+                )
 
-        entries.append(entry)
+                key_properties = [c.column_name for c in cols if column_is_key_prop(c, schema)]
+
+                if not is_view:
+                    md_map = metadata.write(md_map,
+                                            (),
+                                            'table-key-properties',
+                                            key_properties)
+
+                entry = CatalogEntry(
+                    table=table_name,
+                    stream=table_name,
+                    metadata=metadata.to_list(md_map),
+                    tap_stream_id=table_schema + '-' + table_name,
+                    schema=schema)
+
+                entries.append(entry)
 
     return Catalog(entries)
 
 
-def do_discover(config):
-    with connect_with_backoff(MySQLConnection(config)) as cur:
-        discover_catalog(cur, config).dump()
+def do_discover(mysql_conn, config):
+    discover_catalog(mysql_conn, config).dump()
 
 
 # TODO: Maybe put in a singer-db-utils library.
@@ -305,7 +307,7 @@ def desired_columns(selected, table_schema):
     return selected.intersection(available).union(automatic)
 
 
-def log_engine(connection, catalog_entry):
+def log_engine(config, catalog_entry):
     is_view = common.get_is_view(catalog_entry)
     database_name = common.get_database_name(catalog_entry)
 
@@ -335,7 +337,7 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(con, catalog, config, state):
+def resolve_catalog(catalog, config, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -596,58 +598,36 @@ def do_sync(con, config, catalog, state):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def log_server_params(cursor):
-    try:
-        cursor.execute('''
-        SELECT VERSION() as version,
-               @@session.wait_timeout as wait_timeout,
-               @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
-               @@session.max_allowed_packet as max_allowed_packet,
-               @@session.interactive_timeout as interactive_timeout''')
-        row = cursor.fetchone()
-        LOGGER.info('Server Parameters: ' +
-                    'version: %s, ' +
-                    'wait_timeout: %s, ' +
-                    'innodb_lock_wait_timeout: %s, ' +
-                    'max_allowed_packet: %s, ' +
-                    'interactive_timeout: %s',
-                    *row)
-    except pymysql.err.InternalError as e:
-        LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
+def log_server_params(mysql_conn):
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            try:
+                cur.execute('''
+                SELECT VERSION() as version,
+                       @@session.wait_timeout as wait_timeout,
+                       @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
+                       @@session.max_allowed_packet as max_allowed_packet,
+                       @@session.interactive_timeout as interactive_timeout''')
+                row = cur.fetchone()
+                LOGGER.info('Server Parameters: ' +
+                            'version: %s, ' +
+                            'wait_timeout: %s, ' +
+                            'innodb_lock_wait_timeout: %s, ' +
+                            'max_allowed_packet: %s, ' +
+                            'interactive_timeout: %s',
+                            *row)
+            except pymysql.err.InternalError as e:
+                LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
 
 
 def main_impl():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
 
-    warnings = []
-    with connect_with_backoff(MySQLConnection(args.config)) as cur:
-        try:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        except pymysql.err.InternalError as e:
-            warnings.append('Could not set session.time_zone. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute('SET @@session.wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-            warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-            warnings.append(
-                'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
-                )
-
-        if warnings:
-            LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
-                         "impact performance:"))
-        for w in warnings:
-            LOGGER.warning(w)
-
-        log_server_params(cur)
+    mysql_conn = MySQLConnection(args.config)
+    log_server_params(mysql_conn)
 
     if args.discover:
-        do_discover(args.config)
+        do_discover(mysql_conn, args.config)
     elif args.catalog:
         state = args.state or {}
         do_sync(connection, args.config, args.catalog, state)
