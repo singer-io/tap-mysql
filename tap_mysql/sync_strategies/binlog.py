@@ -297,6 +297,8 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
                                                   catalog_entry.tap_stream_id,
                                                   'initial_binlog_complete')
 
+    current_log_file, current_log_pos = fetch_current_log_file_and_pos(mysql_conn)
+
     for binlog_event in reader:
         if (initial_binlog_complete and
             reader.log_file == log_file and
@@ -339,6 +341,12 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
                                 catalog_entry.tap_stream_id,
                                 reader.log_file,
                                 reader.log_pos)
+
+        # The iterator across python-mysql-replication's fetchone method should ultimately terminate
+        # upon receiving an EOF packet. There seem to be some cases when a MySQL server will not send
+        # one causing binlog replication to hang.
+        if current_log_file == reader.log_file and reader.log_pos >= current_log_pos:
+            break
 
         if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
             (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
