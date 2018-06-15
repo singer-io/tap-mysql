@@ -137,6 +137,15 @@ class MySQLConnection(pymysql.connections.Connection):
             self.client_flag |= CLIENT.SSL
 
 
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, *exc_info):
+        del exc_info
+        self.close()
+
+
 def make_connection_wrapper(config):
     class ConnectionWrapper(MySQLConnection):
         def __init__(self, *args, **kwargs):
