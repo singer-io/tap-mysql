@@ -307,28 +307,29 @@ def desired_columns(selected, table_schema):
     return selected.intersection(available).union(automatic)
 
 
-def log_engine(config, catalog_entry):
+def log_engine(mysql_conn, catalog_entry):
     is_view = common.get_is_view(catalog_entry)
     database_name = common.get_database_name(catalog_entry)
 
     if is_view:
         LOGGER.info("Beginning sync for view %s.%s", database_name, catalog_entry.table)
     else:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT engine
-                  FROM information_schema.tables
-                 WHERE table_schema = %s
-                   AND table_name   = %s
-            """, (database_name, catalog_entry.table))
+        with connect_with_backoff(mysql_conn) as open_conn:
+            with open_conn.cursor() as cur:
+                cur.execute("""
+                    SELECT engine
+                      FROM information_schema.tables
+                     WHERE table_schema = %s
+                       AND table_name   = %s
+                """, (database_name, catalog_entry.table))
 
-            row = cursor.fetchone()
+                row = cur.fetchone()
 
-            if row:
-                LOGGER.info("Beginning sync for %s table %s.%s",
-                            row[0],
-                            database_name,
-                            catalog_entry.table)
+                if row:
+                    LOGGER.info("Beginning sync for %s table %s.%s",
+                                row[0],
+                                database_name,
+                                catalog_entry.table)
 
 
 def is_selected(stream):
@@ -337,7 +338,7 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(catalog, config, state):
+def resolve_catalog(mysql_conn, catalog, config, state):
     '''Returns the Catalog of data we're going to sync.
 
     Takes the Catalog we read from the input file and turns it into a
@@ -357,7 +358,7 @@ def resolve_catalog(catalog, config, state):
         columns used as replication keys.
 
     '''
-    discovered = discover_catalog(con, config)
+    discovered = discover_catalog(mysql_conn, config)
 
     # Filter catalog to include only selected streams
     streams_with_state = []
@@ -431,7 +432,7 @@ def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
         bookmark_properties=bookmark_properties
     ))
 
-def do_sync_incremental(con, catalog_entry, state, columns):
+def do_sync_incremental(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -442,11 +443,11 @@ def do_sync_incremental(con, catalog_entry, state, columns):
         raise Exception("Cannot use INCREMENTAL replication for table ({}) without a replication key.".format(catalog_entry.stream))
 
     generate_schema_message(catalog_entry, key_properties, [replication_key])
-    incremental.sync_table(con, catalog_entry, state, columns)
+    incremental.sync_table(mysql_conn, catalog_entry, state, columns)
 
 
-def do_sync_binlog(con, config, catalog_entry, state, columns):
-    binlog.verify_binlog_config(con, catalog_entry)
+def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
+    binlog.verify_binlog_config(mysql_conn, catalog_entry)
 
     is_view = common.get_is_view(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
@@ -480,7 +481,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
         LOGGER.info("Performing pure binlog sync using log file and position")
         columns = binlog.add_automatic_properties(catalog_entry, columns)
 
-        binlog.sync_table(con, config, catalog_entry, state, columns)
+        binlog.sync_table(mysql_conn, config, catalog_entry, state, columns)
 
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
@@ -489,7 +490,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
 
     elif log_file and log_pos and max_pk_values:
         LOGGER.info("Resuming initial full table sync")
-        full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+        full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     else:
         LOGGER.info("Performing initial full table sync")
@@ -499,13 +500,13 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
                                       'initial_binlog_complete',
                                       False)
 
-        log_file, log_pos = binlog.fetch_current_log_file_and_pos(con)
+        log_file, log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'version',
                                       stream_version)
 
-        if full_table.pks_are_auto_incrementing(con, catalog_entry):
+        if full_table.pks_are_auto_incrementing(mysql_conn, catalog_entry):
             # We must save log_file and log_pos across FULL_TABLE syncs when using
             # an incrementing PK
             state = singer.write_bookmark(state,
@@ -518,10 +519,10 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
                                           'log_pos',
                                           log_pos)
 
-            full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
         else:
-            full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
@@ -535,7 +536,7 @@ def do_sync_binlog(con, config, catalog_entry, state, columns):
         singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync_full_table(con, catalog_entry, state, columns):
+def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -543,7 +544,7 @@ def do_sync_full_table(con, catalog_entry, state, columns):
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
-    full_table.sync_table(con, catalog_entry, state, columns, stream_version)
+    full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     # Prefer initial_full_table_complete going forward
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
@@ -556,8 +557,8 @@ def do_sync_full_table(con, catalog_entry, state, columns):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync(con, config, catalog, state):
-    catalog = resolve_catalog(con, catalog, config, state)
+def do_sync(mysql_conn, config, catalog, state):
+    catalog = resolve_catalog(mysql_conn, catalog, config, state)
 
     for catalog_entry in catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
@@ -581,14 +582,14 @@ def do_sync(con, config, catalog, state):
             timer.tags['database'] = database_name
             timer.tags['table'] = catalog_entry.table
 
-            log_engine(con, catalog_entry)
+            log_engine(mysql_conn, catalog_entry)
 
             if replication_method == 'INCREMENTAL':
-                do_sync_incremental(con, catalog_entry, state, columns)
+                do_sync_incremental(mysql_conn, catalog_entry, state, columns)
             elif replication_method == 'LOG_BASED':
-                do_sync_binlog(con, config, catalog_entry, state, columns)
+                do_sync_binlog(mysql_conn, config, catalog_entry, state, columns)
             elif replication_method == 'FULL_TABLE':
-                do_sync_full_table(con, catalog_entry, state, columns)
+                do_sync_full_table(mysql_conn, catalog_entry, state, columns)
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
@@ -630,11 +631,11 @@ def main_impl():
         do_discover(mysql_conn, args.config)
     elif args.catalog:
         state = args.state or {}
-        do_sync(connection, args.config, args.catalog, state)
+        do_sync(mysql_conn, args.config, args.catalog, state)
     elif args.properties:
         catalog = Catalog.from_dict(args.properties)
         state = args.state or {}
-        do_sync(connection, args.config, catalog, state)
+        do_sync(mysql_conn, args.config, catalog, state)
     else:
         LOGGER.info("No properties were selected")
 

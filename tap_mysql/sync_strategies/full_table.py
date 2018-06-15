@@ -8,6 +8,8 @@ from singer import metadata
 import tap_mysql.sync_strategies.binlog as binlog
 import tap_mysql.sync_strategies.common as common
 
+from tap_mysql.connection import connect_with_backoff, MySQLConnection
+
 LOGGER = singer.get_logger()
 
 
@@ -26,7 +28,7 @@ def generate_bookmark_keys(catalog_entry):
     return bookmark_keys
 
 
-def pks_are_auto_incrementing(connection, catalog_entry):
+def pks_are_auto_incrementing(mysql_conn, catalog_entry):
     database_name = common.get_database_name(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -41,21 +43,22 @@ def pks_are_auto_incrementing(connection, catalog_entry):
                 AND extra LIKE '%auto_increment%'
     """
 
-    with connection.cursor() as cur:
-        for pk in key_properties:
-            cur.execute(sql.format(database_name,
-                                   catalog_entry.table,
-                                   pk))
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            for pk in key_properties:
+                cur.execute(sql.format(database_name,
+                                          catalog_entry.table,
+                                          pk))
 
-            result = cur.fetchone()
+                result = cur.fetchone()
 
-            if not result:
-                return False
+                if not result:
+                    return False
 
     return True
 
 
-def get_max_pk_values(connection, catalog_entry):
+def get_max_pk_values(cursor, catalog_entry):
     database_name = common.get_database_name(catalog_entry)
     escaped_db = common.escape(database_name)
     escaped_table = common.escape(catalog_entry.table)
@@ -72,19 +75,18 @@ def get_max_pk_values(connection, catalog_entry):
     select_column_clause = ", ".join(escaped_columns)
     order_column_clause = ", ".join([pk + " DESC" for pk in escaped_columns])
 
-    with connection.cursor() as cur:
-        cur.execute(sql.format(select_column_clause,
-                               escaped_db,
-                               escaped_table,
-                               order_column_clause))
-        result = cur.fetchone()
+    cursor.execute(sql.format(select_column_clause,
+                           escaped_db,
+                           escaped_table,
+                           order_column_clause))
+    result = cursor.fetchone()
 
-        if result:
-            max_pk_values = dict(zip(key_properties, result))
-        else:
-            max_pk_values = {}
+    if result:
+        max_pk_values = dict(zip(key_properties, result))
+    else:
+        max_pk_values = {}
 
-        return max_pk_values
+    return max_pk_values
 
 def generate_pk_clause(catalog_entry, state):
     key_properties = common.get_key_properties(catalog_entry)
@@ -118,7 +120,7 @@ def generate_pk_clause(catalog_entry, state):
 
 
 
-def sync_table(connection, catalog_entry, state, columns, stream_version):
+def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
     common.whitelist_bookmark_keys(generate_bookmark_keys(catalog_entry), catalog_entry.tap_stream_id, state)
 
     bookmark = state.get('bookmarks', {}).get(catalog_entry.tap_stream_id, {})
@@ -142,39 +144,40 @@ def sync_table(connection, catalog_entry, state, columns, stream_version):
     if not initial_full_table_complete and not (version_exists and state_version is None):
         singer.write_message(activate_version_message)
 
-    with connection.cursor() as cursor:
-        key_props_are_auto_incrementing = pks_are_auto_incrementing(connection, catalog_entry)
+    key_props_are_auto_incrementing = pks_are_auto_incrementing(mysql_conn, catalog_entry)
 
-        select_sql = common.generate_select_sql(catalog_entry, columns)
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            select_sql = common.generate_select_sql(catalog_entry, columns)
 
-        if key_props_are_auto_incrementing:
-            LOGGER.info("Detected auto-incrementing primary key(s) - will replicate incrementally")
-            max_pk_values = singer.get_bookmark(state,
-                                                catalog_entry.tap_stream_id,
-                                                'max_pk_values') or get_max_pk_values(connection, catalog_entry)
+            if key_props_are_auto_incrementing:
+                LOGGER.info("Detected auto-incrementing primary key(s) - will replicate incrementally")
+                max_pk_values = singer.get_bookmark(state,
+                                                    catalog_entry.tap_stream_id,
+                                                    'max_pk_values') or get_max_pk_values(cur, catalog_entry)
 
 
-            if not max_pk_values:
-                LOGGER.info("No max value for auto-incrementing PK found for table {}".format(catalog_entry.table))
-            else:
-                state = singer.write_bookmark(state,
-                                              catalog_entry.tap_stream_id,
-                                              'max_pk_values',
-                                              max_pk_values)
+                if not max_pk_values:
+                    LOGGER.info("No max value for auto-incrementing PK found for table {}".format(catalog_entry.table))
+                else:
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'max_pk_values',
+                                                  max_pk_values)
 
-                pk_clause = generate_pk_clause(catalog_entry, state)
+                    pk_clause = generate_pk_clause(catalog_entry, state)
 
-                select_sql += pk_clause
+                    select_sql += pk_clause
 
-        params = {}
+            params = {}
 
-        common.sync_query(cursor,
-                          catalog_entry,
-                          state,
-                          select_sql,
-                          columns,
-                          stream_version,
-                          params)
+            common.sync_query(cur,
+                              catalog_entry,
+                              state,
+                              select_sql,
+                              columns,
+                              stream_version,
+                              params)
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
