@@ -23,6 +23,31 @@ match_hostname = ssl.match_hostname
 def connect_with_backoff(connection):
     connection.connect()
 
+    warnings = []
+    with connection.cursor() as cur:
+        try:
+            cur.execute('SET @@session.time_zone="+0:00"')
+        except pymysql.err.InternalError as e:
+            warnings.append('Could not set session.time_zone. Error: ({}) {}'.format(*e.args))
+
+        try:
+            cur.execute('SET @@session.wait_timeout=2700')
+        except pymysql.err.InternalError as e:
+             warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
+
+        try:
+            cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
+        except pymysql.err.InternalError as e:
+            warnings.append(
+                'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
+                )
+
+        if warnings:
+            LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
+                         "impact performance:"))
+        for w in warnings:
+            LOGGER.warning(w)
+
     return connection
 
 
