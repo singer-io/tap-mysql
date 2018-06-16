@@ -317,7 +317,7 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
         elif (binlog_event.schema, binlog_event.table) != table_path:
             events_skipped = events_skipped + 1
 
-            if events_skipped % 10 == 0:
+            if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
                 LOGGER.info("Skipped %s events so far as they were not for table %s.%s",
                             events_skipped,
                             database_name,
