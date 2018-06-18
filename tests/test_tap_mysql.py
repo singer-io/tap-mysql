@@ -584,11 +584,14 @@ class TestBinlogReplication(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
-            stream.key_properties = []
-            stream.schema.properties['id'].selected = True
-            stream.schema.properties['updated'].selected = True
             stream.stream = stream.table
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'updated'), 'metadata': {'selected': True}}
+            ]
+
             test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
 
             self.state = singer.write_bookmark(self.state,
@@ -688,19 +691,9 @@ class TestBinlogReplication(unittest.TestCase):
 
 
     def test_binlog_stream(self):
-        stream = self.catalog.streams[0]
-        reader = BinLogStreamReader(
-            connection_settings=test_utils.get_db_config(),
-            server_id=binlog.fetch_server_id(self.conn),
-            only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
-        )
-
-        for _ in reader:
-            expected_log_file = reader.log_file
-            expected_log_pos = reader.log_pos
-
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
+
         tap_mysql.do_sync(self.conn, test_utils.get_db_config(), self.catalog, self.state)
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
