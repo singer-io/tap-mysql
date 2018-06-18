@@ -728,17 +728,8 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state):
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
 def sync_binlog_streams(mysql_conn, binlog_streams, config, state):
-    binlog_stream_map = {}
-
-    for catalog_entry in binlog_streams.streams:
-        columns = list(catalog_entry.schema.properties.keys())
-        binlog_stream_map[catalog_entry.tap_stream_id] = {
-            'catalog_entry': catalog_entry,
-            'desired_columns': columns
-        }
-
     # with metrics.job_timer('sync_binlog') as timer:
-    #     binlog.sync_stream(mysql_conn, config, binlog_stream_map, state)
+    #     binlog.sync_binlog_stream(mysql_conn, config, binlog_streams, state)
     return 1
 
 def do_sync(mysql_conn, config, catalog, state):

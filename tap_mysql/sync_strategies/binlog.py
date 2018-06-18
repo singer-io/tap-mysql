@@ -14,6 +14,7 @@ from singer.schema import Schema
 
 import pymysql.connections
 import pymysql.err
+import re
 import tap_mysql.sync_strategies.common as common
 
 from tap_mysql.connection import connect_with_backoff, MySQLConnection, make_connection_wrapper
@@ -166,6 +167,61 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         time_extracted=time_extracted)
 
 
+def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
+    log_file1_match = re.search('^.*\.(\d+)$', log_file1)
+    log_file2_match = re.search('^.*\.(\d+)$', log_file2)
+
+    if not log_file2_match:
+        return log_file1, log_pos1
+    elif not log_file1_match:
+        return log_file2, log_pos2
+    else:
+        log_file1_suffix = int(log_file1_match.groups()[0])
+        log_file2_suffix = int(log_file2_match.groups()[0])
+
+        if log_file2_suffix > log_file1_suffix:
+            return log_file1, log_pos1
+        elif (log_file1 == log_file2) and log_pos2 > log_pos1:
+            return log_file1, log_pos1
+        elif (log_file1 == log_file2) and log_pos1 > log_pos2:
+            return log_file2, log_pos2
+        else:
+            return log_file2, log_pos2
+
+    return None, None
+
+
+def calculate_bookmark(binlog_streams_map, state):
+    oldest_log_file = None
+    oldest_log_pos = None
+
+    import pdb
+    pdb.set_trace()
+    1+1
+    for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
+        stream = binlog_streams_map.get(tap_stream_id)
+
+        if stream and not common.is_selected(stream['catalog_entry']):
+            continue
+
+        state_log_file = bookmark.get('log_file')
+        state_log_pos = bookmark.get('log_pos')
+
+        if ((not oldest_log_file and not oldest_log_pos) and
+            (state_log_file and state_log_pos)):
+            oldest_log_file = state_log_file
+            oldest_log_pos = state_log_pos
+
+        elif ((oldest_log_file and oldest_log_pos) and
+                 (state_log_file and state_log_pos)):
+            oldest_log_file, oldest_log_pos = get_older_binlog_location(oldest_log_file,
+                                                                        oldest_log_pos,
+                                                                        state_log_file,
+                                                                        state_log_pos)
+
+    return oldest_log_file, oldest_log_pos
+
+
 def update_bookmark(state, tap_stream_id, log_file, log_pos):
     state = singer.write_bookmark(state,
                                   tap_stream_id,
@@ -250,16 +306,26 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
     return rows_saved
 
 
-def sync_table(mysql_conn, config, catalog_entry, state, columns):
-    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
+def generate_streams_map(binlog_streams):
+    stream_map = {}
 
-    log_file = singer.get_bookmark(state,
-                                   catalog_entry.tap_stream_id,
-                                   'log_file')
+    for catalog_entry in binlog_streams:
+        columns = list(catalog_entry.schema.properties.keys())
+        stream_map[catalog_entry.tap_stream_id] = {
+            'catalog_entry': catalog_entry,
+            'desired_columns': columns
+        }
 
-    log_pos = singer.get_bookmark(state,
-                                  catalog_entry.tap_stream_id,
-                                  'log_pos')
+    return stream_map
+
+
+def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
+    binlog_streams_map = generate_streams_map(binlog_streams)
+
+    for tap_stream_id in binlog_streams_map.keys():
+        common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
+
+    log_file, log_pos = calculate_bookmark(catalog_entries, state)
 
     verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos)
 
