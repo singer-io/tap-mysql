@@ -339,7 +339,7 @@ def is_selected(stream):
 
 
 def is_valid_currently_syncing_stream(selected_stream):
-    stream_metadata = metadata.to_map(currently_syncing_stream.metadata)
+    stream_metadata = metadata.to_map(selected_stream.metadata)
     replication_method = stream_metadata.get((), {}).get('replication-method')
 
     if replication_method != 'LOG_BASED':
