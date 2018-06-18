@@ -332,12 +332,6 @@ def log_engine(mysql_conn, catalog_entry):
                                 catalog_entry.table)
 
 
-def is_selected(stream):
-    table_md = metadata.to_map(stream.metadata).get((), {})
-
-    return table_md.get('selected') or stream.is_selected()
-
-
 def is_valid_currently_syncing_stream(selected_stream):
     stream_metadata = metadata.to_map(selected_stream.metadata)
     replication_method = stream_metadata.get((), {}).get('replication-method')
@@ -430,7 +424,7 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
     discovered = discover_catalog(mysql_conn, config)
 
     # Filter catalog to include only selected streams
-    selected_streams = list(filter(lambda s: is_selected(s), catalog.streams))
+    selected_streams = list(filter(lambda s: common.is_selected(s), catalog.streams))
     streams_with_state = []
     streams_without_state = []
 
@@ -471,7 +465,7 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
 def get_binlog_streams(mysql_conn, selected_streams, config, state):
     discovered = discover_catalog(mysql_conn, config)
 
-    selected_streams = list(filter(lambda s: is_selected(s), selected_streams.streams))
+    selected_streams = list(filter(lambda s: common.is_selected(s), selected_streams.streams))
     binlog_streams = []
 
 
