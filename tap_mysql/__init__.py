@@ -738,8 +738,9 @@ def do_sync(mysql_conn, config, catalog, state):
     state = singer.set_currently_syncing(state, None)
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-    with metrics.job_timer('sync_binlog') as timer:
-        binlog.sync_binlog_stream(mysql_conn, config, binlog_streams.streams, state)
+    if binlog_streams.streams:
+        with metrics.job_timer('sync_binlog') as timer:
+            binlog.sync_binlog_stream(mysql_conn, config, binlog_streams.streams, state)
 
 
 def log_server_params(mysql_conn):
