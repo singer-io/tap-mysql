@@ -752,12 +752,12 @@ def do_sync(mysql_conn, config, catalog, state):
     binlog_streams = get_binlog_streams(mysql_conn, catalog, config, state)
 
     sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state)
-    # sync_binlog_streams(mysql_conn, binlog_streams, config, state)
 
-    # if we get here, we've finished processing all the streams, so clear
-    # currently_syncing from the state and emit a state message.
+    # currently_syncing is only used for non-binlog streams
     state = singer.set_currently_syncing(state, None)
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+    # sync_binlog_streams(mysql_conn, binlog_streams, config, state)
 
 
 def log_server_params(mysql_conn):
