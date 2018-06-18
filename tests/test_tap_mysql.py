@@ -321,6 +321,9 @@ class TestCurrentStream(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-a': {
                     'version': 123
+                },
+                'tap_mysql_test-b': {
+                    'version': 456
                 }
             }
         }
@@ -819,6 +822,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestEscaping()
+    test1 = TestCurrentStream()
     test1.setUp()
-    test1.runTest()
+    test1.test_start_at_currently_syncing()
