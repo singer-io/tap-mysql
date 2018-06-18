@@ -347,6 +347,65 @@ def is_valid_currently_syncing_stream(selected_stream):
     else:
         return False
 
+def binlog_stream_requires_historical(catalog_entry, state):
+    log_file = singer.get_bookmark(state,
+                                   catalog_entry.tap_stream_id,
+                                   'log_file')
+
+    log_pos = singer.get_bookmark(state,
+                                  catalog_entry.tap_stream_id,
+                                  'log_pos')
+
+    max_pk_values = singer.get_bookmark(state,
+                                        catalog_entry.tap_stream_id,
+                                        'max_pk_values')
+
+    last_pk_fetched = singer.get_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'last_pk_fetched')
+
+    if (log_file and log_pos) and (not max_pk_values and not last_pk_fetched):
+        return False
+    else:
+        return True
+
+
+def resolve_catalog(discovered_catalog, streams_to_sync):
+    result = Catalog(streams=[])
+
+    # Iterate over the streams in the input catalog and match each one up
+    # with the same stream in the discovered catalog.
+    for catalog_entry in streams_to_sync:
+        catalog_metadata = metadata.to_map(catalog_entry.metadata)
+        replication_key = catalog_metadata.get((), {}).get('replication-key')
+
+        discovered_table = discovered_catalog.get_stream(catalog_entry.tap_stream_id)
+        database_name = common.get_database_name(catalog_entry)
+
+        if not discovered_table:
+            LOGGER.warning('Database %s table %s was selected but does not exist',
+                           database_name, catalog_entry.table)
+            continue
+        selected = set([k for k, v in catalog_entry.schema.properties.items()
+                        if v.selected or k == replication_key])
+
+        # These are the columns we need to select
+        columns = desired_columns(selected, discovered_table.schema)
+
+        result.streams.append(CatalogEntry(
+            tap_stream_id=catalog_entry.tap_stream_id,
+            metadata=catalog_entry.metadata,
+            stream=catalog_entry.stream,
+            table=catalog_entry.table,
+            schema=Schema(
+                type='object',
+                properties={col: discovered_table.schema.properties[col]
+                            for col in columns}
+            )
+        ))
+
+    return result
+
 
 def get_non_binlog_streams(mysql_conn, catalog, config, state):
     '''Returns the Catalog of data we're going to sync for all SELECT-based
@@ -382,6 +441,8 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
 
         if not stream_state:
             streams_without_state.append(stream)
+        elif stream_state and replication_method == 'LOG_BASED' and binlog_stream_requires_historical(stream, state):
+            streams_with_state.append(stream)
         elif stream_state and replication_method != 'LOG_BASED':
             streams_with_state.append(stream)
 
@@ -404,41 +465,30 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
         # prioritize streams that have not been processed
         streams_to_sync = ordered_streams
 
-    result = Catalog(streams=[])
+    return resolve_catalog(discovered, streams_to_sync)
 
-    # Iterate over the streams in the input catalog and match each one up
-    # with the same stream in the discovered catalog.
-    for catalog_entry in streams_to_sync:
-        catalog_metadata = metadata.to_map(catalog_entry.metadata)
-        replication_key = catalog_metadata.get((), {}).get('replication-key')
 
-        discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
-        database_name = common.get_database_name(catalog_entry)
+def get_binlog_streams(mysql_conn, selected_streams, config, state):
+    discovered = discover_catalog(mysql_conn, config)
 
-        if not discovered_table:
-            LOGGER.warning('Database %s table %s was selected but does not exist',
-                           database_name, catalog_entry.table)
-            continue
-        selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if v.selected or k == replication_key])
+    selected_streams = list(filter(lambda s: is_selected(s), catalog.streams))
+    binlog_streams = []
 
-        # These are the columns we need to select
-        columns = desired_columns(selected, discovered_table.schema)
 
-        result.streams.append(CatalogEntry(
-            tap_stream_id=catalog_entry.tap_stream_id,
-            metadata=catalog_entry.metadata,
-            stream=catalog_entry.stream,
-            table=catalog_entry.table,
-            schema=Schema(
-                type='object',
-                properties={col: discovered_table.schema.properties[col]
-                            for col in columns}
-            )
-        ))
+    for stream in selected_streams:
+        is_view = common.get_is_view(stream)
 
-    return result
+        if is_view:
+            raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(stream.stream))
 
+        stream_metadata = metadata.to_map(stream.metadata)
+        replication_method = stream_metadata.get((), {}).get('replication-method')
+        stream_state = state.get('bookmarks', {}).get(stream.tap_stream_id)
+
+        if replication_method == 'LOG_BASED' and not binlog_stream_requires_historical(stream, state):
+            binlog_streams.append(stream)
+
+    return resolve_catalog(discovered, binlog_streams)
 
 def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
     singer.write_message(singer.SchemaMessage(
