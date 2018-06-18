@@ -194,9 +194,6 @@ def calculate_bookmark(binlog_streams_map, state):
     oldest_log_file = None
     oldest_log_pos = None
 
-    import pdb
-    pdb.set_trace()
-    1+1
     for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
         stream = binlog_streams_map.get(tap_stream_id)
 
@@ -379,27 +376,47 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
                                      binlog_streams_map,
                                      binlog_event.next_binlog,
                                      binlog_event.position)
+        else:
+            tap_stream_id = common.generate_tap_stream_id(binlog_event.schema, binlog_event.table)
+            streams_map_entry = binlog_streams_map.get(tap_stream_id, {})
+            catalog_entry = streams_map_entry['catalog_entry']
+            desired_columns = streams_map_entry['desired_columns']
 
-        elif not binlog_streams_map.get(common.get_tap_stream_id(binlog_event.schema, binlog_event.table)):
-            events_skipped = events_skipped + 1
+            if not catalog_entry:
+                events_skipped = events_skipped + 1
 
-            if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
-                LOGGER.info("Skipped %s events so far as they were not for selected tables",
-                            events_skipped)
+                if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
+                    LOGGER.info("Skipped %s events so far as they were not for selected tables",
+                                events_skipped)
 
-        elif binlog_streams_map.get(common.get_tap_stream_id(binlog_event.schema, binlog_event.table)):
-            if isinstance(binlog_event, WriteRowsEvent):
-                rows_saved = handle_write_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
+            elif catalog_entry:
+                if isinstance(binlog_event, WriteRowsEvent):
+                    rows_saved = handle_write_rows_event(binlog_event,
+                                                         catalog_entry,
+                                                         state,
+                                                         desired_columns,
+                                                         rows_saved,
+                                                         time_extracted)
 
-            elif isinstance(binlog_event, UpdateRowsEvent):
-                rows_saved = handle_update_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
+                elif isinstance(binlog_event, UpdateRowsEvent):
+                    rows_saved = handle_update_rows_event(binlog_event,
+                                                          catalog_entry,
+                                                          state,
+                                                          desired_columns,
+                                                          rows_saved,
+                                                          time_extracted)
 
-            elif isinstance(binlog_event, DeleteRowsEvent):
-                rows_saved = handle_delete_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
-            else:
-                LOGGER.info("Skipping event for table %s.%s as it is not an INSERT, UPDATE, or DELETE",
-                            database_name,
-                            catalog_entry.stream)
+                elif isinstance(binlog_event, DeleteRowsEvent):
+                    rows_saved = handle_delete_rows_event(binlog_event,
+                                                          catalog_entry,
+                                                          state,
+                                                          desired_columns,
+                                                          rows_saved,
+                                                          time_extracted)
+                else:
+                    LOGGER.info("Skipping event for table %s.%s as it is not an INSERT, UPDATE, or DELETE",
+                                binlog_event.schema,
+                                binlog_event.table)
 
         state = update_bookmarks(state,
                                  binlog_streams_map,
