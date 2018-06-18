@@ -338,37 +338,52 @@ def is_selected(stream):
     return table_md.get('selected') or stream.is_selected()
 
 
-def resolve_catalog(mysql_conn, catalog, config, state):
-    '''Returns the Catalog of data we're going to sync.
+def is_valid_currently_syncing_stream(selected_stream):
+    stream_metadata = metadata.to_map(currently_syncing_stream.metadata)
+    replication_method = stream_metadata.get((), {}).get('replication-method')
 
-    Takes the Catalog we read from the input file and turns it into a
-    Catalog representing exactly which tables and columns we're going to
-    emit in this process. Compares the input Catalog to a freshly
-    discovered Catalog to determine the resulting Catalog. Returns a new
-    instance. The result may differ from the input Catalog in the
-    following ways:
+    if replication_method != 'LOG_BASED':
+        return True
+    else:
+        return False
 
-      * It will only include streams marked as "selected".
-      * We will remove any streams and columns that were selected but do
-        not actually exist in the database right now.
-      * If the state has a currently_syncing, we will skip to that stream and
-        drop all streams appearing before it in the catalog.
-      * We will add any columns that were not selected but should be
-        automatically included. For example, primary key columns and
-        columns used as replication keys.
+
+def get_non_binlog_streams(mysql_conn, catalog, config, state):
+    '''Returns the Catalog of data we're going to sync for all SELECT-based
+    streams (i.e. INCREMENTAL, FULL_TABLE, and LOG_BASED that require a historical
+    sync). LOG_BASED streams that require a historical sync are inferred from lack
+    of any state.
+
+    Using the Catalog provided from the input file, this function will return a
+    Catalog representing exactly which tables and columns that will be emitted
+    by SELECT-based syncs. This is achieved by comparing the input Catalog to a
+    freshly discovered Catalog to determine the resulting Catalog.
+
+    The resulting Catalog will include the following any streams marked as
+    "selected" that currently exist in the database. Columns marked as "selected"
+    and those labled "automatic" (e.g. primary keys and replication keys) will be
+    included. Streams will be prioritized in the following order:
+      1. currently_syncing if it is SELECT-based
+      2. any streams that do not have state
+      3. any streams that do not have a replication method of LOG_BASED
 
     '''
     discovered = discover_catalog(mysql_conn, config)
 
     # Filter catalog to include only selected streams
+    selected_streams = list(filter(lambda s: is_selected(s), catalog.streams))
     streams_with_state = []
     streams_without_state = []
 
-    for stream in catalog.streams:
-        if is_selected(stream) and state.get('bookmarks', {}).get(stream.tap_stream_id):
-           streams_with_state.append(stream)
-        elif is_selected(stream) and not state.get('bookmarks', {}).get(stream.tap_stream_id):
-           streams_without_state.append(stream)
+    for stream in selected_streams:
+        stream_metadata = metadata.to_map(stream.metadata)
+        replication_method = stream_metadata.get((), {}).get('replication-method')
+        stream_state = state.get('bookmarks', {}).get(stream.tap_stream_id)
+
+        if not stream_state:
+            streams_without_state.append(stream)
+        elif stream_state and replication_method != 'LOG_BASED':
+            streams_with_state.append(stream)
 
     # If the state says we were in the middle of processing a stream, skip
     # to that stream. Then process streams without prior state and finally
@@ -379,14 +394,15 @@ def resolve_catalog(mysql_conn, catalog, config, state):
     ordered_streams = streams_without_state + streams_with_state
 
     if currently_syncing:
-        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, ordered_streams))
+        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing and is_valid_currently_syncing_stream(s),
+                                               streams_with_state))
+
         non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
 
         streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
     else:
         # prioritize streams that have not been processed
         streams_to_sync = ordered_streams
-
 
     result = Catalog(streams=[])
 
@@ -558,9 +574,9 @@ def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
 
 
 def do_sync(mysql_conn, config, catalog, state):
-    catalog = resolve_catalog(mysql_conn, catalog, config, state)
+    non_binlog_streams = get_non_binlog_streams(mysql_conn, catalog, config, state)
 
-    for catalog_entry in catalog.streams:
+    for catalog_entry in non_binlog_streams.streams:
         columns = list(catalog_entry.schema.properties.keys())
 
         if not columns:
