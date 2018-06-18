@@ -597,7 +597,7 @@ def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
 
 
 def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns):
-    binlog.verify_binlog_config(mysql_conn, catalog_entry)
+    binlog.verify_binlog_config(mysql_conn)
 
     is_view = common.get_is_view(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
@@ -727,10 +727,6 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state):
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
-def sync_binlog_streams(mysql_conn, binlog_streams, config, state):
-    # with metrics.job_timer('sync_binlog') as timer:
-    #     binlog.sync_binlog_stream(mysql_conn, config, binlog_streams, state)
-    return 1
 
 def do_sync(mysql_conn, config, catalog, state):
     non_binlog_streams = get_non_binlog_streams(mysql_conn, catalog, config, state)
@@ -742,7 +738,8 @@ def do_sync(mysql_conn, config, catalog, state):
     state = singer.set_currently_syncing(state, None)
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-    # sync_binlog_streams(mysql_conn, binlog_streams, config, state)
+    with metrics.job_timer('sync_binlog') as timer:
+        binlog.sync_binlog_stream(mysql_conn, config, binlog_streams.streams, state)
 
 
 def log_server_params(mysql_conn):
