@@ -19,6 +19,9 @@ def escape(string):
     return '`' + string + '`'
 
 
+def generate_tap_stream_id(table_schema, table_name):
+    return table_schema + '-' + table_name
+
 def get_stream_version(tap_stream_id, state):
     stream_version = singer.get_bookmark(state, tap_stream_id, 'version')
 

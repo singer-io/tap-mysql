@@ -249,7 +249,7 @@ def discover_catalog(mysql_conn, config):
                     table=table_name,
                     stream=table_name,
                     metadata=metadata.to_list(md_map),
-                    tap_stream_id=table_schema + '-' + table_name,
+                    tap_stream_id=common.generate_tap_stream_id(table_schema, table_name),
                     schema=schema)
 
                 entries.append(entry)
