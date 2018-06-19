@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code,too-many-locals,too-many-arguments
+# pylint: disable=duplicate-code,too-many-locals,too-many-arguments,too-many-branches
 
 import copy
 
@@ -186,8 +186,8 @@ def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
             return log_file1, log_pos1
         elif (log_file1 == log_file2) and log_pos1 > log_pos2:
             return log_file2, log_pos2
-        else:
-            return log_file2, log_pos2
+
+        return log_file2, log_pos2
 
     return None, None
 
@@ -325,14 +325,6 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
 
     for tap_stream_id in binlog_streams_map.keys():
         common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
-
-        # TODO: This probably is not necessary
-        # state = singer.write_bookmark(state,
-        #                               tap_stream_id,
-        #                               'version',
-        #                               stream_version)
-
-
 
     log_file, log_pos = calculate_bookmark(binlog_streams_map, state)
 
