@@ -44,7 +44,14 @@ def property_is_selected(stream, property_name):
                                ('properties', property_name),
                                'selected')
 
-    return selected_md
+    selected_by_default_md = metadata.get(md_map,
+                               ('properties', property_name),
+                               'selected-by-default')
+
+    if selected_md is False:
+        return False
+
+    return selected_md or selected_by_default_md
 
 
 def get_is_view(catalog_entry):
