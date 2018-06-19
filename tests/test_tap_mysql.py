@@ -704,7 +704,6 @@ class TestBinlogReplication(unittest.TestCase):
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
         message_types = [type(m) for m in SINGER_MESSAGES]
-
         self.assertEqual(message_types,
                          [singer.StateMessage,
                           singer.SchemaMessage,
@@ -720,12 +719,26 @@ class TestBinlogReplication(unittest.TestCase):
                           singer.RecordMessage,
                           singer.StateMessage])
 
-        self.assertEqual([(1, False), (2, False), (3, False), (3, False), (2, True)],
-                         [(m.record['id'], m.record.get(binlog.SDC_DELETED_AT) is not None)
+        self.assertEqual([('binlog_1', 1, '2017-06-01T00:00:00+00:00', False),
+                          ('binlog_1', 2, '2017-06-20T00:00:00+00:00', False),
+                          ('binlog_1', 3, '2017-09-22T00:00:00+00:00', False),
+                          ('binlog_2', 1, '2017-10-22T00:00:00+00:00', False),
+                          ('binlog_2', 2, '2017-11-10T00:00:00+00:00', False),
+                          ('binlog_1', 3, '2018-06-18T00:00:00+00:00', False),
+                          ('binlog_2', 2, '2018-06-18T00:00:00+00:00', False),
+                          ('binlog_1', 2, '2017-06-20T00:00:00+00:00', True),
+                          ('binlog_2', 1, '2017-10-22T00:00:00+00:00', True)],
+                         [(m.stream,
+                           m.record['id'],
+                           m.record['updated'],
+                           m.record.get(binlog.SDC_DELETED_AT) is not None)
                           for m in record_messages])
 
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_file'))
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_pos'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_pos'))
+
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_pos'))
 
 
 class TestViews(unittest.TestCase):
