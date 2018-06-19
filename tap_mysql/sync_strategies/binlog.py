@@ -379,8 +379,8 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         else:
             tap_stream_id = common.generate_tap_stream_id(binlog_event.schema, binlog_event.table)
             streams_map_entry = binlog_streams_map.get(tap_stream_id, {})
-            catalog_entry = streams_map_entry['catalog_entry']
-            desired_columns = streams_map_entry['desired_columns']
+            catalog_entry = streams_map_entry.get('catalog_entry')
+            desired_columns = streams_map_entry.get('desired_columns')
 
             if not catalog_entry:
                 events_skipped = events_skipped + 1
