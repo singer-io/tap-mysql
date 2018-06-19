@@ -340,8 +340,8 @@ def is_valid_currently_syncing_stream(selected_stream, state):
         return True
     elif replication_method == 'LOG_BASED' and binlog_stream_requires_historical(selected_stream, state):
         return True
-    else:
-        return False
+
+    return False
 
 def binlog_stream_requires_historical(catalog_entry, state):
     log_file = singer.get_bookmark(state,
@@ -362,8 +362,8 @@ def binlog_stream_requires_historical(catalog_entry, state):
 
     if (log_file and log_pos) and (not max_pk_values and not last_pk_fetched):
         return False
-    else:
-        return True
+
+    return True
 
 
 def resolve_catalog(discovered_catalog, streams_to_sync):
