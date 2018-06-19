@@ -362,19 +362,6 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
     current_log_file, current_log_pos = fetch_current_log_file_and_pos(mysql_conn)
 
     for binlog_event in reader:
-        #TODO: MOVE THIS DOWN
-        # initial_binlog_complete = singer.get_bookmark(state,
-        #                                               catalog_entry.tap_stream_id,
-        #                                               'initial_binlog_complete')
-
-
-        # if (initial_binlog_complete and
-        #     reader.log_file == log_file and
-        #     reader.log_pos == log_pos):
-        #     LOGGER.info("Skipping event for log_file=%s and log_pos=%s as it was processed last sync",
-        #                 reader.log_file,
-        #                 reader.log_pos)
-        #     continue
         if isinstance(binlog_event, RotateEvent):
             state = update_bookmarks(state,
                                      binlog_streams_map,
@@ -394,6 +381,20 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
                                 events_skipped)
 
             elif catalog_entry:
+                initial_binlog_complete = singer.get_bookmark(state,
+                                                              catalog_entry.tap_stream_id,
+                                                              'initial_binlog_complete')
+
+
+                if (initial_binlog_complete and
+                    reader.log_file == log_file and
+                    reader.log_pos == log_pos):
+                    LOGGER.info("Skipping event for stream(%s) log_file=%s and log_pos=%s as it was processed last sync",
+                                catalog_entry.tap_stream_id,
+                                reader.log_file,
+                                reader.log_pos)
+                    continue
+
                 if isinstance(binlog_event, WriteRowsEvent):
                     rows_saved = handle_write_rows_event(binlog_event,
                                                          catalog_entry,
