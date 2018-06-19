@@ -484,6 +484,7 @@ def get_binlog_streams(mysql_conn, catalog, config, state):
 
     return resolve_catalog(discovered, binlog_streams)
 
+
 def write_schema_message(catalog_entry, bookmark_properties=[]):
     key_properties = common.get_key_properties(catalog_entry)
 
@@ -493,6 +494,7 @@ def write_schema_message(catalog_entry, bookmark_properties=[]):
         key_properties=key_properties,
         bookmark_properties=bookmark_properties
     ))
+
 
 def do_sync_incremental(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
