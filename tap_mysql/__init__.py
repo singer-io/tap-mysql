@@ -332,11 +332,13 @@ def log_engine(mysql_conn, catalog_entry):
                                 catalog_entry.table)
 
 
-def is_valid_currently_syncing_stream(selected_stream):
+def is_valid_currently_syncing_stream(selected_stream, state):
     stream_metadata = metadata.to_map(selected_stream.metadata)
     replication_method = stream_metadata.get((), {}).get('replication-method')
 
     if replication_method != 'LOG_BASED':
+        return True
+    elif replication_method == 'LOG_BASED' and binlog_stream_requires_historical(selected_stream, state):
         return True
     else:
         return False
@@ -450,8 +452,9 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
     ordered_streams = streams_without_state + streams_with_state
 
     if currently_syncing:
-        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing and is_valid_currently_syncing_stream(s),
-                                               streams_with_state))
+        currently_syncing_stream = list(filter(
+            lambda s: s.tap_stream_id == currently_syncing and is_valid_currently_syncing_stream(s, state),
+            streams_with_state))
 
         non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
 
@@ -554,7 +557,7 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
                                       'initial_binlog_complete',
                                       False)
 
-        log_file, log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
+        current_log_file, current_log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'version',
@@ -566,12 +569,12 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
-                                          log_file)
+                                          current_log_file)
 
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_pos',
-                                          log_pos)
+                                          current_log_pos)
 
             full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
@@ -580,12 +583,12 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
-                                          log_file)
+                                          current_log_file)
 
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_pos',
-                                          log_pos)
+                                          current_log_pos)
 
 
 def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
@@ -609,8 +612,8 @@ def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state):
-    for catalog_entry in non_binlog_streams.streams:
+def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
+    for catalog_entry in non_binlog_catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
 
         if not columns:
@@ -647,21 +650,21 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def sync_binlog_streams(mysql_conn, binlog_streams, config, state):
-    if binlog_streams.streams:
-        for stream in binlog_streams.streams:
+def sync_binlog_streams(mysql_conn, binlog_catalog, config, state):
+    if binlog_catalog.streams:
+        for stream in binlog_catalog.streams:
             write_schema_message(stream)
 
         with metrics.job_timer('sync_binlog') as timer:
-            binlog.sync_binlog_stream(mysql_conn, config, binlog_streams.streams, state)
+            binlog.sync_binlog_stream(mysql_conn, config, binlog_catalog.streams, state)
 
 
 def do_sync(mysql_conn, config, catalog, state):
-    non_binlog_streams = get_non_binlog_streams(mysql_conn, catalog, config, state)
-    binlog_streams = get_binlog_streams(mysql_conn, catalog, config, state)
+    non_binlog_catalog = get_non_binlog_streams(mysql_conn, catalog, config, state)
+    binlog_catalog = get_binlog_streams(mysql_conn, catalog, config, state)
 
-    sync_non_binlog_streams(mysql_conn, non_binlog_streams, config, state)
-    sync_binlog_streams(mysql_conn, binlog_streams, config, state)
+    sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state)
+    sync_binlog_streams(mysql_conn, binlog_catalog, config, state)
 
 def log_server_params(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
