@@ -170,11 +170,13 @@ def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
     log_file1_match = re.search('^.*\.(\d+)$', log_file1)
     log_file2_match = re.search('^.*\.(\d+)$', log_file2)
 
-    if not log_file2_match:
+    if log_file1_match and not log_file2_match:
         return log_file1, log_pos1
-    elif not log_file1_match:
+
+    elif log_file2_match and not log_file1_match:
         return log_file2, log_pos2
-    else:
+
+    elif log_file1_match and log_file2_match:
         log_file1_suffix = int(log_file1_match.groups()[0])
         log_file2_suffix = int(log_file2_match.groups()[0])
 
