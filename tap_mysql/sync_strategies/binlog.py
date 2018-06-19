@@ -307,7 +307,9 @@ def generate_streams_map(binlog_streams):
     stream_map = {}
 
     for catalog_entry in binlog_streams:
-        columns = list(catalog_entry.schema.properties.keys())
+        columns = add_automatic_properties(catalog_entry,
+                                           list(catalog_entry.schema.properties.keys()))
+
         stream_map[catalog_entry.tap_stream_id] = {
             'catalog_entry': catalog_entry,
             'desired_columns': columns
