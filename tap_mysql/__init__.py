@@ -546,11 +546,11 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
     if log_file and log_pos and max_pk_values:
-        LOGGER.info("Resuming initial full table sync for LOG_BASED stream %s", catalog_entry.stream)
+        LOGGER.info("Resuming initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
         full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     else:
-        LOGGER.info("Performing initial full table sync for LOG_BASED stream %s", catalog_entry.stream)
+        LOGGER.info("Performing initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
 
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
