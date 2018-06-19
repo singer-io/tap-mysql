@@ -262,8 +262,11 @@ class TestSchemaMessages(unittest.TestCase):
 
         catalog = test_utils.discover_catalog(conn, {})
         catalog.streams[0].stream = 'tab'
-        catalog.streams[0].schema.selected = True
-        catalog.streams[0].schema.properties['a'].selected = True
+        catalog.streams[0].metadata = [
+            {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+            {'breadcrumb': ('properties', 'a'), 'metadata': {'selected': True}}
+        ]
+
         test_utils.set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
 
         global SINGER_MESSAGES
@@ -300,9 +303,13 @@ class TestCurrentStream(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
@@ -321,6 +328,9 @@ class TestCurrentStream(unittest.TestCase):
             'bookmarks': {
                 'tap_mysql_test-a': {
                     'version': 123
+                },
+                'tap_mysql_test-b': {
+                    'version': 456
                 }
             }
         }
@@ -354,9 +364,13 @@ class TestStreamVersionFullTable(unittest.TestCase):
 
         self.catalog = test_utils.discover_catalog(self.conn, {})
         for stream in self.catalog.streams:
-            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
@@ -368,6 +382,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
         tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
+
         self.assertEqual(['ActivateVersionMessage', 'RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
@@ -460,9 +475,16 @@ class TestIncrementalReplication(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
-            stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+            stream.metadata = [
+                {'breadcrumb': (),
+                 'metadata': {
+                    'selected': True,
+                     'table-key-properties': [],
+                    'database-name': 'tap_mysql_test'
+                }},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
 
@@ -536,8 +558,14 @@ class TestIncrementalReplication(unittest.TestCase):
 
         stream = [x for x in self.catalog.streams if x.stream == 'incremental'][0]
 
+        stream.metadata = [
+            {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+            {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}},
+            {'breadcrumb': ('properties', 'updated'), 'metadata': {'selected': True}}
+        ]
+
         test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
-        stream.schema.properties['updated'].selected = True
+
         tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key'], 'val')
@@ -562,6 +590,7 @@ class TestIncrementalReplication(unittest.TestCase):
 class TestBinlogReplication(unittest.TestCase):
 
     def setUp(self):
+        self.maxDiff = None
         self.state = {}
         self.conn = test_utils.get_test_connection()
 
@@ -569,23 +598,37 @@ class TestBinlogReplication(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE binlog (id int, updated datetime)')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (1, \'2017-06-01\')')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (2, \'2017-06-20\')')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (3, \'2017-09-22\')')
-                cursor.execute('UPDATE binlog set updated=\'2018-04-20\' WHERE id = 3')
-                cursor.execute('DELETE FROM binlog WHERE id = 2')
+                cursor.execute('CREATE TABLE binlog_1 (id int, updated datetime)')
+                cursor.execute('CREATE TABLE binlog_2 (id int, updated datetime)')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (1, \'2017-06-01\')')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (2, \'2017-06-20\')')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (3, \'2017-09-22\')')
+                cursor.execute('INSERT INTO binlog_2 (id, updated) VALUES (1, \'2017-10-22\')')
+                cursor.execute('INSERT INTO binlog_2 (id, updated) VALUES (2, \'2017-11-10\')')
+                cursor.execute('INSERT INTO binlog_2 (id, updated) VALUES (3, \'2017-12-10\')')
+                cursor.execute('UPDATE binlog_1 set updated=\'2018-06-18\' WHERE id = 3')
+                cursor.execute('UPDATE binlog_2 set updated=\'2018-06-18\' WHERE id = 2')
+                cursor.execute('DELETE FROM binlog_1 WHERE id = 2')
+                cursor.execute('DELETE FROM binlog_2 WHERE id = 1')
 
             open_conn.commit()
 
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
-            stream.key_properties = []
-            stream.schema.properties['id'].selected = True
-            stream.schema.properties['updated'].selected = True
             stream.stream = stream.table
+
+            stream.metadata = [
+                {'breadcrumb': (),
+                 'metadata': {
+                     'selected': True,
+                     'database-name': 'tap_mysql_test',
+                     'table-key-propertes': ['id']
+                 }},
+                {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'updated'), 'metadata': {'selected': True}}
+            ]
+
             test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
 
             self.state = singer.write_bookmark(self.state,
@@ -622,17 +665,35 @@ class TestBinlogReplication(unittest.TestCase):
                           singer.StateMessage,
                           singer.ActivateVersionMessage,
                           singer.StateMessage,
+                          singer.SchemaMessage,
+                          singer.ActivateVersionMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.StateMessage,
+                          singer.ActivateVersionMessage,
                           singer.StateMessage])
 
-        activate_version_message = list(filter(lambda m: isinstance(m, singer.ActivateVersionMessage), SINGER_MESSAGES))[0]
+        activate_version_message_1 = list(filter(
+            lambda m: isinstance(m, singer.ActivateVersionMessage) and m.stream == 'binlog_1',
+            SINGER_MESSAGES))[0]
+
+        activate_version_message_2 = list(filter(
+            lambda m: isinstance(m, singer.ActivateVersionMessage) and m.stream == 'binlog_2',
+            SINGER_MESSAGES))[0]
+
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_file'))
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_pos'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_pos'))
 
-        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog', 'version'),
-                         activate_version_message.version)
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_pos'))
 
+        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog_1', 'version'),
+                         activate_version_message_1.version)
+
+        self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog_2', 'version'),
+                         activate_version_message_2.version)
 
     def test_fail_on_view(self):
         for stream in self.catalog.streams:
@@ -685,41 +746,50 @@ class TestBinlogReplication(unittest.TestCase):
 
 
     def test_binlog_stream(self):
-        stream = self.catalog.streams[0]
-        reader = BinLogStreamReader(
-            connection_settings=test_utils.get_db_config(),
-            server_id=binlog.fetch_server_id(self.conn),
-            only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
-        )
-
-        for _ in reader:
-            expected_log_file = reader.log_file
-            expected_log_pos = reader.log_pos
-
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
+
         tap_mysql.do_sync(self.conn, test_utils.get_db_config(), self.catalog, self.state)
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
         message_types = [type(m) for m in SINGER_MESSAGES]
-
         self.assertEqual(message_types,
                          [singer.StateMessage,
+                          singer.SchemaMessage,
                           singer.SchemaMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
-                          singer.StateMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
                           singer.StateMessage])
 
-        self.assertEqual([(1, False), (2, False), (3, False), (3, False), (2, True)],
-                         [(m.record['id'], m.record.get(binlog.SDC_DELETED_AT) is not None)
+        self.assertEqual([('binlog_1', 1, '2017-06-01T00:00:00+00:00', False),
+                          ('binlog_1', 2, '2017-06-20T00:00:00+00:00', False),
+                          ('binlog_1', 3, '2017-09-22T00:00:00+00:00', False),
+                          ('binlog_2', 1, '2017-10-22T00:00:00+00:00', False),
+                          ('binlog_2', 2, '2017-11-10T00:00:00+00:00', False),
+                          ('binlog_2', 3, '2017-12-10T00:00:00+00:00', False),
+                          ('binlog_1', 3, '2018-06-18T00:00:00+00:00', False),
+                          ('binlog_2', 2, '2018-06-18T00:00:00+00:00', False),
+                          ('binlog_1', 2, '2017-06-20T00:00:00+00:00', True),
+                          ('binlog_2', 1, '2017-10-22T00:00:00+00:00', True)],
+                         [(m.stream,
+                           m.record['id'],
+                           m.record['updated'],
+                           m.record.get(binlog.SDC_DELETED_AT) is not None)
                           for m in record_messages])
 
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_file'))
-        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog', 'log_pos'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_1', 'log_pos'))
+
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_file'))
+        self.assertIsNotNone(singer.get_bookmark(self.state, 'tap_mysql_test-binlog_2', 'log_pos'))
 
 
 class TestViews(unittest.TestCase):
@@ -778,9 +848,16 @@ class TestEscaping(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         self.catalog.streams[0].stream = 'some_stream_name'
-        self.catalog.streams[0].schema.selected = True
-        self.catalog.streams[0].key_properties = []
-        self.catalog.streams[0].schema.properties['b c'].selected = True
+
+        self.catalog.streams[0].metadata = [
+            {'breadcrumb': (),
+             'metadata': {
+                 'selected': True,
+                 'table-key-properties': [],
+                 'database-name': 'tap_mysql_test'
+             }},
+            {'breadcrumb': ('properties', 'b c'), 'metadata': {'selected': True}}
+        ]
 
         test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
 
@@ -818,7 +895,174 @@ class TestUnsupportedPK(unittest.TestCase):
 
 
 
+class TestCalculateBinlogBookmark(unittest.TestCase):
+    def setUp(self):
+        self.conn = test_utils.get_test_connection()
+
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE a (val int)')
+                cursor.execute('CREATE TABLE b (val int)')
+                cursor.execute('CREATE TABLE c (val int)')
+                cursor.execute('CREATE TABLE d (val int)')
+                cursor.execute('INSERT INTO a (val) VALUES (1)')
+                cursor.execute('INSERT INTO b (val) VALUES (1)')
+                cursor.execute('INSERT INTO c (val) VALUES (1)')
+                cursor.execute('INSERT INTO d (val) VALUES (1)')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
+
+        for stream in self.catalog.streams:
+            stream.stream = stream.table
+
+            if stream.stream != 'd':
+                stream.metadata = [
+                    {'breadcrumb': (),
+                     'metadata': {
+                         'selected': True,
+                         'table-key-properties': [],
+                         'database-name': 'tap_mysql_test'}},
+                    {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+                ]
+
+            test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
+
+
+        self.binlog_streams_map = binlog.generate_streams_map(self.catalog.streams)
+
+    def test_no_state(self):
+        state = {}
+
+        log_file, log_pos = binlog.calculate_bookmark(self.binlog_streams_map, state)
+        self.assertIsNone(log_file)
+        self.assertIsNone(log_pos)
+
+
+    def test_no_valid_log_filenames(self):
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'asdf',
+                    'log_pos': 10,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': 'qwerty',
+                    'log_pos': 10,
+                }
+            }
+        }
+
+        log_file, log_pos = binlog.calculate_bookmark(self.binlog_streams_map, state)
+
+        self.assertIsNone(log_file)
+        self.assertIsNone(log_pos)
+
+
+    def test_no_valid_log_filenames(self):
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'asdf',
+                    'log_pos': 10,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': 'qwerty',
+                    'log_pos': 10,
+                }
+            }
+        }
+
+        failed = False
+
+        try:
+            binlog.calculate_bookmark(self.binlog_streams_map, state)
+        except Exception as ex:
+            failed = True
+        self.assertTrue(failed)
+
+
+    def test_some_valid_log_filenames(self):
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'mysql-bin.000316',
+                    'log_pos': 10,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': 'qwerty',
+                    'log_pos': 10,
+                }
+            }
+        }
+
+        failed = False
+
+        try:
+            binlog.calculate_bookmark(self.binlog_streams_map, state)
+        except Exception as ex:
+            failed = True
+        self.assertTrue(failed)
+
+
+    def test_all_log_filenames_differ(self):
+        expected_log_file = 'mysql-bin.000316'
+        expected_log_pos = 400
+
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'mysql-bin.000321',
+                    'log_pos': 100,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': expected_log_file,
+                    'log_pos': expected_log_pos,
+                },
+                'tap_mysql_test-3': {
+                    'log_file': 'mysql-bin.000343',
+                    'log_pos': 124,
+                }
+            }
+        }
+
+        log_file, log_pos = binlog.calculate_bookmark(self.binlog_streams_map,state)
+
+        self.assertEqual(log_file, expected_log_file)
+        self.assertEqual(log_pos, expected_log_pos)
+
+
+    def test_oldest_is_not_selected(self):
+        expected_log_file = 'mysql-bin.000316'
+        expected_log_pos = 400
+
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'mysql-bin.000321',
+                    'log_pos': 100,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': expected_log_file,
+                    'log_pos': expected_log_pos,
+                },
+                'tap_mysql_test-c': {
+                    'log_file': 'mysql-bin.000343',
+                    'log_pos': 124,
+                },
+                'tap_mysql_test-d': {
+                    'log_file': 'mysql-bin.000001',
+                    'log_pos': 4,
+                }
+            }
+        }
+
+        log_file, log_pos = binlog.calculate_bookmark(self.binlog_streams_map,state)
+
+        self.assertEqual(log_file, expected_log_file)
+        self.assertEqual(log_pos, expected_log_pos)
+
+
 if __name__== "__main__":
-    test1 = TestEscaping()
+    test1 = TestBinlogReplication()
     test1.setUp()
-    test1.runTest()
+    test1.test_binlog_stream()

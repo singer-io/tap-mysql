@@ -90,10 +90,16 @@ class BinlogInterruption(unittest.TestCase):
         self.catalog = init_tables(self.conn)
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
-            stream.key_properties = []
-            stream.schema.properties['foo'].selected = True
-            stream.schema.properties['bar'].selected = True
+            stream.metadata = [
+                {'breadcrumb': (),
+                 'metadata': {'selected': True,
+                              'database-name': 'tap_mysql_test',
+                              'table-key-properties': ['id']}},
+                {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'foo'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'bar'), 'metadata': {'selected': True}},
+            ]
+
             stream.stream = stream.table
 
             if stream.table == 'table_2':
@@ -231,10 +237,16 @@ class FullTableInterruption(unittest.TestCase):
         self.catalog = init_tables(self.conn)
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
-            stream.key_properties = []
-            stream.schema.properties['foo'].selected = True
-            stream.schema.properties['bar'].selected = True
+            stream.metadata = [
+                {'breadcrumb': (),
+                 'metadata': {'selected': True,
+                              'database-name': 'tap_mysql_test',
+                              'table-key-properties': ['id']}},
+                {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'foo'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'bar'), 'metadata': {'selected': True}},
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 

@@ -249,7 +249,7 @@ def discover_catalog(mysql_conn, config):
                     table=table_name,
                     stream=table_name,
                     metadata=metadata.to_list(md_map),
-                    tap_stream_id=table_schema + '-' + table_name,
+                    tap_stream_id=common.generate_tap_stream_id(table_schema, table_name),
                     schema=schema)
 
                 entries.append(entry)
@@ -332,62 +332,41 @@ def log_engine(mysql_conn, catalog_entry):
                                 catalog_entry.table)
 
 
-def is_selected(stream):
-    table_md = metadata.to_map(stream.metadata).get((), {})
+def is_valid_currently_syncing_stream(selected_stream, state):
+    stream_metadata = metadata.to_map(selected_stream.metadata)
+    replication_method = stream_metadata.get((), {}).get('replication-method')
 
-    return table_md.get('selected') or stream.is_selected()
+    if replication_method != 'LOG_BASED':
+        return True
+    elif replication_method == 'LOG_BASED' and binlog_stream_requires_historical(selected_stream, state):
+        return True
 
+    return False
 
-def resolve_catalog(mysql_conn, catalog, config, state):
-    '''Returns the Catalog of data we're going to sync.
+def binlog_stream_requires_historical(catalog_entry, state):
+    log_file = singer.get_bookmark(state,
+                                   catalog_entry.tap_stream_id,
+                                   'log_file')
 
-    Takes the Catalog we read from the input file and turns it into a
-    Catalog representing exactly which tables and columns we're going to
-    emit in this process. Compares the input Catalog to a freshly
-    discovered Catalog to determine the resulting Catalog. Returns a new
-    instance. The result may differ from the input Catalog in the
-    following ways:
+    log_pos = singer.get_bookmark(state,
+                                  catalog_entry.tap_stream_id,
+                                  'log_pos')
 
-      * It will only include streams marked as "selected".
-      * We will remove any streams and columns that were selected but do
-        not actually exist in the database right now.
-      * If the state has a currently_syncing, we will skip to that stream and
-        drop all streams appearing before it in the catalog.
-      * We will add any columns that were not selected but should be
-        automatically included. For example, primary key columns and
-        columns used as replication keys.
+    max_pk_values = singer.get_bookmark(state,
+                                        catalog_entry.tap_stream_id,
+                                        'max_pk_values')
 
-    '''
-    discovered = discover_catalog(mysql_conn, config)
+    last_pk_fetched = singer.get_bookmark(state,
+                                          catalog_entry.tap_stream_id,
+                                          'last_pk_fetched')
 
-    # Filter catalog to include only selected streams
-    streams_with_state = []
-    streams_without_state = []
+    if (log_file and log_pos) and (not max_pk_values and not last_pk_fetched):
+        return False
 
-    for stream in catalog.streams:
-        if is_selected(stream) and state.get('bookmarks', {}).get(stream.tap_stream_id):
-           streams_with_state.append(stream)
-        elif is_selected(stream) and not state.get('bookmarks', {}).get(stream.tap_stream_id):
-           streams_without_state.append(stream)
-
-    # If the state says we were in the middle of processing a stream, skip
-    # to that stream. Then process streams without prior state and finally
-    # move onto streams with state (i.e. have been synced in the past)
-    currently_syncing = singer.get_currently_syncing(state)
-
-    # prioritize streams that have not been processed
-    ordered_streams = streams_without_state + streams_with_state
-
-    if currently_syncing:
-        currently_syncing_stream = list(filter(lambda s: s.tap_stream_id == currently_syncing, ordered_streams))
-        non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
-
-        streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
-    else:
-        # prioritize streams that have not been processed
-        streams_to_sync = ordered_streams
+    return True
 
 
+def resolve_catalog(discovered_catalog, streams_to_sync):
     result = Catalog(streams=[])
 
     # Iterate over the streams in the input catalog and match each one up
@@ -396,15 +375,16 @@ def resolve_catalog(mysql_conn, catalog, config, state):
         catalog_metadata = metadata.to_map(catalog_entry.metadata)
         replication_key = catalog_metadata.get((), {}).get('replication-key')
 
-        discovered_table = discovered.get_stream(catalog_entry.tap_stream_id)
+        discovered_table = discovered_catalog.get_stream(catalog_entry.tap_stream_id)
         database_name = common.get_database_name(catalog_entry)
 
         if not discovered_table:
             LOGGER.warning('Database %s table %s was selected but does not exist',
                            database_name, catalog_entry.table)
             continue
+
         selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if v.selected or k == replication_key])
+                        if common.property_is_selected(catalog_entry, k) or k == replication_key])
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
@@ -424,7 +404,93 @@ def resolve_catalog(mysql_conn, catalog, config, state):
     return result
 
 
-def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
+def get_non_binlog_streams(mysql_conn, catalog, config, state):
+    '''Returns the Catalog of data we're going to sync for all SELECT-based
+    streams (i.e. INCREMENTAL, FULL_TABLE, and LOG_BASED that require a historical
+    sync). LOG_BASED streams that require a historical sync are inferred from lack
+    of any state.
+
+    Using the Catalog provided from the input file, this function will return a
+    Catalog representing exactly which tables and columns that will be emitted
+    by SELECT-based syncs. This is achieved by comparing the input Catalog to a
+    freshly discovered Catalog to determine the resulting Catalog.
+
+    The resulting Catalog will include the following any streams marked as
+    "selected" that currently exist in the database. Columns marked as "selected"
+    and those labled "automatic" (e.g. primary keys and replication keys) will be
+    included. Streams will be prioritized in the following order:
+      1. currently_syncing if it is SELECT-based
+      2. any streams that do not have state
+      3. any streams that do not have a replication method of LOG_BASED
+
+    '''
+    discovered = discover_catalog(mysql_conn, config)
+
+    # Filter catalog to include only selected streams
+    selected_streams = list(filter(lambda s: common.stream_is_selected(s), catalog.streams))
+    streams_with_state = []
+    streams_without_state = []
+
+    for stream in selected_streams:
+        stream_metadata = metadata.to_map(stream.metadata)
+        replication_method = stream_metadata.get((), {}).get('replication-method')
+        stream_state = state.get('bookmarks', {}).get(stream.tap_stream_id)
+
+        if not stream_state:
+            streams_without_state.append(stream)
+        elif stream_state and replication_method == 'LOG_BASED' and binlog_stream_requires_historical(stream, state):
+            is_view = common.get_is_view(stream)
+
+            if is_view:
+                raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(stream.stream))
+
+            streams_with_state.append(stream)
+        elif stream_state and replication_method != 'LOG_BASED':
+            streams_with_state.append(stream)
+
+    # If the state says we were in the middle of processing a stream, skip
+    # to that stream. Then process streams without prior state and finally
+    # move onto streams with state (i.e. have been synced in the past)
+    currently_syncing = singer.get_currently_syncing(state)
+
+    # prioritize streams that have not been processed
+    ordered_streams = streams_without_state + streams_with_state
+
+    if currently_syncing:
+        currently_syncing_stream = list(filter(
+            lambda s: s.tap_stream_id == currently_syncing and is_valid_currently_syncing_stream(s, state),
+            streams_with_state))
+
+        non_currently_syncing_streams = list(filter(lambda s: s.tap_stream_id != currently_syncing, ordered_streams))
+
+        streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
+    else:
+        # prioritize streams that have not been processed
+        streams_to_sync = ordered_streams
+
+    return resolve_catalog(discovered, streams_to_sync)
+
+
+def get_binlog_streams(mysql_conn, catalog, config, state):
+    discovered = discover_catalog(mysql_conn, config)
+
+    selected_streams = list(filter(lambda s: common.stream_is_selected(s), catalog.streams))
+    binlog_streams = []
+
+    for stream in selected_streams:
+        stream_metadata = metadata.to_map(stream.metadata)
+        replication_method = stream_metadata.get((), {}).get('replication-method')
+        stream_state = state.get('bookmarks', {}).get(stream.tap_stream_id)
+
+        if replication_method == 'LOG_BASED' and not binlog_stream_requires_historical(stream, state):
+            binlog_streams.append(stream)
+
+    return resolve_catalog(discovered, binlog_streams)
+
+
+def write_schema_message(catalog_entry, bookmark_properties=[]):
+    key_properties = common.get_key_properties(catalog_entry)
+
     singer.write_message(singer.SchemaMessage(
         stream=catalog_entry.stream,
         schema=catalog_entry.schema.to_dict(),
@@ -432,9 +498,9 @@ def generate_schema_message(catalog_entry, key_properties, bookmark_properties):
         bookmark_properties=bookmark_properties
     ))
 
+
 def do_sync_incremental(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using incremental replication", catalog_entry.stream)
-    key_properties = common.get_key_properties(catalog_entry)
 
     md_map = metadata.to_map(catalog_entry.metadata)
     replication_key = md_map.get((), {}).get('replication-key')
@@ -442,20 +508,22 @@ def do_sync_incremental(mysql_conn, catalog_entry, state, columns):
     if not replication_key:
         raise Exception("Cannot use INCREMENTAL replication for table ({}) without a replication key.".format(catalog_entry.stream))
 
-    generate_schema_message(catalog_entry, key_properties, [replication_key])
+    write_schema_message(catalog_entry=catalog_entry,
+                         bookmark_properties=[replication_key])
+
     incremental.sync_table(mysql_conn, catalog_entry, state, columns)
 
+    singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
-def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
-    binlog.verify_binlog_config(mysql_conn, catalog_entry)
+
+def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns):
+    binlog.verify_binlog_config(mysql_conn)
 
     is_view = common.get_is_view(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
 
     if is_view:
         raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(catalog_entry.stream))
-
-    LOGGER.info("Stream %s is using binlog replication", catalog_entry.stream)
 
     log_file = singer.get_bookmark(state,
                                    catalog_entry.tap_stream_id,
@@ -473,34 +541,23 @@ def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
                                           catalog_entry.tap_stream_id,
                                           'last_pk_fetched')
 
-    generate_schema_message(catalog_entry, key_properties, [])
+    write_schema_message(catalog_entry)
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
-    if (log_file and log_pos) and (not max_pk_values and not last_pk_fetched):
-        LOGGER.info("Performing pure binlog sync using log file and position")
-        columns = binlog.add_automatic_properties(catalog_entry, columns)
-
-        binlog.sync_table(mysql_conn, config, catalog_entry, state, columns)
-
-        state = singer.write_bookmark(state,
-                                      catalog_entry.tap_stream_id,
-                                      'initial_binlog_complete',
-                                      True)
-
-    elif log_file and log_pos and max_pk_values:
-        LOGGER.info("Resuming initial full table sync")
+    if log_file and log_pos and max_pk_values:
+        LOGGER.info("Resuming initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
         full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     else:
-        LOGGER.info("Performing initial full table sync")
+        LOGGER.info("Performing initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
 
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'initial_binlog_complete',
                                       False)
 
-        log_file, log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
+        current_log_file, current_log_pos = binlog.fetch_current_log_file_and_pos(mysql_conn)
         state = singer.write_bookmark(state,
                                       catalog_entry.tap_stream_id,
                                       'version',
@@ -512,12 +569,12 @@ def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
-                                          log_file)
+                                          current_log_file)
 
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_pos',
-                                          log_pos)
+                                          current_log_pos)
 
             full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
@@ -526,21 +583,19 @@ def do_sync_binlog(mysql_conn, config, catalog_entry, state, columns):
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
-                                          log_file)
+                                          current_log_file)
 
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_pos',
-                                          log_pos)
-
-        singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+                                          current_log_pos)
 
 
 def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
     LOGGER.info("Stream %s is using full table replication", catalog_entry.stream)
     key_properties = common.get_key_properties(catalog_entry)
 
-    generate_schema_message(catalog_entry, key_properties, [])
+    write_schema_message(catalog_entry)
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
@@ -557,10 +612,8 @@ def do_sync_full_table(mysql_conn, catalog_entry, state, columns):
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
 
-def do_sync(mysql_conn, config, catalog, state):
-    catalog = resolve_catalog(mysql_conn, catalog, config, state)
-
-    for catalog_entry in catalog.streams:
+def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
+    for catalog_entry in non_binlog_catalog.streams:
         columns = list(catalog_entry.schema.properties.keys())
 
         if not columns:
@@ -587,17 +640,31 @@ def do_sync(mysql_conn, config, catalog, state):
             if replication_method == 'INCREMENTAL':
                 do_sync_incremental(mysql_conn, catalog_entry, state, columns)
             elif replication_method == 'LOG_BASED':
-                do_sync_binlog(mysql_conn, config, catalog_entry, state, columns)
+                do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
             elif replication_method == 'FULL_TABLE':
                 do_sync_full_table(mysql_conn, catalog_entry, state, columns)
             else:
                 raise Exception("only INCREMENTAL, LOG_BASED, and FULL TABLE replication methods are supported")
 
-    # if we get here, we've finished processing all the streams, so clear
-    # currently_syncing from the state and emit a state message.
     state = singer.set_currently_syncing(state, None)
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
+
+def sync_binlog_streams(mysql_conn, binlog_catalog, config, state):
+    if binlog_catalog.streams:
+        for stream in binlog_catalog.streams:
+            write_schema_message(stream)
+
+        with metrics.job_timer('sync_binlog') as timer:
+            binlog.sync_binlog_stream(mysql_conn, config, binlog_catalog.streams, state)
+
+
+def do_sync(mysql_conn, config, catalog, state):
+    non_binlog_catalog = get_non_binlog_streams(mysql_conn, catalog, config, state)
+    binlog_catalog = get_binlog_streams(mysql_conn, catalog, config, state)
+
+    sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state)
+    sync_binlog_streams(mysql_conn, binlog_catalog, config, state)
 
 def log_server_params(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:

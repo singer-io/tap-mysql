@@ -19,6 +19,9 @@ def escape(string):
     return '`' + string + '`'
 
 
+def generate_tap_stream_id(table_schema, table_name):
+    return table_schema + '-' + table_name
+
 def get_stream_version(tap_stream_id, state):
     stream_version = singer.get_bookmark(state, tap_stream_id, 'version')
 
@@ -26,6 +29,29 @@ def get_stream_version(tap_stream_id, state):
         stream_version = int(time.time() * 1000)
 
     return stream_version
+
+
+def stream_is_selected(stream):
+    md_map = metadata.to_map(stream.metadata)
+    selected_md = metadata.get(md_map, (), 'selected')
+
+    return selected_md or stream.is_selected()
+
+
+def property_is_selected(stream, property_name):
+    md_map = metadata.to_map(stream.metadata)
+    selected_md = metadata.get(md_map,
+                               ('properties', property_name),
+                               'selected')
+
+    selected_by_default_md = metadata.get(md_map,
+                               ('properties', property_name),
+                               'selected-by-default')
+
+    if selected_md is False:
+        return False
+
+    return selected_md or selected_by_default_md
 
 
 def get_is_view(catalog_entry):

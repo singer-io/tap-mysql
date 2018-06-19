@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code,too-many-locals,too-many-arguments
+# pylint: disable=duplicate-code,too-many-locals,too-many-arguments,too-many-branches
 
 import copy
 
@@ -14,6 +14,7 @@ from singer.schema import Schema
 
 import pymysql.connections
 import pymysql.err
+import re
 import tap_mysql.sync_strategies.common as common
 
 from tap_mysql.connection import connect_with_backoff, MySQLConnection, make_connection_wrapper
@@ -50,32 +51,31 @@ def add_automatic_properties(catalog_entry, columns):
     return columns
 
 
-def verify_binlog_config(mysql_conn, catalog_entry):
+def verify_binlog_config(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
             cur.execute("SELECT  @@binlog_format")
             binlog_format = cur.fetchone()[0]
 
             if binlog_format != 'ROW':
-                raise Exception("Unable to replicate stream({}) with binlog because binlog_format is not set to 'ROW': {}."
-                                .format(catalog_entry.stream, binlog_format))
+                raise Exception("Unable to replicate binlog stream because binlog_format is not set to 'ROW': {}."
+                                .format(binlog_format))
 
             try:
                 cur.execute("SELECT  @@binlog_row_image")
                 binlog_row_image = cur.fetchone()[0]
             except pymysql.err.InternalError as ex:
                 if ex.args[0] == 1193:
-                    raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication."
-                                    .format(catalog_entry.stream))
+                    raise Exception("Unable to replicate binlog stream because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication.")
                 else:
                     raise ex
 
             if binlog_row_image != 'FULL':
-                raise Exception("Unable to replicate stream({}) with binlog because binlog_row_image is not set to 'FULL': {}."
-                            .format(catalog_entry.stream, binlog_row_image))
+                raise Exception("Unable to replicate binlog stream because binlog_row_image is not set to 'FULL': {}."
+                            .format(binlog_row_image))
 
 
-def verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos):
+def verify_log_file_exists(mysql_conn, log_file, log_pos):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
             cur.execute("SHOW BINARY LOGS")
@@ -84,14 +84,14 @@ def verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos):
             existing_log_file = list(filter(lambda log: log[0] == log_file, result))
 
             if not existing_log_file:
-                raise Exception("Unable to replicate stream({}) with binlog because log file {} does not exist."
-                                .format(catalog_entry.stream, log_file))
+                raise Exception("Unable to replicate binlog stream because log file {} does not exist."
+                                .format(log_file))
 
             current_log_pos = existing_log_file[0][1]
 
             if log_pos > current_log_pos:
-                raise Exception("Unable to replicate stream({}) with binlog because requested position ({}) for log file {} is greater than current position ({})."
-                                .format(catalog_entry.stream, log_pos, log_file, current_log_pos))
+                raise Exception("Unable to replicate binlog stream because requested position ({}) for log file {} is greater than current position ({})."
+                                .format(log_pos, log_file, current_log_pos))
 
 
 def fetch_current_log_file_and_pos(mysql_conn):
@@ -166,16 +166,73 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         time_extracted=time_extracted)
 
 
-def update_bookmark(state, tap_stream_id, log_file, log_pos):
-    state = singer.write_bookmark(state,
-                                  tap_stream_id,
-                                  'log_file',
-                                  log_file)
+def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
+    log_file1_match = re.search('^.*\.(\d+)$', log_file1)
+    log_file2_match = re.search('^.*\.(\d+)$', log_file2)
 
-    state = singer.write_bookmark(state,
-                                  tap_stream_id,
-                                  'log_pos',
-                                  log_pos)
+    if not log_file1_match:
+        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
+                        .format(log_file1))
+
+    elif not log_file2_match:
+        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
+                        .format(log_file2))
+
+    elif log_file1_match and log_file2_match:
+        log_file1_suffix = int(log_file1_match.groups()[0])
+        log_file2_suffix = int(log_file2_match.groups()[0])
+
+        if log_file2_suffix > log_file1_suffix:
+            return log_file1, log_pos1
+        elif (log_file1 == log_file2) and log_pos2 > log_pos1:
+            return log_file1, log_pos1
+        elif (log_file1 == log_file2) and log_pos1 > log_pos2:
+            return log_file2, log_pos2
+
+        return log_file2, log_pos2
+
+    return None, None
+
+
+def calculate_bookmark(binlog_streams_map, state):
+    oldest_log_file = None
+    oldest_log_pos = None
+
+    for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
+        stream = binlog_streams_map.get(tap_stream_id)
+
+        if stream and not common.stream_is_selected(stream['catalog_entry']):
+            continue
+
+        state_log_file = bookmark.get('log_file')
+        state_log_pos = bookmark.get('log_pos')
+
+        if ((not oldest_log_file and not oldest_log_pos) and
+            (state_log_file and state_log_pos)):
+            oldest_log_file = state_log_file
+            oldest_log_pos = state_log_pos
+
+        elif ((oldest_log_file and oldest_log_pos) and
+                 (state_log_file and state_log_pos)):
+            oldest_log_file, oldest_log_pos = get_older_binlog_location(oldest_log_file,
+                                                                        oldest_log_pos,
+                                                                        state_log_file,
+                                                                        state_log_pos)
+
+    return oldest_log_file, oldest_log_pos
+
+
+def update_bookmarks(state, binlog_streams_map, log_file, log_pos):
+    for tap_stream_id in binlog_streams_map.keys():
+        state = singer.write_bookmark(state,
+                                      tap_stream_id,
+                                      'log_file',
+                                      log_file)
+
+        state = singer.write_bookmark(state,
+                                      tap_stream_id,
+                                      'log_pos',
+                                      log_pos)
 
     return state
 
@@ -250,24 +307,45 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
     return rows_saved
 
 
-def sync_table(mysql_conn, config, catalog_entry, state, columns):
-    common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
+def generate_streams_map(binlog_streams):
+    stream_map = {}
 
-    log_file = singer.get_bookmark(state,
-                                   catalog_entry.tap_stream_id,
-                                   'log_file')
+    for catalog_entry in binlog_streams:
+        columns = add_automatic_properties(catalog_entry,
+                                           list(catalog_entry.schema.properties.keys()))
 
-    log_pos = singer.get_bookmark(state,
-                                  catalog_entry.tap_stream_id,
-                                  'log_pos')
+        stream_map[catalog_entry.tap_stream_id] = {
+            'catalog_entry': catalog_entry,
+            'desired_columns': columns
+        }
 
-    verify_log_file_exists(mysql_conn, catalog_entry, log_file, log_pos)
+    return stream_map
 
-    stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
-    state = singer.write_bookmark(state,
-                                  catalog_entry.tap_stream_id,
-                                  'version',
-                                  stream_version)
+
+def update_initial_binlog_complete(binlog_streams_map, state):
+    for tap_stream_id in binlog_streams_map.keys():
+        initial_binlog_complete = singer.get_bookmark(state,
+                                                      tap_stream_id,
+                                                      'initial_binlog_complete')
+
+        if not initial_binlog_complete:
+            singer.write_bookmark(state,
+                                  tap_stream_id,
+                                  'initial_binlog_complete',
+                                  True)
+
+    return state
+
+
+def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
+    binlog_streams_map = generate_streams_map(binlog_streams)
+
+    for tap_stream_id in binlog_streams_map.keys():
+        common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
+
+    log_file, log_pos = calculate_bookmark(binlog_streams_map, state)
+
+    verify_log_file_exists(mysql_conn, log_file, log_pos)
 
     server_id = fetch_server_id(mysql_conn)
 
@@ -283,9 +361,6 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
         pymysql_wrapper=connection_wrapper
     )
 
-    database_name = common.get_database_name(catalog_entry)
-    table_path = (database_name, catalog_entry.stream)
-
     time_extracted = utils.now()
 
     LOGGER.info("Starting binlog replication with log_file=%s, log_pos=%s", log_file, log_pos)
@@ -293,54 +368,75 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
     rows_saved = 0
     events_skipped = 0
 
-    initial_binlog_complete = singer.get_bookmark(state,
-                                                  catalog_entry.tap_stream_id,
-                                                  'initial_binlog_complete')
-
     current_log_file, current_log_pos = fetch_current_log_file_and_pos(mysql_conn)
 
     for binlog_event in reader:
-        if (initial_binlog_complete and
-            reader.log_file == log_file and
-            reader.log_pos == log_pos):
-            LOGGER.info("Skipping event for log_file=%s and log_pos=%s as it was processed last sync",
-                        reader.log_file,
-                        reader.log_pos)
-            continue
-
         if isinstance(binlog_event, RotateEvent):
-            state = update_bookmark(state,
-                                    catalog_entry.tap_stream_id,
-                                    binlog_event.next_binlog,
-                                    binlog_event.position)
+            state = update_bookmarks(state,
+                                     binlog_streams_map,
+                                     binlog_event.next_binlog,
+                                     binlog_event.position)
+        else:
+            tap_stream_id = common.generate_tap_stream_id(binlog_event.schema, binlog_event.table)
+            streams_map_entry = binlog_streams_map.get(tap_stream_id, {})
+            catalog_entry = streams_map_entry['catalog_entry']
+            desired_columns = streams_map_entry['desired_columns']
 
-        elif (binlog_event.schema, binlog_event.table) != table_path:
-            events_skipped = events_skipped + 1
+            if not catalog_entry:
+                events_skipped = events_skipped + 1
 
-            if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
-                LOGGER.info("Skipped %s events so far as they were not for table %s.%s",
-                            events_skipped,
-                            database_name,
-                            catalog_entry.stream)
+                if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
+                    LOGGER.info("Skipped %s events so far as they were not for selected tables; %s rows extracted",
+                                events_skipped,
+                                rows_saved)
 
-        elif (binlog_event.schema, binlog_event.table) == table_path:
-            if isinstance(binlog_event, WriteRowsEvent):
-                rows_saved = handle_write_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
+            elif catalog_entry:
+                initial_binlog_complete = singer.get_bookmark(state,
+                                                              catalog_entry.tap_stream_id,
+                                                              'initial_binlog_complete')
 
-            elif isinstance(binlog_event, UpdateRowsEvent):
-                rows_saved = handle_update_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
 
-            elif isinstance(binlog_event, DeleteRowsEvent):
-                rows_saved = handle_delete_rows_event(binlog_event, catalog_entry, state, columns, rows_saved, time_extracted)
-            else:
-                LOGGER.info("Skipping event for table %s.%s as it is not an INSERT, UPDATE, or DELETE",
-                            database_name,
-                            catalog_entry.stream)
-
-        state = update_bookmark(state,
+                if (initial_binlog_complete and
+                    reader.log_file == log_file and
+                    reader.log_pos == log_pos):
+                    LOGGER.info("Skipping event for stream(%s) log_file=%s and log_pos=%s as it was processed last sync",
                                 catalog_entry.tap_stream_id,
                                 reader.log_file,
                                 reader.log_pos)
+                    continue
+
+                if isinstance(binlog_event, WriteRowsEvent):
+                    rows_saved = handle_write_rows_event(binlog_event,
+                                                         catalog_entry,
+                                                         state,
+                                                         desired_columns,
+                                                         rows_saved,
+                                                         time_extracted)
+
+                elif isinstance(binlog_event, UpdateRowsEvent):
+                    rows_saved = handle_update_rows_event(binlog_event,
+                                                          catalog_entry,
+                                                          state,
+                                                          desired_columns,
+                                                          rows_saved,
+                                                          time_extracted)
+
+                elif isinstance(binlog_event, DeleteRowsEvent):
+                    rows_saved = handle_delete_rows_event(binlog_event,
+                                                          catalog_entry,
+                                                          state,
+                                                          desired_columns,
+                                                          rows_saved,
+                                                          time_extracted)
+                else:
+                    LOGGER.info("Skipping event for table %s.%s as it is not an INSERT, UPDATE, or DELETE",
+                                binlog_event.schema,
+                                binlog_event.table)
+
+        state = update_bookmarks(state,
+                                 binlog_streams_map,
+                                 reader.log_file,
+                                 reader.log_pos)
 
         # The iterator across python-mysql-replication's fetchone method should ultimately terminate
         # upon receiving an EOF packet. There seem to be some cases when a MySQL server will not send
@@ -351,5 +447,7 @@ def sync_table(mysql_conn, config, catalog_entry, state, columns):
         if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
             (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+    state = update_initial_binlog_complete(binlog_streams_map, state)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
