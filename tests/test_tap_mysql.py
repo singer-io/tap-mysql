@@ -972,9 +972,36 @@ class TestCalculateBinlogBookmark(unittest.TestCase):
             }
         }
 
-        log_file, log_pos = binlog.calculate_bookmark(self.binlog_streams_map, state)
-        self.assertIsNone(log_file)
-        self.assertIsNone(log_pos)
+        failed = False
+
+        try:
+            binlog.calculate_bookmark(self.binlog_streams_map, state)
+        except Exception as ex:
+            failed = True
+        self.assertTrue(failed)
+
+
+    def test_some_valid_log_filenames(self):
+        state = {
+            'bookmarks': {
+                'tap_mysql_test-a': {
+                    'log_file': 'mysql-bin.000316',
+                    'log_pos': 10,
+                },
+                'tap_mysql_test-b': {
+                    'log_file': 'qwerty',
+                    'log_pos': 10,
+                }
+            }
+        }
+
+        failed = False
+
+        try:
+            binlog.calculate_bookmark(self.binlog_streams_map, state)
+        except Exception as ex:
+            failed = True
+        self.assertTrue(failed)
 
 
     def test_all_log_filenames_differ(self):
