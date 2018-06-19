@@ -565,6 +565,7 @@ class TestIncrementalReplication(unittest.TestCase):
 class TestBinlogReplication(unittest.TestCase):
 
     def setUp(self):
+        self.maxDiff = None
         self.state = {}
         self.conn = test_utils.get_test_connection()
 
@@ -572,12 +573,17 @@ class TestBinlogReplication(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE binlog (id int, updated datetime)')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (1, \'2017-06-01\')')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (2, \'2017-06-20\')')
-                cursor.execute('INSERT INTO binlog (id, updated) VALUES (3, \'2017-09-22\')')
-                cursor.execute('UPDATE binlog set updated=\'2018-04-20\' WHERE id = 3')
-                cursor.execute('DELETE FROM binlog WHERE id = 2')
+                cursor.execute('CREATE TABLE binlog_1 (id int, updated datetime)')
+                cursor.execute('CREATE TABLE binlog_2 (id int, updated datetime)')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (1, \'2017-06-01\')')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (2, \'2017-06-20\')')
+                cursor.execute('INSERT INTO binlog_1 (id, updated) VALUES (3, \'2017-09-22\')')
+                cursor.execute('INSERT INTO binlog_2 (id, updated) VALUES (1, \'2017-10-22\')')
+                cursor.execute('INSERT INTO binlog_2 (id, updated) VALUES (2, \'2017-11-10\')')
+                cursor.execute('UPDATE binlog_1 set updated=\'2018-06-18\' WHERE id = 3')
+                cursor.execute('UPDATE binlog_2 set updated=\'2018-06-18\' WHERE id = 2')
+                cursor.execute('DELETE FROM binlog_1 WHERE id = 2')
+                cursor.execute('DELETE FROM binlog_2 WHERE id = 1')
 
             open_conn.commit()
 
@@ -702,12 +708,16 @@ class TestBinlogReplication(unittest.TestCase):
         self.assertEqual(message_types,
                          [singer.StateMessage,
                           singer.SchemaMessage,
+                          singer.SchemaMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
                           singer.RecordMessage,
-                          singer.StateMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
+                          singer.RecordMessage,
                           singer.StateMessage])
 
         self.assertEqual([(1, False), (2, False), (3, False), (3, False), (2, True)],
@@ -948,6 +958,6 @@ class TestCalculateBinlogBookmark(unittest.TestCase):
 
 
 if __name__== "__main__":
-    test1 = TestCalculateBinlogBookmark()
+    test1 = TestBinlogReplication()
     test1.setUp()
-    test1.test_oldest_is_not_selected()
+    test1.test_binlog_stream()
