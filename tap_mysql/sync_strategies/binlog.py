@@ -170,11 +170,13 @@ def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
     log_file1_match = re.search('^.*\.(\d+)$', log_file1)
     log_file2_match = re.search('^.*\.(\d+)$', log_file2)
 
-    if log_file1_match and not log_file2_match:
-        return log_file1, log_pos1
+    if not log_file1_match:
+        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
+                        .format(log_file1))
 
-    elif log_file2_match and not log_file1_match:
-        return log_file2, log_pos2
+    elif not log_file2_match:
+        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
+                        .format(log_file2))
 
     elif log_file1_match and log_file2_match:
         log_file1_suffix = int(log_file1_match.groups()[0])
