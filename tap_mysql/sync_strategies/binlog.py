@@ -322,6 +322,21 @@ def generate_streams_map(binlog_streams):
     return stream_map
 
 
+def update_initial_binlog_complete(binlog_streams_map, state):
+    for tap_stream_id in binlog_streams_map.keys():
+        initial_binlog_complete = singer.get_bookmark(state,
+                                                      tap_stream_id,
+                                                      'initial_binlog_complete')
+
+        if not initial_binlog_complete:
+            singer.write_bookmark(state,
+                                  tap_stream_id,
+                                  'initial_binlog_complete',
+                                  True)
+
+    return state
+
+
 def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
     binlog_streams_map = generate_streams_map(binlog_streams)
 
@@ -431,5 +446,7 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
             (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+    state = update_initial_binlog_complete(binlog_streams_map, state)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
