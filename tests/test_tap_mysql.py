@@ -262,8 +262,11 @@ class TestSchemaMessages(unittest.TestCase):
 
         catalog = test_utils.discover_catalog(conn, {})
         catalog.streams[0].stream = 'tab'
-        catalog.streams[0].schema.selected = True
-        catalog.streams[0].schema.properties['a'].selected = True
+        catalog.streams[0].metadata = [
+            {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+            {'breadcrumb': ('properties', 'a'), 'metadata': {'selected': True}}
+        ]
+
         test_utils.set_replication_method_and_key(catalog.streams[0], 'FULL_TABLE', None)
 
         global SINGER_MESSAGES
@@ -300,9 +303,13 @@ class TestCurrentStream(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
@@ -357,9 +364,13 @@ class TestStreamVersionFullTable(unittest.TestCase):
 
         self.catalog = test_utils.discover_catalog(self.conn, {})
         for stream in self.catalog.streams:
-            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
@@ -371,6 +382,7 @@ class TestStreamVersionFullTable(unittest.TestCase):
         tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         (message_types, versions) = message_types_and_versions(SINGER_MESSAGES)
+
         self.assertEqual(['ActivateVersionMessage', 'RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
@@ -463,9 +475,12 @@ class TestIncrementalReplication(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         for stream in self.catalog.streams:
-            stream.schema.selected = True
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
 
@@ -540,7 +555,13 @@ class TestIncrementalReplication(unittest.TestCase):
         stream = [x for x in self.catalog.streams if x.stream == 'incremental'][0]
 
         test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'val')
-        stream.schema.properties['updated'].selected = True
+
+        stream.metadata = [
+            {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+            {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}},
+            {'breadcrumb': ('properties', 'updated'), 'metadata': {'selected': True}}
+        ]
+
         tap_mysql.do_sync(self.conn, {}, self.catalog, state)
 
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key'], 'val')
@@ -797,9 +818,12 @@ class TestEscaping(unittest.TestCase):
         self.catalog = test_utils.discover_catalog(self.conn, {})
 
         self.catalog.streams[0].stream = 'some_stream_name'
-        self.catalog.streams[0].schema.selected = True
         self.catalog.streams[0].key_properties = []
-        self.catalog.streams[0].schema.properties['b c'].selected = True
+
+        stream.metadata = [
+            {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+            {'breadcrumb': ('properties', 'b c'), 'metadata': {'selected': True}}
+        ]
 
         test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
 
@@ -856,10 +880,14 @@ class TestCalculateBinlogBookmark(unittest.TestCase):
 
         for stream in self.catalog.streams:
             stream.key_properties = []
-            stream.schema.properties['val'].selected = True
+
             stream.stream = stream.table
             if stream.stream != 'd':
-                stream.schema.selected = True
+                stream.metadata = [
+                    {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                    {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+                ]
+
             test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
 
 
