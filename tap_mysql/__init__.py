@@ -439,6 +439,11 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
         if not stream_state:
             streams_without_state.append(stream)
         elif stream_state and replication_method == 'LOG_BASED' and binlog_stream_requires_historical(stream, state):
+            is_view = common.get_is_view(stream)
+
+            if is_view:
+                raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(stream.stream))
+
             streams_with_state.append(stream)
         elif stream_state and replication_method != 'LOG_BASED':
             streams_with_state.append(stream)
@@ -473,11 +478,6 @@ def get_binlog_streams(mysql_conn, catalog, config, state):
     binlog_streams = []
 
     for stream in selected_streams:
-        is_view = common.get_is_view(stream)
-
-        if is_view:
-            raise Exception("Unable to replicate stream({}) with binlog because it is a view.".format(stream.stream))
-
         stream_metadata = metadata.to_map(stream.metadata)
         replication_method = stream_metadata.get((), {}).get('replication-method')
         stream_state = state.get('bookmarks', {}).get(stream.tap_stream_id)
