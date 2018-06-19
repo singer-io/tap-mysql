@@ -386,8 +386,9 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
                 events_skipped = events_skipped + 1
 
                 if events_skipped % UPDATE_BOOKMARK_PERIOD == 0:
-                    LOGGER.info("Skipped %s events so far as they were not for selected tables",
-                                events_skipped)
+                    LOGGER.info("Skipped %s events so far as they were not for selected tables; %s rows extracted",
+                                events_skipped,
+                                rows_saved)
 
             elif catalog_entry:
                 initial_binlog_complete = singer.get_bookmark(state,
