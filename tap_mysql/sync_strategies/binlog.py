@@ -197,7 +197,7 @@ def calculate_bookmark(binlog_streams_map, state):
     for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
         stream = binlog_streams_map.get(tap_stream_id)
 
-        if stream and not common.is_selected(stream['catalog_entry']):
+        if stream and not common.stream_is_selected(stream['catalog_entry']):
             continue
 
         state_log_file = bookmark.get('log_file')

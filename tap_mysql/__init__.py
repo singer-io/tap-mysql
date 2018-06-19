@@ -380,8 +380,9 @@ def resolve_catalog(discovered_catalog, streams_to_sync):
             LOGGER.warning('Database %s table %s was selected but does not exist',
                            database_name, catalog_entry.table)
             continue
+
         selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if v.selected or k == replication_key])
+                        if common.property_is_selected(catalog_entry, k) or k == replication_key])
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
@@ -424,7 +425,7 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
     discovered = discover_catalog(mysql_conn, config)
 
     # Filter catalog to include only selected streams
-    selected_streams = list(filter(lambda s: common.is_selected(s), catalog.streams))
+    selected_streams = list(filter(lambda s: common.stream_is_selected(s), catalog.streams))
     streams_with_state = []
     streams_without_state = []
 
@@ -462,12 +463,11 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
     return resolve_catalog(discovered, streams_to_sync)
 
 
-def get_binlog_streams(mysql_conn, selected_streams, config, state):
+def get_binlog_streams(mysql_conn, catalog, config, state):
     discovered = discover_catalog(mysql_conn, config)
 
-    selected_streams = list(filter(lambda s: common.is_selected(s), selected_streams.streams))
+    selected_streams = list(filter(lambda s: common.stream_is_selected(s), catalog.streams))
     binlog_streams = []
-
 
     for stream in selected_streams:
         is_view = common.get_is_view(stream)

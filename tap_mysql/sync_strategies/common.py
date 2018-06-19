@@ -31,10 +31,20 @@ def get_stream_version(tap_stream_id, state):
     return stream_version
 
 
-def is_selected(stream):
-    table_md = metadata.to_map(stream.metadata).get((), {})
+def stream_is_selected(stream):
+    md_map = metadata.to_map(stream.metadata)
+    selected_md = metadata.get(md_map, (), 'selected')
 
-    return table_md.get('selected') or stream.is_selected()
+    return selected_md or stream.is_selected()
+
+
+def property_is_selected(stream, property_name):
+    md_map = metadata.to_map(stream.metadata)
+    selected_md = metadata.get(md_map,
+                               ('properties', property_name),
+                               'selected')
+
+    return selected_md
 
 
 def get_is_view(catalog_entry):
