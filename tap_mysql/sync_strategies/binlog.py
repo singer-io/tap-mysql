@@ -193,10 +193,8 @@ def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
 
     return None, None
 
-
-def calculate_bookmark(binlog_streams_map, state):
-    oldest_log_file = None
-    oldest_log_pos = None
+def get_min_log_pos_per_log_file(binlog_streams_map, state):
+    min_log_pos_per_file = {}
 
     for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
         stream = binlog_streams_map.get(tap_stream_id)
@@ -204,23 +202,30 @@ def calculate_bookmark(binlog_streams_map, state):
         if stream and not common.stream_is_selected(stream['catalog_entry']):
             continue
 
-        state_log_file = bookmark.get('log_file')
-        state_log_pos = bookmark.get('log_pos')
+        log_file = bookmark.get('log_file')
+        log_pos = bookmark.get('log_pos')
 
-        if ((not oldest_log_file and not oldest_log_pos) and
-            (state_log_file and state_log_pos)):
-            oldest_log_file = state_log_file
-            oldest_log_pos = state_log_pos
+        if not min_log_pos_per_file.get(log_file):
+            min_log_pos_per_file[log_file] = log_pos
+        elif min_log_pos_per_file[log_file] > log_pos:
+            min_log_pos_per_file[log_file] = log_pos
 
-        elif ((oldest_log_file and oldest_log_pos) and
-                 (state_log_file and state_log_pos)):
-            oldest_log_file, oldest_log_pos = get_older_binlog_location(oldest_log_file,
-                                                                        oldest_log_pos,
-                                                                        state_log_file,
-                                                                        state_log_pos)
+    return min_log_pos_per_file
 
-    return oldest_log_file, oldest_log_pos
+def calculate_bookmark(mysql_conn, binlog_streams_map, state):
+    min_log_pos_per_file = get_min_log_pos_per_log_file(binlog_streams_map, state)
 
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            cur.execute("SHOW BINARY LOGS")
+
+            binary_logs = cur.fetchall()
+
+            for log_file, _ in binary_logs:
+
+                if min_log_pos_per_file.get(log_file):
+                    return log_file, min_log_pos_per_file[log_file]
+    return None, None
 
 def update_bookmarks(state, binlog_streams_map, log_file, log_pos):
     for tap_stream_id in binlog_streams_map.keys():
@@ -343,7 +348,7 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
     for tap_stream_id in binlog_streams_map.keys():
         common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
 
-    log_file, log_pos = calculate_bookmark(binlog_streams_map, state)
+    log_file, log_pos = calculate_bookmark(mysql_conn, binlog_streams_map, state)
 
     verify_log_file_exists(mysql_conn, log_file, log_pos)
 

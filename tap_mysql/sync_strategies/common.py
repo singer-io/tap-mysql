@@ -35,7 +35,7 @@ def stream_is_selected(stream):
     md_map = metadata.to_map(stream.metadata)
     selected_md = metadata.get(md_map, (), 'selected')
 
-    return selected_md or stream.is_selected()
+    return selected_md
 
 
 def property_is_selected(stream, property_name):
