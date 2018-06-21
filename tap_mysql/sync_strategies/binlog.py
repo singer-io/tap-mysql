@@ -350,6 +350,9 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
 
     log_file, log_pos = calculate_bookmark(mysql_conn, binlog_streams_map, state)
 
+    if not log_file and not log_pos:
+        raise Exception("Unable to replicate binlog stream because all binary logs in state no longer exist.")
+
     verify_log_file_exists(mysql_conn, log_file, log_pos)
 
     server_id = fetch_server_id(mysql_conn)
