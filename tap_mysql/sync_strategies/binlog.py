@@ -208,7 +208,7 @@ def calculate_bookmark(mysql_conn, binlog_streams_map, state):
                 expired_logs = state_logs_set.difference(server_logs_set)
 
                 if expired_logs:
-                    raise Exception("Unable to replicate binlog stream because the following binary logs no longer exist {}".format(
+                    raise Exception("Unable to replicate binlog stream because the following binary log(s) no longer exist: {}".format(
                         ", ".join(expired_logs)))
 
                 for log_file in server_logs_set:
