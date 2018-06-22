@@ -442,8 +442,6 @@ def get_non_binlog_streams(mysql_conn, catalog, config, state):
 
             streams_without_state.append(stream)
         elif stream_state and replication_method == 'LOG_BASED' and binlog_stream_requires_historical(stream, state):
-            import pdb
-            pdb.set_trace()
             is_view = common.get_is_view(stream)
 
             if is_view:
