@@ -166,49 +166,30 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         time_extracted=time_extracted)
 
 
-def get_older_binlog_location(log_file1, log_pos1, log_file2, log_pos2):
-    log_file1_match = re.search('^.*\.(\d+)$', log_file1)
-    log_file2_match = re.search('^.*\.(\d+)$', log_file2)
-
-    if not log_file1_match:
-        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
-                        .format(log_file1))
-
-    elif not log_file2_match:
-        raise Exception("Unable to replicate binlog stream due to invalid log_file format: {}."
-                        .format(log_file2))
-
-    elif log_file1_match and log_file2_match:
-        log_file1_suffix = int(log_file1_match.groups()[0])
-        log_file2_suffix = int(log_file2_match.groups()[0])
-
-        if log_file2_suffix > log_file1_suffix:
-            return log_file1, log_pos1
-        elif (log_file1 == log_file2) and log_pos2 > log_pos1:
-            return log_file1, log_pos1
-        elif (log_file1 == log_file2) and log_pos1 > log_pos2:
-            return log_file2, log_pos2
-
-        return log_file2, log_pos2
-
-    return None, None
-
 def get_min_log_pos_per_log_file(binlog_streams_map, state):
     min_log_pos_per_file = {}
 
     for tap_stream_id, bookmark in state.get('bookmarks', {}).items():
         stream = binlog_streams_map.get(tap_stream_id)
 
-        if stream and not common.stream_is_selected(stream['catalog_entry']):
+        if not stream:
             continue
 
         log_file = bookmark.get('log_file')
         log_pos = bookmark.get('log_pos')
 
         if not min_log_pos_per_file.get(log_file):
-            min_log_pos_per_file[log_file] = log_pos
-        elif min_log_pos_per_file[log_file] > log_pos:
-            min_log_pos_per_file[log_file] = log_pos
+            min_log_pos_per_file[log_file] = {
+                'log_pos': log_pos,
+                'streams': [tap_stream_id]
+            }
+
+        elif min_log_pos_per_file[log_file]['log_pos'] > log_pos:
+            min_log_pos_per_file[log_file]['log_pos'] = log_pos
+            min_log_pos_per_file[log_file]['streams'].append(tap_stream_id)
+
+        else:
+            min_log_pos_per_file[log_file]['streams'].append(tap_stream_id)
 
     return min_log_pos_per_file
 
@@ -221,11 +202,20 @@ def calculate_bookmark(mysql_conn, binlog_streams_map, state):
 
             binary_logs = cur.fetchall()
 
-            for log_file, _ in binary_logs:
+            if binary_logs:
+                server_logs_set = set([log[0] for log in binary_logs])
+                state_logs_set = set(min_log_pos_per_file.keys())
+                expired_logs = state_logs_set.difference(server_logs_set)
 
-                if min_log_pos_per_file.get(log_file):
-                    return log_file, min_log_pos_per_file[log_file]
-    return None, None
+                if expired_logs:
+                    raise Exception("Unable to replicate binlog stream because the following binary logs no longer exist {}".format(
+                        ", ".join(expired_logs)))
+
+                for log_file in server_logs_set:
+                    if min_log_pos_per_file.get(log_file):
+                        return log_file, min_log_pos_per_file[log_file]['log_pos']
+
+            raise Exception("Unable to replicate binlog stream because no binary logs exist on the server.")
 
 def update_bookmarks(state, binlog_streams_map, log_file, log_pos):
     for tap_stream_id in binlog_streams_map.keys():
@@ -349,9 +339,6 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
 
     log_file, log_pos = calculate_bookmark(mysql_conn, binlog_streams_map, state)
-
-    if not log_file and not log_pos:
-        raise Exception("Unable to replicate binlog stream because all binary logs in state no longer exist. A reset is required.")
 
     verify_log_file_exists(mysql_conn, log_file, log_pos)
 
