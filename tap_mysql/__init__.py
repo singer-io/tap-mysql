@@ -699,6 +699,9 @@ def main_impl():
     mysql_conn = MySQLConnection(args.config)
     log_server_params(mysql_conn)
 
+    if args.config.get('use_log_based_replication') == 'true':
+        binlog.verify_binlog_config(mysql_conn)
+
     if args.discover:
         do_discover(mysql_conn, args.config)
     elif args.catalog:
