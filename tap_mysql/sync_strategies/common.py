@@ -3,6 +3,8 @@
 
 import copy
 import datetime
+import pymysql.converters
+import re
 import singer
 import time
 
@@ -98,7 +100,22 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
     row_to_persist = ()
     for idx, elem in enumerate(row):
         property_type = catalog_entry.schema.properties[columns[idx]].type
-        if isinstance(elem, datetime.datetime):
+        str_format = catalog_entry.schema.properties[columns[idx]].format
+
+        if isinstance(elem, str) and str_format == 'date-time':
+            match = re.match(pymysql.converters.DATETIME_RE, elem)
+
+            if match:
+                match_groups = match.groups()
+                datetime_str = "{}-{}-{}T{}:{}:{}".format(*match_groups[:6])
+                millis = len(match_groups) >= 7 and match_groups[6]
+
+                if millis and int(millis):
+                    datetime_str = "{}.{}".format(datetime_str, millis)
+
+                row_to_persist += (datetime_str + '+00:00',)
+
+        elif isinstance(elem, datetime.datetime):
             row_to_persist += (elem.isoformat() + '+00:00',)
 
         elif isinstance(elem, datetime.date):
