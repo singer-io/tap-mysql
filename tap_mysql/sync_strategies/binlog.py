@@ -54,6 +54,10 @@ def add_automatic_properties(catalog_entry, columns):
 def verify_binlog_config(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
+            # Attempting to show master status will easily check for the REPLICATION CLIENT privilege
+            cur.execute("SHOW MASTER STATUS")
+            cur.fetchall()
+
             cur.execute("SELECT  @@binlog_format")
             binlog_format = cur.fetchone()[0]
 
