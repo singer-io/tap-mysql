@@ -10,7 +10,7 @@ import ssl
 
 LOGGER = singer.get_logger()
 
-CONNECT_TIMEOUT_SECONDS = 300
+CONNECT_TIMEOUT_SECONDS = 30
 READ_TIMEOUT_SECONDS = 3600
 
 # We need to hold onto this for self-signed SSL
