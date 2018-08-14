@@ -203,7 +203,7 @@ def calculate_bookmark(mysql_conn, binlog_streams_map, state):
             binary_logs = cur.fetchall()
 
             if binary_logs:
-                server_logs_set = set([log[0] for log in binary_logs])
+                server_logs_set = {log[0] for log in binary_logs}
                 state_logs_set = set(min_log_pos_per_file.keys())
                 expired_logs = state_logs_set.difference(server_logs_set)
 

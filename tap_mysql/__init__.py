@@ -338,7 +338,8 @@ def is_valid_currently_syncing_stream(selected_stream, state):
 
     if replication_method != 'LOG_BASED':
         return True
-    elif replication_method == 'LOG_BASED' and binlog_stream_requires_historical(selected_stream, state):
+
+    if replication_method == 'LOG_BASED' and binlog_stream_requires_historical(selected_stream, state):
         return True
 
     return False
@@ -383,8 +384,8 @@ def resolve_catalog(discovered_catalog, streams_to_sync):
                            database_name, catalog_entry.table)
             continue
 
-        selected = set([k for k, v in catalog_entry.schema.properties.items()
-                        if common.property_is_selected(catalog_entry, k) or k == replication_key])
+        selected = {k for k, v in catalog_entry.schema.properties.items()
+                        if common.property_is_selected(catalog_entry, k) or k == replication_key}
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
