@@ -33,7 +33,7 @@ SDC_DELETED_AT = "_sdc_deleted_at"
 
 UPDATE_BOOKMARK_PERIOD = 1000
 
-BOOKMARK_KEYS = {'log_file', 'log_pos', 'version', 'initial_binlog_complete'}
+BOOKMARK_KEYS = {'log_file', 'log_pos', 'version'}
 
 mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP,
@@ -317,21 +317,6 @@ def generate_streams_map(binlog_streams):
     return stream_map
 
 
-def update_initial_binlog_complete(binlog_streams_map, state):
-    for tap_stream_id in binlog_streams_map.keys():
-        initial_binlog_complete = singer.get_bookmark(state,
-                                                      tap_stream_id,
-                                                      'initial_binlog_complete')
-
-        if not initial_binlog_complete:
-            singer.write_bookmark(state,
-                                  tap_stream_id,
-                                  'initial_binlog_complete',
-                                  True)
-
-    return state
-
-
 def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
     binlog_streams_map = generate_streams_map(binlog_streams)
 
@@ -386,20 +371,6 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
                                 rows_saved)
 
             elif catalog_entry:
-                initial_binlog_complete = singer.get_bookmark(state,
-                                                              catalog_entry.tap_stream_id,
-                                                              'initial_binlog_complete')
-
-
-                if (initial_binlog_complete and
-                    reader.log_file == log_file and
-                    reader.log_pos == log_pos):
-                    LOGGER.info("Skipping event for stream(%s) log_file=%s and log_pos=%s as it was processed last sync",
-                                catalog_entry.tap_stream_id,
-                                reader.log_file,
-                                reader.log_pos)
-                    continue
-
                 if isinstance(binlog_event, WriteRowsEvent):
                     rows_saved = handle_write_rows_event(binlog_event,
                                                          catalog_entry,
@@ -442,7 +413,5 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
             (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
-
-    state = update_initial_binlog_complete(binlog_streams_map, state)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
