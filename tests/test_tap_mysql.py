@@ -749,7 +749,10 @@ class TestBinlogReplication(unittest.TestCase):
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-        tap_mysql.do_sync(self.conn, test_utils.get_db_config(), self.catalog, self.state)
+        config = test_utils.get_db_config()
+        config['server_id'] = "100"
+
+        tap_mysql.do_sync(self.conn, config, self.catalog, self.state)
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
         message_types = [type(m) for m in SINGER_MESSAGES]

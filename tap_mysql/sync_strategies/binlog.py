@@ -327,7 +327,12 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
 
     verify_log_file_exists(mysql_conn, log_file, log_pos)
 
-    server_id = fetch_server_id(mysql_conn)
+    if config.get('server_id'):
+        server_id = int(config.get('server_id'))
+        LOGGER.info("Using provided server_id=%s", server_id)
+    else:
+        server_id = fetch_server_id(mysql_conn)
+        LOGGER.info("No server_id provided, will use global server_id=%s", server_id)
 
     connection_wrapper = make_connection_wrapper(config)
 
