@@ -101,79 +101,79 @@ source table directly corresponds to a Singer stream.
 {
   "streams": [
     {
-      "key_properties": [
-        "id"
-      ],
       "tap_stream_id": "example_db-animals",
+      "table_name": "animals",
       "schema": {
+        "type": "object",
         "properties": {
-          "likes_getting_petted": {
-            "type": [
-              "null",
-              "boolean"
-            ],
-            "inclusion": "available"
-          },
           "name": {
-            "maxLength": 255,
+            "inclusion": "available",
             "type": [
               "null",
               "string"
             ],
-            "inclusion": "available"
+            "maxLength": 255
           },
           "id": {
+            "inclusion": "automatic",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
             "type": [
               "null",
               "integer"
-            ],
-            "maximum": 2147483647,
-            "minimum": -2147483648,
-            "inclusion": "automatic"
+            ]
+          },
+          "likes_getting_petted": {
+            "inclusion": "available",
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
-        },
-        "type": "object"
+        }
       },
-      "table_name": "animals",
       "metadata": [
         {
+          "breadcrumb": [],
           "metadata": {
-            "selected-by-default": true,
-            "sql-datatype": "int(11)"
-          },
-          "breadcrumb": [
-            "properties",
-            "id"
-          ]
-        },
-        {
-          "metadata": {
+            "row-count": 3,
+            "table-key-properties": [
+              "id"
+            ],
             "database-name": "example_db",
             "selected-by-default": false,
             "is-view": false,
-            "row-count": 3
-          },
-          "breadcrumb": []
+          }
         },
         {
+          "breadcrumb": [
+            "properties",
+            "id"
+          ],
           "metadata": {
-            "selected-by-default": true,
-            "sql-datatype": "varchar(255)"
-          },
+            "sql-datatype": "int(11)",
+            "selected-by-default": true
+          }
+        },
+        {
           "breadcrumb": [
             "properties",
             "name"
-          ]
+          ],
+          "metadata": {
+            "sql-datatype": "varchar(255)",
+            "selected-by-default": true
+          }
         },
         {
-          "metadata": {
-            "selected-by-default": true,
-            "sql-datatype": "tinyint(1)"
-          },
           "breadcrumb": [
             "properties",
             "likes_getting_petted"
-          ]
+          ],
+          "metadata": {
+            "sql-datatype": "tinyint(1)",
+            "selected-by-default": true
+          }
         }
       ],
       "stream": "animals"
@@ -185,8 +185,8 @@ source table directly corresponds to a Singer stream.
 
 ### Field selection
 
-In sync mode, `tap-mysql` consumes a modified version of the catalog where
-tables and fields have been marked as _selected_.
+In sync mode, `tap-mysql` consumes the catalog and looks for tables and fields
+have been marked as _selected_ in their associated metadata entries.
 
 Redirect output from the tap's discovery mode to a file so that it can be
 modified:
@@ -196,48 +196,66 @@ $ tap-mysql -c config.json --discover > properties.json
 ```
 
 Then edit `properties.json` to make selections. In this example we want the
-`animals` table. The stream's schema gets a top-level `selected` flag, as does
-its columns' schemas:
+`animals` table. The stream's metadata entry (associated with `"breadcrumb": []`) 
+gets a top-level `selected` flag, as does its columns' metadata entries. Additionally,
+we will mark the `animals` table to replicate using a `FULL_TABLE` strategy. For more,
+information, see [Replication methods and state file](#replication-methods-and-state-file).
 
 ```json
-{
-  "selected": "true",
-  "properties": {
-    "likes_getting_petted": {
-      "selected": "true",
-      "inclusion": "available",
-      "type": [
-        "null",
-        "boolean"
-      ]
-    },
-    "name": {
-      "selected": "true",
-      "maxLength": 255,
-      "inclusion": "available",
-      "type": [
-        "null",
-        "string"
-      ]
-    },
-    "id": {
-      "selected": "true",
-      "minimum": -2147483648,
-      "inclusion": "automatic",
-      "maximum": 2147483647,
-      "type": [
-        "null",
-        "integer"
-      ]
+[
+  {
+    "breadcrumb": [],
+    "metadata": {
+      "row-count": 3,
+      "table-key-properties": [
+        "id"
+      ],
+      "database-name": "example_db",
+      "selected-by-default": false,
+      "is-view": false,
+      "selected": true,
+      "replication-method": "FULL_TABLE"
     }
   },
-  "type": "object"
-}
+  {
+    "breadcrumb": [
+      "properties",
+      "id"
+    ],
+    "metadata": {
+      "sql-datatype": "int(11)",
+      "selected-by-default": true,
+      "selected": true
+    }
+  },
+  {
+    "breadcrumb": [
+      "properties",
+      "name"
+    ],
+    "metadata": {
+      "sql-datatype": "varchar(255)",
+      "selected-by-default": true,
+      "selected": true
+    }
+  },
+  {
+    "breadcrumb": [
+      "properties",
+      "likes_getting_petted"
+    ],
+    "metadata": {
+      "sql-datatype": "tinyint(1)",
+      "selected-by-default": true,
+      "selected": true
+    }
+  }
+]
 ```
 
 ### Sync mode
 
-With an annotated properties catalog, the tap can be invoked in sync mode:
+With a properties catalog that describes field and table selections, the tap can be invoked in sync mode:
 
 ```bash
 $ tap-mysql -c config.json --properties properties.json
@@ -261,17 +279,16 @@ resultant stream of JSON data can be consumed by a Singer target.
 
 {"stream": "animals", "version": 1509133344771, "type": "ACTIVATE_VERSION"}
 
-{"value": {"currently_syncing": "example_db-animals", "bookmarks": {"example_db-animals": {"version": null}}}, "type": "STATE"}
+{"value": {"currently_syncing": "example_db-animals", "bookmarks": {"example_db-animals": {"initial_full_table_complete": true}}}, "type": "STATE"}
 
-{"value": {"currently_syncing": null, "bookmarks": {"example_db-animals": {"version": null}}}, "type": "STATE"}
+{"value": {"currently_syncing": null, "bookmarks": {"example_db-animals": {"initial_full_table_complete": true}}}, "type": "STATE"}
 ```
 
 ## Replication methods and state file
 
 In the above example, we invoked `tap-mysql` without providing a _state_ file
 and without specifying a replication method. The two ways to replicate a given
-table are `FULL_TABLE` and `INCREMENTAL`. `FULL_TABLE` replication is used by
-default.
+table are `FULL_TABLE` and `INCREMENTAL`.
 
 ### Full Table
 
@@ -281,59 +298,39 @@ is invoked.
 ### Incremental
 
 Incremental replication works in conjunction with a state file to only extract
-new records each time the tap is invoked.
+new records each time the tap is invoked. This requires a replication key to be
+specified in the table's metadata as well.
 
 #### Example
 
 Let's sync the `animals` table again, but this time using incremental
 replication. The replication method and replication key are set in the
-properties file:
+table's metadata entry in properties file:
 
 ```json
 {
   "streams": [
     {
-      "replication_method": "INCREMENTAL",
-      "replication_key": "id",
-      "key_properties": [
-        "id"
-      ],
       "tap_stream_id": "example_db-animals",
-      "schema": {
-        "selected": "true",
-        "properties": {
-          "likes_getting_petted": {
-            "selected": "true",
-            "type": [
-              "null",
-              "boolean"
+      "table_name": "animals",
+      "schema": { ... },
+      "metadata": [
+        {
+          "breadcrumb": [],
+          "metadata": {
+            "row-count": 3,
+            "table-key-properties": [
+              "id"
             ],
-            "inclusion": "available"
-          },
-          "name": {
-            "selected": "true",
-            "maxLength": 255,
-            "type": [
-              "null",
-              "string"
-            ],
-            "inclusion": "available"
-          },
-          "id": {
-            "selected": "true",
-            "type": [
-              "null",
-              "integer"
-            ],
-            "maximum": 2147483647,
-            "minimum": -2147483648,
-            "inclusion": "automatic"
+            "database-name": "example_db",
+            "selected-by-default": false,
+            "is-view": false,
+            "replication-method": "INCREMENTAL",
+            "replication-key": "id"
           }
         },
-        "type": "object"
-      },
-      "table_name": "animals",
-      "metadata": [...],
+        ...
+      ],
       "stream": "animals"
     }
   ]
@@ -352,8 +349,8 @@ default `FULL_TABLE` replication method. One important difference is that the
 `STATE` messages now contain a `replication_key_value` -- a bookmark or
 high-water mark -- for data that was extracted:
 
-```
-{"type": "STATE", "value": {"bookmarks": {"example_db-animals": {"replication_key": "id"}}, "currently_syncing": "example_db-animals"}}
+```json
+{"type": "STATE", "value": {"currently_syncing": "example_db-animals"}}
 
 {"stream": "animals", "type": "SCHEMA", "schema": {"type": "object", "properties": {"id": {"type": ["null", "integer"], "minimum": -2147483648, "maximum": 2147483647, "inclusion": "automatic"}, "name": {"type": ["null", "string"], "inclusion": "available", "maxLength": 255}, "likes_getting_petted": {"type": ["null", "boolean"], "inclusion": "available"}}}, "key_properties": ["id"]}
 
