@@ -12,7 +12,7 @@ setup(name='tap-mysql',
       install_requires=[
           'attrs==16.3.0',
           'pendulum==1.2.0',
-          'singer-python==5.1.1',
+          'singer-python==5.3.1',
           'PyMySQL==0.7.11',
           'backoff==1.3.2',
           'mysql-replication==0.18',

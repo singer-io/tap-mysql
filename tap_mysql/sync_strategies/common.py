@@ -40,18 +40,10 @@ def stream_is_selected(stream):
 
 def property_is_selected(stream, property_name):
     md_map = metadata.to_map(stream.metadata)
-    selected_md = metadata.get(md_map,
-                               ('properties', property_name),
-                               'selected')
-
-    selected_by_default_md = metadata.get(md_map,
-                               ('properties', property_name),
-                               'selected-by-default')
-
-    if selected_md is False:
-        return False
-
-    return selected_md or selected_by_default_md
+    return singer.should_sync_field(
+        metadata.get(md_map, ('properties', property_name), 'inclusion'),
+        metadata.get(md_map, ('properties', property_name), 'selected'),
+        True)
 
 
 def get_is_view(catalog_entry):
