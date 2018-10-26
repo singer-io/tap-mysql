@@ -275,7 +275,9 @@ class TestSchemaMessages(unittest.TestCase):
 
         schema_message = list(filter(lambda m: isinstance(m, singer.SchemaMessage), SINGER_MESSAGES))[0]
         self.assertTrue(isinstance(schema_message, singer.SchemaMessage))
-        expectedKeys = ['id', 'a']
+        # tap-mysql selects new fields by default. If a field doesn't appear in the schema, then it should be
+        # selected
+        expectedKeys = ['id', 'a', 'b']
 
         self.assertEqual(schema_message.schema['properties'].keys(), set(expectedKeys))
 

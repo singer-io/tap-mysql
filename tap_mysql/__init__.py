@@ -385,7 +385,7 @@ def resolve_catalog(discovered_catalog, streams_to_sync):
             continue
 
         selected = {k for k, v in catalog_entry.schema.properties.items()
-                        if common.property_is_selected(catalog_entry, k) or k == replication_key}
+                    if common.property_is_selected(catalog_entry, k) or k == replication_key}
 
         # These are the columns we need to select
         columns = desired_columns(selected, discovered_table.schema)
