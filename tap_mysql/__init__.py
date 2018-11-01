@@ -693,12 +693,13 @@ def log_server_params(mysql_conn):
             with open_conn.cursor() as cur:
                 cur.execute('''
                 show session status where Variable_name IN ('Ssl_version', 'Ssl_cipher')''')
-                row = cur.fetchall()
-                print(row)
+                rows = cur.fetchall()
+                mapped_row = {k:v for (k,v) in [(r[0], r[1]) for r in rows]}
                 LOGGER.info('Server SSL Parameters (blank means SSL is not active): ' +
                             '[ssl_version: %s], ' +
                             '[ssl_cipher: %s]',
-                            row[0][1], row[1][1])
+                            mapped_row['Ssl_version'],
+                            mapped_row['Ssl_cipher'])
 
         except pymysql.err.InternalError as e:
             LOGGER.warning("Encountered error checking server params. Error: (%s) %s", *e.args)
