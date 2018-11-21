@@ -316,39 +316,8 @@ def generate_streams_map(binlog_streams):
 
     return stream_map
 
-
-def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
-    binlog_streams_map = generate_streams_map(binlog_streams)
-
-    for tap_stream_id in binlog_streams_map.keys():
-        common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
-
-    log_file, log_pos = calculate_bookmark(mysql_conn, binlog_streams_map, state)
-
-    verify_log_file_exists(mysql_conn, log_file, log_pos)
-
-    if config.get('server_id'):
-        server_id = int(config.get('server_id'))
-        LOGGER.info("Using provided server_id=%s", server_id)
-    else:
-        server_id = fetch_server_id(mysql_conn)
-        LOGGER.info("No server_id provided, will use global server_id=%s", server_id)
-
-    connection_wrapper = make_connection_wrapper(config)
-
-    reader = BinLogStreamReader(
-        connection_settings={},
-        server_id=server_id,
-        log_file=log_file,
-        log_pos=log_pos,
-        resume_stream=True,
-        only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
-        pymysql_wrapper=connection_wrapper
-    )
-
+def _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state):
     time_extracted = utils.now()
-
-    LOGGER.info("Starting binlog replication with log_file=%s, log_pos=%s", log_file, log_pos)
 
     rows_saved = 0
     events_skipped = 0
@@ -418,5 +387,41 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         if ((rows_saved and rows_saved % UPDATE_BOOKMARK_PERIOD == 0) or
             (events_skipped and events_skipped % UPDATE_BOOKMARK_PERIOD == 0)):
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+
+def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
+    binlog_streams_map = generate_streams_map(binlog_streams)
+
+    for tap_stream_id in binlog_streams_map.keys():
+        common.whitelist_bookmark_keys(BOOKMARK_KEYS, tap_stream_id, state)
+
+    log_file, log_pos = calculate_bookmark(mysql_conn, binlog_streams_map, state)
+
+    verify_log_file_exists(mysql_conn, log_file, log_pos)
+
+    if config.get('server_id'):
+        server_id = int(config.get('server_id'))
+        LOGGER.info("Using provided server_id=%s", server_id)
+    else:
+        server_id = fetch_server_id(mysql_conn)
+        LOGGER.info("No server_id provided, will use global server_id=%s", server_id)
+
+    connection_wrapper = make_connection_wrapper(config)
+
+    try:
+        reader = BinLogStreamReader(
+            connection_settings={},
+            server_id=server_id,
+            log_file=log_file,
+            log_pos=log_pos,
+            resume_stream=True,
+            only_events=[RotateEvent, WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
+            pymysql_wrapper=connection_wrapper
+        )
+        LOGGER.info("Starting binlog replication with log_file=%s, log_pos=%s", log_file, log_pos)
+        _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state)
+    finally:
+        # BinLogStreamReader doesn't implement the `with` methods
+        # So, try/finally will close the chain from the top
+        reader.close()
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
