@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code,too-many-locals
+# pylint: disable=duplicate-code,too-many-locals,simplifiable-if-expression
 
 import copy
 import singer
