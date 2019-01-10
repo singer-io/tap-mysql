@@ -411,6 +411,7 @@ def sync_binlog_stream(mysql_conn, config, binlog_streams, state):
         reader = BinLogStreamReader(
             connection_settings={},
             server_id=server_id,
+            slave_uuid='stitch-slave-{}'.format(server_id),
             log_file=log_file,
             log_pos=log_pos,
             resume_stream=True,
