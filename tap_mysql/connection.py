@@ -124,6 +124,7 @@ class MySQLConnection(pymysql.connections.Connection):
                 "ca": "./ca.pem",
                 "cert": "./cert.pem",
                 "key": "./key.pem",
+                "check_hostname": config.get("verify_mode", True)
             }
 
             # override match hostname for google cloud
@@ -138,8 +139,8 @@ class MySQLConnection(pymysql.connections.Connection):
             LOGGER.info("Attempting SSL connection")
             self.ssl = True
             self.ctx = ssl.create_default_context()
-            self.ctx.check_hostname = False
-            self.ctx.verify_mode = ssl.CERT_NONE
+            self.ctx.check_hostname = config.get("verify_mode", True)
+            self.ctx.verify_mode = ssl.CERT_REQUIRED if self.ctx.check_hostname else ssl.CERT_NONE
             self.client_flag |= CLIENT.SSL
 
 
