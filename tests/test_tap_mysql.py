@@ -910,7 +910,6 @@ class TestUnsupportedPK(unittest.TestCase):
 
     def runTest(self):
         catalog = test_utils.discover_catalog(self.conn, {})
-        print(catalog.streams[0].schema)
 
         primary_keys = {}
         for c in catalog.streams:
