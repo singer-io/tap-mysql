@@ -73,6 +73,11 @@ FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
 
+BINARY_TYPE = set([
+    'binary',
+    'varbinary'
+])
+
 
 def schema_for_column(c):
     '''Returns the Schema object for the given Column.'''
@@ -114,6 +119,10 @@ def schema_for_column(c):
     elif data_type in DATETIME_TYPES:
         result.type = ['null', 'string']
         result.format = 'date-time'
+
+    elif data_type in BINARY_TYPE:
+        result.type = ['null', 'string']
+        result.maxLength = c.character_maximum_length * 2
 
     else:
         result = Schema(None,

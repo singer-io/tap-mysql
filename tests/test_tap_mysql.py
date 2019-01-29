@@ -61,6 +61,8 @@ class TestTypeMapping(unittest.TestCase):
                 c_bit BIT(4),
                 c_date DATE,
                 c_time TIME,
+                c_binary BINARY,
+                c_varbinary VARBINARY(16),
                 c_year YEAR
                 )''')
 
@@ -216,6 +218,24 @@ class TestTypeMapping(unittest.TestCase):
         self.assertEqual(self.get_metadata_for_column('c_time'),
                          {'selected-by-default': True,
                           'sql-datatype': 'time'})
+
+    def test_binary(self):
+        self.assertEqual(self.schema.properties['c_binary'],
+                         Schema(['null', 'string'],
+                                maxLength=2,
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_binary'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'binary(1)'})
+
+    def test_varbinary(self):
+        self.assertEqual(self.schema.properties['c_varbinary'],
+                         Schema(['null', 'string'],
+                                maxLength=32,
+                                inclusion='available'))
+        self.assertEqual(self.get_metadata_for_column('c_varbinary'),
+                         {'selected-by-default': True,
+                          'sql-datatype': 'varbinary(16)'})
 
     def test_year(self):
         self.assertEqual(self.schema.properties['c_year'].inclusion,
@@ -883,13 +903,14 @@ class TestUnsupportedPK(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE bad_pk_tab (bad_pk BINARY, age INT, PRIMARY KEY (bad_pk))') # BINARY not presently supported
+                cursor.execute("CREATE TABLE bad_pk_tab (bad_pk YEAR(4), age INT, PRIMARY KEY (bad_pk))") # YEAR not presently supported
                 cursor.execute('CREATE TABLE good_pk_tab (good_pk INT, age INT, PRIMARY KEY (good_pk))')
-                cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES ('a', 100)")
+                cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES (2019, 100)")
                 cursor.execute("INSERT INTO good_pk_tab (good_pk, age) VALUES (1, 100)")
 
     def runTest(self):
         catalog = test_utils.discover_catalog(self.conn, {})
+        print(catalog.streams[0].schema)
 
         primary_keys = {}
         for c in catalog.streams:
