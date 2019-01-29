@@ -106,10 +106,10 @@ class MySQLConnection(pymysql.connections.Connection):
         if use_self_signed_ssl:
             LOGGER.info("Using custom certificate authority")
 
-            # Config values MUST be paths to files.
+            # Config values MUST be paths to files for the SSL module to read them correctly.
             ssl_arg = {
                 "ca": config["ssl_ca"],
-                "check_hostname": config.get("check_hostname", True)
+                "check_hostname": config.get("check_hostname", "true") == "true"
             }
 
             # If using client authentication, cert and key are required
@@ -130,12 +130,13 @@ class MySQLConnection(pymysql.connections.Connection):
         if config.get("ssl") == 'true' and not use_self_signed_ssl:
             LOGGER.info("Attempting SSL connection")
             # For compatibility with previous version, verify mode is off by default
-            verify_mode = config.get("verify_mode", False)
+            verify_mode = config.get("verify_mode", "false") == 'true'
             if not verify_mode:
                 LOGGER.warn("Not verifying server certificate. The connection is encrypted, but the server hasn't been verified. Please provide a root CA certificate to enable verification.")
             self.ssl = True
             self.ctx = ssl.create_default_context()
-            self.ctx.check_hostname = config.get("check_hostname", False)
+            check_hostname = config.get("check_hostname", "false") == 'true'
+            self.ctx.check_hostname = check_hostname
             self.ctx.verify_mode = ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE
             self.client_flag |= CLIENT.SSL
 
