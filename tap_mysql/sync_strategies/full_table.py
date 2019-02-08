@@ -62,7 +62,7 @@ def pks_are_integer_or_varchar(mysql_conn, config, catalog_entry):
     database_name = common.get_database_name(catalog_entry)
     key_properties = common.get_key_properties(catalog_entry)
 
-    if config.get('allow_non_auto_increment_pks') and key_properties:
+    if config.get('allow_non_auto_increment_pks') == 'true' and key_properties:
         valid_column_types = set([
             'tinyint',
             'smallint'
