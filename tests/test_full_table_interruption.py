@@ -448,6 +448,17 @@ class FullTableInterruption(unittest.TestCase):
         state = {}
         failed_syncing_table_2 = False
 
+        # Do not worry about table_3
+        for stream in filter(lambda s: s.stream == 'table_3', self.catalog.streams):
+            md_map = singer.metadata.to_map(stream.metadata)
+            md_map = singer.metadata.write(md_map,
+                                    (),
+                                    'selected',
+                                    False)
+
+            stream.metadata = singer.metadata.to_list(md_map)
+
+
         try:
             tap_mysql.do_sync(self.conn, {}, self.catalog, state)
         except Exception as ex:
