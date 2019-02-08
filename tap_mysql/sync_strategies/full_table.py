@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=duplicate-code,too-many-locals,simplifiable-if-expression
+# pylint: disable=duplicate-code,too-many-locals,simplifiable-if-expression,too-many-arguments
 
 import copy
 import singer
@@ -96,8 +96,8 @@ def pks_are_integer_or_varchar(mysql_conn, config, catalog_entry):
                         return False
 
         return True
-    else:
-        return False
+
+    return False
 
 
 
