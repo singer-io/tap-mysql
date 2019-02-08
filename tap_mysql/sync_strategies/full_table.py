@@ -69,7 +69,8 @@ def pks_are_integer_or_varchar(mysql_conn, config, catalog_entry):
             'mediumint',
             'int',
             'bigint',
-            'varchar'
+            'varchar',
+            'char'
         ])
 
 
