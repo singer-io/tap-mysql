@@ -523,6 +523,9 @@ class FullTableInterruption(unittest.TestCase):
                 },
                 'tap_mysql_test-table_2': {
                     'initial_full_table_complete': True
+                },
+                'tap_mysql_test-table_4': {
+                    'initial_full_table_complete': True
                 }
             }
         }
