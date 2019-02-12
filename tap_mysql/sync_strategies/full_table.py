@@ -149,6 +149,9 @@ def generate_pk_clause(catalog_entry, state):
 
     pk_comparisons = []
 
+    if not max_pk_values:
+        return ""
+
     if last_pk_fetched:
         for pk in key_properties:
             column_type = catalog_entry.schema.properties.get(pk).type

@@ -111,6 +111,13 @@ def init_tables(conn):
             bar VARCHAR(10)
             )""")
 
+            cur.execute("""
+            CREATE TABLE table_4 (
+            id  BIGINT AUTO_INCREMENT PRIMARY KEY,
+            foo BIGINT,
+            bar VARCHAR(10)
+            )""")
+
     for record in TABLE_1_DATA:
         insert_record(conn, 'table_1', record)
 
