@@ -67,8 +67,8 @@ def verify_binlog_config(mysql_conn):
             except pymysql.err.InternalError as ex:
                 if ex.args[0] == 1193:
                     raise Exception("Unable to replicate binlog stream because binlog_row_image system variable does not exist. MySQL version must be at least 5.6.2 to use binlog replication.")
-                else:
-                    raise ex
+
+                raise ex
 
             if binlog_row_image != 'FULL':
                 raise Exception("Unable to replicate binlog stream because binlog_row_image is not set to 'FULL': {}."

@@ -553,7 +553,7 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
 
     if log_file and log_pos and max_pk_values:
         LOGGER.info("Resuming initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
-        full_table.sync_table(mysql_conn, config, catalog_entry, state, columns, stream_version)
+        full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     else:
         LOGGER.info("Performing initial full table sync for LOG_BASED stream %s", catalog_entry.tap_stream_id)
@@ -569,10 +569,9 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
                                       'version',
                                       stream_version)
 
-        if (full_table.pks_are_auto_incrementing(mysql_conn, catalog_entry) or
-          full_table.pks_are_integer_or_varchar(mysql_conn, config, catalog_entry)):
-            # We must save log_file and log_pos across FULL_TABLE syncs when using
-            # an incrementing PK
+        if full_table.sync_is_resumable(mysql_conn, catalog_entry):
+            # We must save log_file and log_pos across FULL_TABLE syncs when performing
+            # a resumable full table sync
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
@@ -583,10 +582,9 @@ def do_sync_historical_binlog(mysql_conn, config, catalog_entry, state, columns)
                                           'log_pos',
                                           current_log_pos)
 
-            full_table.sync_table(mysql_conn, config, catalog_entry, state, columns, stream_version)
-
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
         else:
-            full_table.sync_table(mysql_conn, config, catalog_entry, state, columns, stream_version)
+            full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
             state = singer.write_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'log_file',
@@ -606,7 +604,7 @@ def do_sync_full_table(mysql_conn, config, catalog_entry, state, columns):
 
     stream_version = common.get_stream_version(catalog_entry.tap_stream_id, state)
 
-    full_table.sync_table(mysql_conn, config, catalog_entry, state, columns, stream_version)
+    full_table.sync_table(mysql_conn, catalog_entry, state, columns, stream_version)
 
     # Prefer initial_full_table_complete going forward
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'version')
