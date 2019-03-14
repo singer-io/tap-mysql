@@ -308,7 +308,6 @@ class BinlogInterruption(unittest.TestCase):
             stream.metadata = singer.metadata.to_list(md_map)
 
         config = test_utils.get_db_config()
-        config['allow_non_auto_increment_pks'] = 'true'
 
         try:
             tap_mysql.do_sync(self.conn, config, self.catalog, state)
