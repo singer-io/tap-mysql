@@ -36,9 +36,12 @@ RESUMABLE_PK_TYPES = set([
     'bigint',
     'char',
     'varchar',
+
+    # NB: Below types added so we can resume when they are a part of a composite PK.
     'datetime',
     'timestamp',
-    'date'
+    'date',
+    'time',
 ])
 
 def sync_is_resumable(mysql_conn, catalog_entry):
