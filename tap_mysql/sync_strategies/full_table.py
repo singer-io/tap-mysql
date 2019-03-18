@@ -73,6 +73,9 @@ def sync_is_resumable(mysql_conn, catalog_entry):
                     raise Exception("Primary key column {} does not exist.".format(pk))
 
                 if result[0] not in RESUMABLE_PK_TYPES:
+                    LOGGER.warn("Found primary key column %s with type %s. Will not be able " +
+                                "to resume interrupted FULL_TABLE sync using this key.",
+                                pk, result[0])
                     return False
 
     return True
