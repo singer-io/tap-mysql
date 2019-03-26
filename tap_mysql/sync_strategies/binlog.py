@@ -301,6 +301,16 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     return rows_saved
 
+def write_schema_message(catalog_entry, bookmark_properties=[]):
+    key_properties = common.get_key_properties(catalog_entry)
+
+    singer.write_message(singer.SchemaMessage(
+        stream=catalog_entry.stream,
+        schema=catalog_entry.schema.to_dict(),
+        key_properties=key_properties,
+        bookmark_properties=bookmark_properties
+    ))
+
 
 def generate_streams_map(binlog_streams):
     stream_map = {}
@@ -308,6 +318,8 @@ def generate_streams_map(binlog_streams):
     for catalog_entry in binlog_streams:
         columns = add_automatic_properties(catalog_entry,
                                            list(catalog_entry.schema.properties.keys()))
+
+        write_schema_message(catalog_entry)
 
         stream_map[catalog_entry.tap_stream_id] = {
             'catalog_entry': catalog_entry,
