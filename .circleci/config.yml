@@ -12,15 +12,15 @@ jobs:
       - run:
           name: 'Setup virtual env'
           command: |
-            virtualenv -p python3 ~/.virtualenvs/tap-mysql
-            source ~/.virtualenvs/tap-mysql/bin/activate
+            virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
+            source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .
             pip install pylint
             pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
       - run:
           name: 'Unit Tests'
           command: |
-            source ~/.virtualenvs/tap-mysql/bin/activate
+            source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install nose
             source dev_env.sh
             nosetests
@@ -28,7 +28,7 @@ jobs:
       - run:
           name: 'Integration Tests'
           command: |
-            source ~/.virtualenvs/tap-tester/bin/activate
+            source /usr/local/share/virtualenvs/tap-tester/bin/activate
             source dev_env.sh
             run-a-test --tap=tap-mysql \
                        --target=target-stitch \
