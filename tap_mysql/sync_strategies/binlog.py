@@ -301,7 +301,6 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     return rows_saved
 
-
 def generate_streams_map(binlog_streams):
     stream_map = {}
 
