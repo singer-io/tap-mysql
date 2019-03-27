@@ -494,8 +494,12 @@ def get_binlog_streams(mysql_conn, catalog, config, state):
     return resolve_catalog(discovered, binlog_streams)
 
 
-def write_schema_message(catalog_entry, bookmark_properties=[]):
+def write_schema_message(catalog_entry, bookmark_properties=[], add_deleted_field=False):
     key_properties = common.get_key_properties(catalog_entry)
+
+    if add_deleted_fields:
+        binlog.add_automatic_properties(catalog_entry,
+                                        list(catalog_entry.schema.properties.keys()))
 
     singer.write_message(singer.SchemaMessage(
         stream=catalog_entry.stream,
