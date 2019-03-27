@@ -662,7 +662,7 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
 def sync_binlog_streams(mysql_conn, binlog_catalog, config, state):
     if binlog_catalog.streams:
         for stream in binlog_catalog.streams:
-            write_schema_message(stream)
+            write_schema_message(stream, bookmark_properties=[], add_deleted_field=True)
 
         with metrics.job_timer('sync_binlog') as timer:
             binlog.sync_binlog_stream(mysql_conn, config, binlog_catalog.streams, state)
