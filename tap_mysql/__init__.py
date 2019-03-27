@@ -497,7 +497,7 @@ def get_binlog_streams(mysql_conn, catalog, config, state):
 def write_schema_message(catalog_entry, bookmark_properties=[], add_deleted_field=False):
     key_properties = common.get_key_properties(catalog_entry)
 
-    if add_deleted_fields:
+    if add_deleted_field:
         binlog.add_automatic_properties(catalog_entry,
                                         list(catalog_entry.schema.properties.keys()))
 
