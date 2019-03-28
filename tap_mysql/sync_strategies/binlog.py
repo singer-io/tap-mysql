@@ -134,6 +134,9 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
                 local_datetime = timezone.localize(val)
                 utc_datetime = local_datetime.astimezone(pytz.UTC)
                 row_to_persist[column_name] = utc_datetime.isoformat()
+            elif column_name == SDC_DELETED_AT:
+                # _sdc_deleted_at is a special instance because we converted it to UTC and formatted it already.
+                row_to_persist[column_name] = val.isoformat()
             else:
                 row_to_persist[column_name] = val.isoformat() + '+00:00'
 
@@ -282,8 +285,8 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     for row in event.rows:
         event_ts = datetime.datetime.utcfromtimestamp(event.timestamp).replace(tzinfo=pytz.UTC)
-
         vals = row['values']
+
         vals[SDC_DELETED_AT] = event_ts
 
         filtered_vals = {k:v for k,v in vals.items()
