@@ -133,10 +133,10 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
                 timezone = tzlocal.get_localzone()
                 local_datetime = timezone.localize(val)
                 utc_datetime = local_datetime.astimezone(pytz.UTC)
-                row_to_persist[column_name] = utc_datetime.isoformat()
+                row_to_persist[column_name] = utc_datetime.isoformat() 
             elif column_name == SDC_DELETED_AT:
                 # _sdc_deleted_at is a special instance because we converted it to UTC and formatted it already.
-                row_to_persist[column_name] = val.isoformat()
+                row_to_persist[column_name] = utils.strftime(val)
             else:
                 row_to_persist[column_name] = val.isoformat() + '+00:00'
 
