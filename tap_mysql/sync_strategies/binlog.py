@@ -126,25 +126,12 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         db_column_type = db_column_map.get(column_name)
 
         if isinstance(val, datetime.datetime) or isinstance(val, datetime.date):
-            if isinstance(val, datetime.datetime):
-                the_datetime = val
-            elif isinstance(val, datetime.date):
-                the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
-
-            if the_datetime.tzinfo == None:
-                # The mysql-replication library creates naive date and datetime objects
-                # which will use the local timezone thus we must set tzinfo accordingly
-                # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
-                timezone = tzlocal.get_localzone()
-                the_datetime = timezone.localize(the_datetime)
-
-            utc_datetime = the_datetime.astimezone(tz=pytz.UTC)
-            row_to_persist[column_name] = utils.strftime(utc_datetime, "%04Y-%m-%dT%H:%M:%S%z")
+            the_utc_date = common.to_utc_datetime(val)
+            row_to_persist[column_name] = the_utc_date
 
         elif isinstance(val, datetime.timedelta):
             epoch = datetime.datetime.utcfromtimestamp(0)
             timedelta_from_epoch = epoch + val
-            LOGGER.info("Timedelta: %s", timedelta_from_epoch.isoformat() + '+00:00')
             row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
 
         elif 'boolean' in property_type or property_type == 'boolean':
@@ -284,8 +271,8 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     for row in event.rows:
         event_ts = datetime.datetime.utcfromtimestamp(event.timestamp).replace(tzinfo=pytz.UTC)
-
         vals = row['values']
+
         vals[SDC_DELETED_AT] = event_ts
 
         filtered_vals = {k:v for k,v in vals.items()
