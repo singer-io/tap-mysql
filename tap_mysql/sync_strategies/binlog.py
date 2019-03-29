@@ -285,8 +285,8 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     for row in event.rows:
         event_ts = datetime.datetime.utcfromtimestamp(event.timestamp).replace(tzinfo=pytz.UTC)
-        vals = row['values']
 
+        vals = row['values']
         vals[SDC_DELETED_AT] = event_ts
 
         filtered_vals = {k:v for k,v in vals.items()
