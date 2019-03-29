@@ -125,27 +125,26 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         property_type = catalog_entry.schema.properties[column_name].type
         db_column_type = db_column_map.get(column_name)
 
-        if isinstance(val, datetime.datetime):
-            if db_column_type in mysql_timestamp_types:
-                # The mysql-replication library creates datetimes from TIMESTAMP columns using fromtimestamp
+        if isinstance(val, datetime.datetime) or isinstance(val, datetime.date):
+            if isinstance(val, datetime.datetime):
+                the_datetime = val
+            elif isinstance(val, datetime.date):
+                the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
+
+            if the_datetime.tzinfo == None:
+                # The mysql-replication library creates naive date and datetime objects
                 # which will use the local timezone thus we must set tzinfo accordingly
                 # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
                 timezone = tzlocal.get_localzone()
-                local_datetime = timezone.localize(val)
-                utc_datetime = local_datetime.astimezone(pytz.UTC)
-                row_to_persist[column_name] = utc_datetime.isoformat() 
-            elif column_name == SDC_DELETED_AT:
-                # _sdc_deleted_at is a special instance because we converted it to UTC and formatted it already.
-                row_to_persist[column_name] = utils.strftime(val)
-            else:
-                row_to_persist[column_name] = val.isoformat() + '+00:00'
+                the_datetime = timezone.localize(the_datetime)
 
-        elif isinstance(val, datetime.date):
-            row_to_persist[column_name] = val.isoformat() + 'T00:00:00+00:00'
+            utc_datetime = the_datetime.astimezone(tz=pytz.UTC)
+            row_to_persist[column_name] = utils.strftime(utc_datetime, "%04Y-%m-%dT%H:%M:%S%z")
 
         elif isinstance(val, datetime.timedelta):
             epoch = datetime.datetime.utcfromtimestamp(0)
             timedelta_from_epoch = epoch + val
+            LOGGER.info("Timedelta: %s", timedelta_from_epoch.isoformat() + '+00:00')
             row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
 
         elif 'boolean' in property_type or property_type == 'boolean':
