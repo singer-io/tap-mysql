@@ -125,7 +125,7 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         property_type = catalog_entry.schema.properties[column_name].type
         db_column_type = db_column_map.get(column_name)
 
-        if isinstance(val, datetime.datetime) or isinstance(val, datetime.date) or isinstance(val, datetime.timedelta):
+        if isinstance(val, (datetime.datetime, datetime.date, datetime.timedelta)):
             the_utc_date = common.to_utc_datetime_str(val)
             row_to_persist[column_name] = the_utc_date
 

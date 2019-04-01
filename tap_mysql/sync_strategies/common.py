@@ -116,7 +116,7 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
     for idx, elem in enumerate(row):
         property_type = catalog_entry.schema.properties[columns[idx]].type
 
-        if isinstance(elem, datetime.datetime) or isinstance(elem, datetime.date) or isinstance(elem, datetime.timedelta):
+        if isinstance(elem, (datetime.datetime, datetime.date, datetime.timedelta)):
             the_utc_date = to_utc_datetime_str(elem)
             row_to_persist += (the_utc_date,)
 
