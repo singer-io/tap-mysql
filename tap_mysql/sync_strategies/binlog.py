@@ -125,25 +125,10 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
         property_type = catalog_entry.schema.properties[column_name].type
         db_column_type = db_column_map.get(column_name)
 
-        if isinstance(val, datetime.datetime):
-            if db_column_type in mysql_timestamp_types:
-                # The mysql-replication library creates datetimes from TIMESTAMP columns using fromtimestamp
-                # which will use the local timezone thus we must set tzinfo accordingly
-                # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
-                timezone = tzlocal.get_localzone()
-                local_datetime = timezone.localize(val)
-                utc_datetime = local_datetime.astimezone(pytz.UTC)
-                row_to_persist[column_name] = utc_datetime.isoformat()
-            else:
-                row_to_persist[column_name] = val.isoformat() + '+00:00'
+        if isinstance(val, (datetime.datetime, datetime.date, datetime.timedelta)):
+            the_utc_date = common.to_utc_datetime_str(val)
+            row_to_persist[column_name] = the_utc_date
 
-        elif isinstance(val, datetime.date):
-            row_to_persist[column_name] = val.isoformat() + 'T00:00:00+00:00'
-
-        elif isinstance(val, datetime.timedelta):
-            epoch = datetime.datetime.utcfromtimestamp(0)
-            timedelta_from_epoch = epoch + val
-            row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
 
         elif 'boolean' in property_type or property_type == 'boolean':
             if val is None:
@@ -282,8 +267,8 @@ def handle_delete_rows_event(event, catalog_entry, state, columns, rows_saved, t
 
     for row in event.rows:
         event_ts = datetime.datetime.utcfromtimestamp(event.timestamp).replace(tzinfo=pytz.UTC)
-
         vals = row['values']
+
         vals[SDC_DELETED_AT] = event_ts
 
         filtered_vals = {k:v for k,v in vals.items()

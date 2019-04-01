@@ -5,6 +5,8 @@ import copy
 import datetime
 import singer
 import time
+import tzlocal
+import pytz
 
 import singer.metrics as metrics
 from singer import metadata
@@ -87,21 +89,36 @@ def generate_select_sql(catalog_entry, columns):
     select_sql = select_sql.replace('%', '%%')
     return select_sql
 
+def to_utc_datetime_str(val):
+    if isinstance(val, datetime.datetime):
+        the_datetime = val
+    elif isinstance(val, datetime.date):
+        the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
+
+    elif isinstance(val, datetime.date):
+        the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
+
+    elif isinstance(val, datetime.timedelta):
+        epoch = datetime.datetime.utcfromtimestamp(0)
+        the_datetime = epoch + val
+
+    if the_datetime.tzinfo == None:
+        # The mysql-replication library creates naive date and datetime objects
+        # which will use the local timezone thus we must set tzinfo accordingly
+        # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
+        timezone = tzlocal.get_localzone()
+        the_datetime = timezone.localize(the_datetime)
+
+    return utils.strftime(the_datetime.astimezone(tz=pytz.UTC))
 
 def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
     row_to_persist = ()
     for idx, elem in enumerate(row):
         property_type = catalog_entry.schema.properties[columns[idx]].type
-        if isinstance(elem, datetime.datetime):
-            row_to_persist += (elem.isoformat() + '+00:00',)
 
-        elif isinstance(elem, datetime.date):
-            row_to_persist += (elem.isoformat() + 'T00:00:00+00:00',)
-
-        elif isinstance(elem, datetime.timedelta):
-            epoch = datetime.datetime.utcfromtimestamp(0)
-            timedelta_from_epoch = epoch + elem
-            row_to_persist += (timedelta_from_epoch.isoformat() + '+00:00',)
+        if isinstance(elem, (datetime.datetime, datetime.date, datetime.timedelta)):
+            the_utc_date = to_utc_datetime_str(elem)
+            row_to_persist += (the_utc_date,)
 
         elif isinstance(elem, bytes):
             # for BIT value, treat 0 as False and anything else as True
