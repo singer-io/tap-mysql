@@ -89,11 +89,18 @@ def generate_select_sql(catalog_entry, columns):
     select_sql = select_sql.replace('%', '%%')
     return select_sql
 
-def to_utc_datetime(val):
+def to_utc_datetime_str(val):
     if isinstance(val, datetime.datetime):
         the_datetime = val
     elif isinstance(val, datetime.date):
         the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
+
+    elif isinstance(val, datetime.date):
+        the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
+
+    elif isinstance(val, datetime.timedelta):
+        epoch = datetime.datetime.utcfromtimestamp(0)
+        the_datetime = epoch + val
 
     if the_datetime.tzinfo == None:
         # The mysql-replication library creates naive date and datetime objects
@@ -109,15 +116,9 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
     for idx, elem in enumerate(row):
         property_type = catalog_entry.schema.properties[columns[idx]].type
 
-        if isinstance(elem, datetime.datetime) or isinstance(elem, datetime.date):
-            the_utc_date = to_utc_datetime(elem)
-
+        if isinstance(elem, datetime.datetime) or isinstance(elem, datetime.date) or isinstance(elem, datetime.timedelta):
+            the_utc_date = to_utc_datetime_str(elem)
             row_to_persist += (the_utc_date,)
-
-        elif isinstance(elem, datetime.timedelta):
-            epoch = datetime.datetime.utcfromtimestamp(0)
-            timedelta_from_epoch = epoch + elem
-            row_to_persist += (timedelta_from_epoch.isoformat() + '+00:00',)
 
         elif isinstance(elem, bytes):
             # for BIT value, treat 0 as False and anything else as True
