@@ -102,6 +102,9 @@ def to_utc_datetime_str(val):
         epoch = datetime.datetime.utcfromtimestamp(0)
         the_datetime = epoch + val
 
+    else:
+        raise ValueError("{!r} is not a valid date or time type".format(val))
+
     if the_datetime.tzinfo == None:
         # The mysql-replication library creates naive date and datetime objects
         # which will use the local timezone thus we must set tzinfo accordingly

@@ -2,6 +2,7 @@
 # pylint: disable=duplicate-code,too-many-locals,simplifiable-if-expression,too-many-arguments
 
 import copy
+import datetime
 import singer
 from singer import metadata
 
@@ -103,11 +104,18 @@ def get_max_pk_values(cursor, catalog_entry):
                            escaped_table,
                            order_column_clause))
     result = cursor.fetchone()
+    processed_results = []
+    for bm in result:
+        if isinstance(
+                bm, datetime.date) or isinstance(
+                    bm, datetime.datetime) or isinstance(
+                        bm, datetime.timedelta):
+            processed_results += [common.to_utc_datetime_str(bm)]
+        else:
+            processed_results += [bm]
 
-    if result:
-        max_pk_values = dict(zip(key_properties, result))
-    else:
-        max_pk_values = {}
+    if processed_results:
+        max_pk_values = dict(zip(key_properties, processed_results))
 
     return max_pk_values
 
@@ -149,11 +157,12 @@ def generate_pk_clause(catalog_entry, state):
                                                                   max_pk_val))
     else:
         for pk in key_properties:
-            column_type = catalog_entry.schema.properties.get(pk).type
+            column_schema = catalog_entry.schema.properties.get(pk)
+            column_type = column_schema.type
 
             # quote last/max PK val if column is VARCHAR
             if 'string' in column_type:
-                pk_val = "'" + max_pk_values[pk] + "'"
+                pk_val = "'{}'".format(max_pk_values[pk])
             else:
                 pk_val = max_pk_values[pk]
 
