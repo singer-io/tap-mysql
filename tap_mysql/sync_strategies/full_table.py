@@ -110,6 +110,7 @@ def get_max_pk_values(cursor, catalog_entry):
     if processed_results:
         max_pk_values = dict(zip(key_properties, processed_results))
 
+    LOGGER.info(max_pk_values)
     return max_pk_values
 
 def generate_pk_clause(catalog_entry, state):
