@@ -109,7 +109,7 @@ def get_max_pk_values(cursor, catalog_entry):
             processed_results += [bm]
 
     LOGGER.info('Processed Results: ' + str(processed_results))
-    LOGGER.info('Count: ' + len(processed_results))
+    LOGGER.info('Length: ' + len(processed_results))
     if processed_results:
         max_pk_values = dict(zip(key_properties, processed_results))
 
