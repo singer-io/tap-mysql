@@ -92,28 +92,22 @@ def get_max_pk_values(cursor, catalog_entry):
 
     sql = """SELECT {}
                FROM {}.{}
-              ORDER BY {}
-              LIMIT 1
     """
 
-    select_column_clause = ", ".join(escaped_columns)
-    order_column_clause = ", ".join([pk + " DESC" for pk in escaped_columns])
+    select_column_clause = ", ".join(["max(" + pk + ")" for pk in escaped_columns])
 
     cursor.execute(sql.format(select_column_clause,
                            escaped_db,
-                           escaped_table,
-                           order_column_clause))
+                           escaped_table))
     result = cursor.fetchone()
     processed_results = []
     for bm in result:
-        if isinstance(
-                bm, datetime.date) or isinstance(
-                    bm, datetime.datetime) or isinstance(
-                        bm, datetime.timedelta):
+        if isinstance(bm, (datetime.date, datetime.datetime, datetime.timedelta)):
             processed_results += [common.to_utc_datetime_str(bm)]
-        else:
+        elif bm:
             processed_results += [bm]
 
+    max_pk_values = {}
     if processed_results:
         max_pk_values = dict(zip(key_properties, processed_results))
 
