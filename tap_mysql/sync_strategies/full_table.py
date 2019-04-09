@@ -107,9 +107,9 @@ def get_max_pk_values(cursor, catalog_entry):
         elif bm:
             processed_results += [bm]
 
+    max_pk_values = {}
     if processed_results:
         max_pk_values = dict(zip(key_properties, processed_results))
-
 
     return max_pk_values
 
