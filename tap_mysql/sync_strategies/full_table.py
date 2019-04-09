@@ -92,17 +92,13 @@ def get_max_pk_values(cursor, catalog_entry):
 
     sql = """SELECT {}
                FROM {}.{}
-              ORDER BY {}
-              LIMIT 1
     """
 
-    select_column_clause = ", ".join(escaped_columns)
-    order_column_clause = ", ".join([pk + " DESC" for pk in escaped_columns])
+    select_column_clause = ", ".join(["max(" + pk + ")" for pk in escaped_columns])
 
     cursor.execute(sql.format(select_column_clause,
                            escaped_db,
-                           escaped_table,
-                           order_column_clause))
+                           escaped_table))
     result = cursor.fetchone()
     processed_results = []
     for bm in result:
