@@ -100,6 +100,7 @@ def get_max_pk_values(cursor, catalog_entry):
                            escaped_db,
                            escaped_table))
     result = cursor.fetchone()
+    LOGGER.info('Result: ' + str(result))
     processed_results = []
     for bm in result:
         if isinstance(bm, (datetime.date, datetime.datetime, datetime.timedelta)):
@@ -110,7 +111,7 @@ def get_max_pk_values(cursor, catalog_entry):
     if processed_results:
         max_pk_values = dict(zip(key_properties, processed_results))
 
-    LOGGER.info(max_pk_values)
+    LOGGER.info('Max PK values: ' + str(max_pk_values))
     return max_pk_values
 
 def generate_pk_clause(catalog_entry, state):
