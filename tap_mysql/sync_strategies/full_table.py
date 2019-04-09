@@ -102,10 +102,7 @@ def get_max_pk_values(cursor, catalog_entry):
     result = cursor.fetchone()
     processed_results = []
     for bm in result:
-        if isinstance(
-                bm, datetime.date) or isinstance(
-                    bm, datetime.datetime) or isinstance(
-                        bm, datetime.timedelta):
+        if isinstance(bm, (datetime.date, datetime.datetime, datetime.timedelta)):
             processed_results += [common.to_utc_datetime_str(bm)]
         else:
             processed_results += [bm]
