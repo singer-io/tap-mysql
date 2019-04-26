@@ -104,7 +104,7 @@ def get_max_pk_values(cursor, catalog_entry):
     for bm in result:
         if isinstance(bm, (datetime.date, datetime.datetime, datetime.timedelta)):
             processed_results += [common.to_utc_datetime_str(bm)]
-        elif bm:
+        elif bm is not None:
             processed_results += [bm]
 
     max_pk_values = {}
