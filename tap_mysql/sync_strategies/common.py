@@ -224,3 +224,4 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
             row = cursor.fetchone()
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
+    return rows_saved
