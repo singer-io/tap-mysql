@@ -12,15 +12,14 @@ LOGGER = singer.get_logger()
 
 BOOKMARK_KEYS = {'replication_key', 'replication_key_value', 'version'}
 
-def sync_table(mysql_conn, catalog_entry, state, columns, optional_limit=None):
+def sync_table(mysql_conn, catalog_entry, state, columns, limit=None):
     common.whitelist_bookmark_keys(BOOKMARK_KEYS, catalog_entry.tap_stream_id, state)
 
     catalog_metadata = metadata.to_map(catalog_entry.metadata)
     stream_metadata = catalog_metadata.get((), {})
 
-    keep_going = True
-
-    while keep_going:
+    iterate_limit = True
+    while iterate_limit:
 
         replication_key_metadata = stream_metadata.get('replication-key')
         replication_key_state = singer.get_bookmark(state,
@@ -70,8 +69,8 @@ def sync_table(mysql_conn, catalog_entry, state, columns, optional_limit=None):
                     elif replication_key_metadata is not None:
                         select_sql += ' ORDER BY `{}` ASC'.format(replication_key_metadata)
 
-                if optional_limit:
-                    select_sql += ' LIMIT {}'.format(optional_limit)
+                if limit:
+                    select_sql += ' LIMIT {}'.format(limit)
 
                 num_rows = common.sync_query(cur,
                                              catalog_entry,
@@ -80,5 +79,5 @@ def sync_table(mysql_conn, catalog_entry, state, columns, optional_limit=None):
                                              columns,
                                              stream_version,
                                              params)
-                if optional_limit is None or num_rows < int(optional_limit):
-                    keep_going = False
+                if limit is None or num_rows < limit:
+                    iterate_limit = False

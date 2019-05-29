@@ -517,7 +517,11 @@ def do_sync_incremental(mysql_conn, catalog_entry, state, columns, optional_limi
     write_schema_message(catalog_entry=catalog_entry,
                          bookmark_properties=[replication_key])
 
-    incremental.sync_table(mysql_conn, catalog_entry, state, columns, optional_limit)
+    if optional_limit:
+        LOGGER.info("Incremental Stream %s is using an optional limit clause of %d", catalog_entry.stream, int(optional_limit))
+        incremental.sync_table(mysql_conn, catalog_entry, state, columns, int(optional_limit))
+    else:
+        incremental.sync_table(mysql_conn, catalog_entry, state, columns)
 
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
