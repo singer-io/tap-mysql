@@ -276,8 +276,8 @@ class BinlogInterruption(unittest.TestCase):
                          [['table_1', {'id': 1, 'bar': 'abc', 'foo': 100}],
                           ['table_1', {'id': 2, 'bar': 'def', 'foo': 200}],
                           ['table_1', {'id': 3, 'bar': 'ghi', 'foo': 300}],
-                          ['table_2', {'id': 4, 'bar': 'jkl', 'foo': 400}],
-                          ['table_2', {'id': 5, 'bar': 'mno', 'foo': 500}]])
+                          ['table_2', {'_sdc_deleted_at': None, 'id': 4, 'bar': 'jkl', 'foo': 400}],
+                          ['table_2', {'_sdc_deleted_at': None, 'id': 5, 'bar': 'mno', 'foo': 500}]])
 
         self.assertIsNone(state['currently_syncing'])
 
@@ -408,8 +408,8 @@ class BinlogInterruption(unittest.TestCase):
                          [['table_1', {'id': 1,           'bar': 'abc', 'foo': 100}],
                           ['table_1', {'id': 2,           'bar': 'def', 'foo': 200}],
                           ['table_1', {'id': 3,           'bar': 'ghi', 'foo': 300}],
-                          ['table_3', {'id': "quail-2"  , 'bar': 'jkl', 'foo': 400}],
-                          ['table_3', {'id': "quail-100", 'bar': 'mno', 'foo': 500}]])
+                          ['table_3', {'_sdc_deleted_at': None, 'id': "quail-2"  , 'bar': 'jkl', 'foo': 400}],
+                          ['table_3', {'_sdc_deleted_at': None, 'id': "quail-100", 'bar': 'mno', 'foo': 500}]])
 
         self.assertIsNone(state['currently_syncing'])
 
