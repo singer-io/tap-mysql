@@ -226,7 +226,9 @@ def handle_write_rows_event(event, catalog_entry, state, columns, rows_saved, ti
     db_column_types = get_db_column_types(event)
 
     for row in event.rows:
-        filtered_vals = {k:v for k,v in row['values'].items()
+        vals = row['values']
+        vals[SDC_DELETED_AT] = None
+        filtered_vals = {k:v for k,v in vals.items()
                          if k in columns}
 
         record_message = row_to_singer_record(catalog_entry,
@@ -246,7 +248,9 @@ def handle_update_rows_event(event, catalog_entry, state, columns, rows_saved, t
     db_column_types = get_db_column_types(event)
 
     for row in event.rows:
-        filtered_vals = {k:v for k,v in row['after_values'].items()
+        vals = row['after_values']
+        vals[SDC_DELETED_AT] = None
+        filtered_vals = {k:v for k,v in vals.items()
                          if k in columns}
 
         record_message = row_to_singer_record(catalog_entry,
