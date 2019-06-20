@@ -115,10 +115,12 @@ class MySQLConnection(pymysql.connections.Connection):
         if config.get("database"):
             args["database"] = config["database"]
 
+        use_ssl = config.get('ssl') == 'true'
+
         # Attempt self-signed SSL if config vars are present
         use_self_signed_ssl = config.get("ssl_ca")
 
-        if use_self_signed_ssl:
+        if use_ssl and use_self_signed_ssl:
             LOGGER.info("Using custom certificate authority")
 
             # Config values MUST be paths to files for the SSL module to read them correctly.
@@ -142,7 +144,7 @@ class MySQLConnection(pymysql.connections.Connection):
         # Configure SSL without custom CA
         # Manually create context to override default behavior of
         # CERT_NONE without a CA supplied
-        if config.get("ssl") == 'true' and not use_self_signed_ssl:
+        if use_ssl and not use_self_signed_ssl:
             LOGGER.info("Attempting SSL connection")
             # For compatibility with previous version, verify mode is off by default
             verify_mode = config.get("verify_mode", "false") == 'true'
