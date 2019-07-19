@@ -6,7 +6,7 @@ import collections
 import itertools
 from itertools import dropwhile
 import copy
-
+import os
 import pendulum
 
 import pymysql
@@ -711,6 +711,9 @@ def log_server_params(mysql_conn):
 @utils.handle_top_exception(LOGGER)
 def main():
     args = utils.parse_args(REQUIRED_CONFIG_KEYS)
+
+    #NB> this code will only work correctly when the local time is set to UTC because of calls to the  timestamp() method.
+    os.environ['TZ'] = 'UTC'
 
     mysql_conn = MySQLConnection(args.config)
     log_server_params(mysql_conn)

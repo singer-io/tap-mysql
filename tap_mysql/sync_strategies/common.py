@@ -95,9 +95,6 @@ def to_utc_datetime_str(val):
     elif isinstance(val, datetime.date):
         the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
 
-    elif isinstance(val, datetime.date):
-        the_datetime = datetime.datetime.combine(val, datetime.datetime.min.time())
-
     elif isinstance(val, datetime.timedelta):
         epoch = datetime.datetime.utcfromtimestamp(0)
         the_datetime = epoch + val
@@ -109,8 +106,9 @@ def to_utc_datetime_str(val):
         # The mysql-replication library creates naive date and datetime objects
         # which will use the local timezone thus we must set tzinfo accordingly
         # See: https://github.com/noplay/python-mysql-replication/blob/master/pymysqlreplication/row_event.py#L143-L145
-        timezone = tzlocal.get_localzone()
-        the_datetime = timezone.localize(the_datetime)
+
+        #NB> this code will only work correctly when the local time is set to UTC because of the method timestamp()
+        the_datetime = datetime.datetime.fromtimestamp(the_datetime.timestamp(), pytz.timezone('UTC'))
 
     return utils.strftime(the_datetime.astimezone(tz=pytz.UTC))
 
