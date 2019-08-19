@@ -121,17 +121,17 @@ class MySQLConnection(pymysql.connections.Connection):
             }
 
         if config['ssh_host']:
-            tunnel = SSHTunnelForwarder(
+            self.tunnel = SSHTunnelForwarder(
                 (config['ssh_host'], config['ssh_port']), 
                 ssh_username=config['ssh_username'], 
                 ssh_pkey=config['ssh_pkey'],
                 remote_bind_address=(config['host'],config['port'])
             )
 
-            tunnel.start()
+            self.tunnel.start()
 
             args['host'] = '127.0.0.1'
-            args['port'] = tunnel.local_bind_port
+            args['port'] = self.tunnel.local_bind_port
 
             ssl_arg = None
 
@@ -258,9 +258,14 @@ class MySQLConnection(pymysql.connections.Connection):
 
     def __exit__(self, *exc_info):
         del exc_info
-        if(tunnel):
-            tunnel.stop()
-        
+
+        try:
+            self.tunnel
+        except NameError:
+            #not defined
+        else:
+            self.tunnel.close()
+
         self.close()
 
 
