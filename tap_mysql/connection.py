@@ -122,15 +122,16 @@ class MySQLConnection(pymysql.connections.Connection):
             }
 
         if config['ssh_host']:
-            tunnel = SSHTunnelForwarder((config['ssh_host'], config['ssh_port'
-                                    ]), ssh_username=config['ssh_username'
-                                    ], ssh_pkey=config['ssh_pkey'],
-                                    remote_bind_address=(config['host'],
-                                    config['port']))
+            tunnel = SSHTunnelForwarder(
+                (config['ssh_host'], config['ssh_port']), 
+                ssh_username=config['ssh_username'], 
+                ssh_pkey=config['ssh_pkey'],
+                remote_bind_address=(config['host'],config['port'])
+            )
 
             tunnel.start()
 
-            args['host'] = tunnel.local_bind_host
+            args['host'] = '127.0.0.1'
             args['port'] = tunnel.local_bind_port
 
             ssl_arg = None
