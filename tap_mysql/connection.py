@@ -121,74 +121,77 @@ class MySQLConnection(pymysql.connections.Connection):
             'charset': 'utf8',
             }
 
-        if(config['ssh_host']):
-            with SSHTunnelForwarder((config['ssh_host'], config['ssh_port'
+        if config['ssh_host']:
+            tunnel = SSHTunnelForwarder((config['ssh_host'], config['ssh_port'
                                     ]), ssh_username=config['ssh_username'
                                     ], ssh_pkey=config['ssh_pkey'],
                                     remote_bind_address=(config['host'],
-                                    config['port'])) as tunnel:
-                args['host'] = '127.0.0.1'
-                args['port'] = tunnel.local_bind_port
+                                    config['port']))
 
-                ssl_arg = None
+            tunnel.start()
 
-                if config.get('database'):
-                    args['database'] = config['database']
+            args['host'] = tunnel.local_bind_host
+            args['port'] = tunnel.local_bind_port
 
-                use_ssl = config.get('ssl') == 'true'
+            ssl_arg = None
 
-                # Attempt self-signed SSL if config vars are present
+            if config.get('database'):
+                args['database'] = config['database']
 
-                use_self_signed_ssl = config.get('ssl_ca')
+            use_ssl = config.get('ssl') == 'true'
 
-                if use_ssl and use_self_signed_ssl:
-                    LOGGER.info('Using custom certificate authority')
+            # Attempt self-signed SSL if config vars are present
 
-                    # Config values MUST be paths to files for the SSL module to read them correctly.
+            use_self_signed_ssl = config.get('ssl_ca')
 
-                    ssl_arg = {'ca': config['ssl_ca'],
-                               'check_hostname': config.get('check_hostname'
-                               , 'true') == 'true'}
+            if use_ssl and use_self_signed_ssl:
+                LOGGER.info('Using custom certificate authority')
 
-                    # If using client authentication, cert and key are required
+                # Config values MUST be paths to files for the SSL module to read them correctly.
 
-                    if config.get('ssl_cert') and config.get('ssl_key'):
-                        ssl_arg['cert'] = config['ssl_cert']
-                        ssl_arg['key'] = config['ssl_key']
+                ssl_arg = {'ca': config['ssl_ca'],
+                           'check_hostname': config.get('check_hostname'
+                           , 'true') == 'true'}
 
-                    # override match hostname for google cloud
+                # If using client authentication, cert and key are required
 
-                    if config.get('internal_hostname'):
-                        parsed_hostname = \
-                            parse_internal_hostname(config['internal_hostname'
-                                ])
-                        ssl.match_hostname = lambda cert, hostname: \
-                            match_hostname(cert, parsed_hostname)
+                if config.get('ssl_cert') and config.get('ssl_key'):
+                    ssl_arg['cert'] = config['ssl_cert']
+                    ssl_arg['key'] = config['ssl_key']
 
-                super().__init__(defer_connect=True, ssl=ssl_arg, **args)
+                # override match hostname for google cloud
 
-                # Configure SSL without custom CA
-                # Manually create context to override default behavior of
-                # CERT_NONE without a CA supplied
+                if config.get('internal_hostname'):
+                    parsed_hostname = \
+                        parse_internal_hostname(config['internal_hostname'
+                            ])
+                    ssl.match_hostname = lambda cert, hostname: \
+                        match_hostname(cert, parsed_hostname)
 
-                if use_ssl and not use_self_signed_ssl:
-                    LOGGER.info('Attempting SSL connection')
+            super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
-                    # For compatibility with previous version, verify mode is off by default
+            # Configure SSL without custom CA
+            # Manually create context to override default behavior of
+            # CERT_NONE without a CA supplied
 
-                    verify_mode = config.get('verify_mode', 'false') \
-                        == 'true'
-                    if not verify_mode:
-                        LOGGER.warn("Not verifying server certificate. The connection is encrypted, but the server hasn't been verified. Please provide a root CA certificate to enable verification."
-                                    )
-                    self.ssl = True
-                    self.ctx = ssl.create_default_context()
-                    check_hostname = config.get('check_hostname', 'false') \
-                        == 'true'
-                    self.ctx.check_hostname = check_hostname
-                    self.ctx.verify_mode = \
-                        (ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE)
-                    self.client_flag |= CLIENT.SSL
+            if use_ssl and not use_self_signed_ssl:
+                LOGGER.info('Attempting SSL connection')
+
+                # For compatibility with previous version, verify mode is off by default
+
+                verify_mode = config.get('verify_mode', 'false') \
+                    == 'true'
+                if not verify_mode:
+                    LOGGER.warn("Not verifying server certificate. The connection is encrypted, but the server hasn't been verified. Please provide a root CA certificate to enable verification."
+                                )
+                self.ssl = True
+                self.ctx = ssl.create_default_context()
+                check_hostname = config.get('check_hostname', 'false') \
+                    == 'true'
+                self.ctx.check_hostname = check_hostname
+                self.ctx.verify_mode = \
+                    (ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE)
+                self.client_flag |= CLIENT.SSL
         else:
             ssl_arg = None
 
