@@ -258,6 +258,9 @@ class MySQLConnection(pymysql.connections.Connection):
 
     def __exit__(self, *exc_info):
         del exc_info
+        if(tunnel):
+            tunnel.stop()
+        
         self.close()
 
 
