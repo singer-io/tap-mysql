@@ -120,55 +120,55 @@ class MySQLConnection(pymysql.connections.Connection):
             remote_bind_address=(args["host"], args["port"])
         ) as tunnel:
 
-        args["host"] = tunnel.local_bind_host
-        args["port"] = tunnel.local_bind_port
+            args["host"] = tunnel.local_bind_host
+            args["port"] = tunnel.local_bind_port
 
-        ssl_arg = None
+            ssl_arg = None
 
-        if config.get("database"):
-            args["database"] = config["database"]
+            if config.get("database"):
+                args["database"] = config["database"]
 
-        use_ssl = config.get('ssl') == 'true'
+            use_ssl = config.get('ssl') == 'true'
 
-        # Attempt self-signed SSL if config vars are present
-        use_self_signed_ssl = config.get("ssl_ca")
+            # Attempt self-signed SSL if config vars are present
+            use_self_signed_ssl = config.get("ssl_ca")
 
-        if use_ssl and use_self_signed_ssl:
-            LOGGER.info("Using custom certificate authority")
+            if use_ssl and use_self_signed_ssl:
+                LOGGER.info("Using custom certificate authority")
 
-            # Config values MUST be paths to files for the SSL module to read them correctly.
-            ssl_arg = {
-                "ca": config["ssl_ca"],
-                "check_hostname": config.get("check_hostname", "true") == "true"
-            }
+                # Config values MUST be paths to files for the SSL module to read them correctly.
+                ssl_arg = {
+                    "ca": config["ssl_ca"],
+                    "check_hostname": config.get("check_hostname", "true") == "true"
+                }
 
-            # If using client authentication, cert and key are required
-            if config.get("ssl_cert") and config.get("ssl_key"):
-                ssl_arg["cert"] = config["ssl_cert"]
-                ssl_arg["key"] = config["ssl_key"]
+                # If using client authentication, cert and key are required
+                if config.get("ssl_cert") and config.get("ssl_key"):
+                    ssl_arg["cert"] = config["ssl_cert"]
+                    ssl_arg["key"] = config["ssl_key"]
 
-            # override match hostname for google cloud
-            if config.get("internal_hostname"):
-                parsed_hostname = parse_internal_hostname(config["internal_hostname"])
-                ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
+                # override match hostname for google cloud
+                if config.get("internal_hostname"):
+                    parsed_hostname = parse_internal_hostname(config["internal_hostname"])
+                    ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
 
-        super().__init__(defer_connect=True, ssl=ssl_arg, **args)
+            super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
-        # Configure SSL without custom CA
-        # Manually create context to override default behavior of
-        # CERT_NONE without a CA supplied
-        if use_ssl and not use_self_signed_ssl:
-            LOGGER.info("Attempting SSL connection")
-            # For compatibility with previous version, verify mode is off by default
-            verify_mode = config.get("verify_mode", "false") == 'true'
-            if not verify_mode:
-                LOGGER.warn("Not verifying server certificate. The connection is encrypted, but the server hasn't been verified. Please provide a root CA certificate to enable verification.")
-            self.ssl = True
-            self.ctx = ssl.create_default_context()
-            check_hostname = config.get("check_hostname", "false") == 'true'
-            self.ctx.check_hostname = check_hostname
-            self.ctx.verify_mode = ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE
-            self.client_flag |= CLIENT.SSL
+            # Configure SSL without custom CA
+            # Manually create context to override default behavior of
+            # CERT_NONE without a CA supplied
+            if use_ssl and not use_self_signed_ssl:
+                LOGGER.info("Attempting SSL connection")
+                # For compatibility with previous version, verify mode is off by default
+                verify_mode = config.get("verify_mode", "false") == 'true'
+                if not verify_mode:
+                    LOGGER.warn("Not verifying server certificate. The connection is encrypted, but the server hasn't been verified. Please provide a root CA certificate to enable verification.")
+                self.ssl = True
+                self.ctx = ssl.create_default_context()
+                check_hostname = config.get("check_hostname", "false") == 'true'
+                self.ctx.check_hostname = check_hostname
+                self.ctx.verify_mode = ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE
+                self.client_flag |= CLIENT.SSL
 
 
     def __enter__(self):
