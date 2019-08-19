@@ -84,6 +84,24 @@ Create a config file containing the database connection credentials, e.g.:
 These are the same basic configuration properties used by the MySQL command-line
 client (`mysql`).
 
+#### Connecting over an SSH Tunnel
+
+To connect to your database over an SSH tunnel add the following params to your config.
+
+```json
+{
+  "host": "localhost",
+  "port": "3306",
+  "user": "root",
+  "password": "password",
+  "ssh_host": "localhost",
+  "ssh_port": 22,
+  "ssh_username": "user",
+  "ssh_pkey": "/path/to/private_key"
+}
+
+```
+
 ### Discovery mode
 
 The tap can be invoked in discovery mode to find the available tables and
