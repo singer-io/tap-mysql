@@ -5,6 +5,7 @@ import backoff
 
 import pymysql
 from pymysql.constants import CLIENT
+
 from sshtunnel import SSHTunnelForwarder
 
 import singer
