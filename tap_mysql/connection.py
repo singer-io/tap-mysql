@@ -259,13 +259,6 @@ class MySQLConnection(pymysql.connections.Connection):
     def __exit__(self, *exc_info):
         del exc_info
 
-        try:
-            self.tunnel
-        except NameError:
-            #not defined
-        finally:
-            self.tunnel.close()
-
         self.close()
 
 
