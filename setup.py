@@ -16,6 +16,7 @@ setup(name='tap-mysql',
           'PyMySQL==0.7.11',
           'backoff==1.3.2',
           'mysql-replication==0.18',
+          'sshtunnel==0.1.5',
       ],
       entry_points='''
           [console_scripts]

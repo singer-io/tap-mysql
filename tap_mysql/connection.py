@@ -4,6 +4,9 @@ import backoff
 
 import pymysql
 from pymysql.constants import CLIENT
+import paramiko
+from paramiko import SSHClient
+from sshtunnel import SSHTunnelForwarder
 
 import singer
 import ssl
@@ -109,6 +112,16 @@ class MySQLConnection(pymysql.connections.Connection):
             "read_timeout": READ_TIMEOUT_SECONDS,
             "charset": "utf8",
         }
+
+        with SSHTunnelForwarder(
+            (config["ssh_host"], config["ssh_port"]),
+            ssh_username=config["ssh_username"],
+            ssh_pkey=config["ssh_pkey"],
+            remote_bind_address=(args["host"], args["port"])
+        ) as tunnel:
+
+        args["host"] = tunnel.local_bind_host
+        args["port"] = tunnel.local_bind_port
 
         ssl_arg = None
 
