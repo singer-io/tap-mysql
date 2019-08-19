@@ -263,7 +263,7 @@ class MySQLConnection(pymysql.connections.Connection):
             self.tunnel
         except NameError:
             #not defined
-        else:
+        finally:
             self.tunnel.close()
 
         self.close()
