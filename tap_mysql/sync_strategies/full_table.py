@@ -117,8 +117,8 @@ def get_max_pk_values(cursor, catalog_entry):
 def quote_where_clause_value(value, column_type):
     if 'string' in column_type:
         return "'" + str(value) + "'"
-    else:
-        return str(value)
+
+    return str(value)
 
 
 def generate_pk_bookmark_clause(key_properties, last_pk_fetched, catalog_entry):
