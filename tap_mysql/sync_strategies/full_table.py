@@ -156,7 +156,6 @@ def generate_pk_bookmark_clause(key_properties, last_pk_fetched, catalog_entry):
 
 def generate_pk_clause(catalog_entry, state):
     key_properties = common.get_key_properties(catalog_entry)
-    escaped_columns = [common.escape(c) for c in key_properties]
 
     max_pk_values = singer.get_bookmark(state,
                                         catalog_entry.tap_stream_id,
@@ -194,9 +193,10 @@ def generate_pk_clause(catalog_entry, state):
 
             max_pk_comparisons.append("{} <= {}".format(common.escape(pk), pk_val))
 
+    order_by_columns = [common.escape(c) for c in key_properties]
     sql = " WHERE {}{} ORDER BY {} ASC".format(last_pk_clause,
                                                " AND ".join(max_pk_comparisons),
-                                               ", ".join(escaped_columns))
+                                               ", ".join(order_by_columns))
 
     return sql
 
