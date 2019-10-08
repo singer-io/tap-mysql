@@ -113,12 +113,49 @@ def get_max_pk_values(cursor, catalog_entry):
 
     return max_pk_values
 
+
+def quote_where_clause_value(value, column_type):
+    if 'string' in column_type:
+        return "'" + str(value) + "'"
+
+    return str(value)
+
+
+def generate_pk_bookmark_clause(key_properties, last_pk_fetched, catalog_entry):
+    """
+    Generates a bookmark clause based on `key_properties`, and
+    `last_pk_fetched` bookmark. This ensures that the stream is resumed at
+    the location in the data set per primary key component. Inclusivity is
+    not maintained, since these are primary keys.
+
+    Example:
+
+    key_properties = ['name','birthday']
+    last_pk_fetched = {'name': "Phil Collins", 'birthday': "1951-01-30"}
+
+    Returns:
+    "(`name` > 'Phil Collins') OR (`name` = 'Phil Collins' AND `birthday` > '1951-01-30')
+    """
+    assert last_pk_fetched is not None, \
+        "Must call generate_pk_bookmark with a non-null 'last_pk_fetched' dict"
+
+    clause_terms = []
+    inclusive_pk_values = []
+    for pk in key_properties:
+        term = []
+        for prev_pk, prev_pk_val, prev_col_type in inclusive_pk_values:
+            term.append(common.escape(prev_pk) + ' = ' + quote_where_clause_value(prev_pk_val, prev_col_type))
+
+        column_type = catalog_entry.schema.properties.get(pk).type
+        term.append(common.escape(pk) + ' > ' + quote_where_clause_value(last_pk_fetched[pk], column_type))
+        inclusive_pk_values.append((pk, last_pk_fetched[pk], column_type))
+
+        clause_terms.append(' AND '.join(term))
+    return '({})'.format(') OR ('.join(clause_terms)) if clause_terms else ''
+
+
 def generate_pk_clause(catalog_entry, state):
     key_properties = common.get_key_properties(catalog_entry)
-    escaped_columns = [common.escape(c) for c in key_properties]
-
-    where_clause = " AND ".join([pk + " > `{}`" for pk in escaped_columns])
-    order_by_clause = ", ".join(['`{}`, ' for pk in escaped_columns])
 
     max_pk_values = singer.get_bookmark(state,
                                         catalog_entry.tap_stream_id,
@@ -128,7 +165,9 @@ def generate_pk_clause(catalog_entry, state):
                                           catalog_entry.tap_stream_id,
                                           'last_pk_fetched')
 
-    pk_comparisons = []
+    last_pk_clause = ''
+    max_pk_comparisons = []
+
 
     if not max_pk_values:
         return ""
@@ -137,33 +176,27 @@ def generate_pk_clause(catalog_entry, state):
         for pk in key_properties:
             column_type = catalog_entry.schema.properties.get(pk).type
 
-            # quote last/max PK val if column is VARCHAR
-            if 'string' in column_type:
-                last_pk_val = "'" + last_pk_fetched[pk] + "'"
-                max_pk_val = "'" + max_pk_values[pk] + "'"
-            else:
-                last_pk_val = last_pk_fetched[pk]
-                max_pk_val = max_pk_values[pk]
-
-            pk_comparisons.append("({} > {} AND {} <= {})".format(common.escape(pk),
-                                                                  last_pk_val,
-                                                                  common.escape(pk),
-                                                                  max_pk_val))
+            # Add AND to interpolate along with max_pk_values clauses
+            last_pk_clause = '({}) AND '.format(generate_pk_bookmark_clause(key_properties,
+                                                                            last_pk_fetched,
+                                                                            catalog_entry))
+            max_pk_comparisons.append("{} <= {}".format(common.escape(pk),
+                                                        quote_where_clause_value(max_pk_values[pk],
+                                                                                 column_type)))
     else:
         for pk in key_properties:
             column_schema = catalog_entry.schema.properties.get(pk)
             column_type = column_schema.type
 
-            # quote last/max PK val if column is VARCHAR
-            if 'string' in column_type:
-                pk_val = "'{}'".format(max_pk_values[pk])
-            else:
-                pk_val = max_pk_values[pk]
+            pk_val = quote_where_clause_value(max_pk_values[pk],
+                                              column_type)
 
-            pk_comparisons.append("{} <= {}".format(common.escape(pk), pk_val))
+            max_pk_comparisons.append("{} <= {}".format(common.escape(pk), pk_val))
 
-    sql = " WHERE {} ORDER BY {} ASC".format(" AND ".join(pk_comparisons),
-                                             ", ".join(escaped_columns))
+    order_by_columns = [common.escape(c) for c in key_properties]
+    sql = " WHERE {}{} ORDER BY {} ASC".format(last_pk_clause,
+                                               " AND ".join(max_pk_comparisons),
+                                               ", ".join(order_by_columns))
 
     return sql
 
