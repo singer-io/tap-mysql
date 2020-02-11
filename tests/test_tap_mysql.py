@@ -904,7 +904,6 @@ class TestJsonTables(unittest.TestCase):
         tap_mysql.do_sync(self.conn, {}, self.catalog, {})
 
         record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))[0]
-        print(record_message)
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
         self.assertEqual(record_message.record, {'val': '{"a": 10, "b": "c"}'})
 
