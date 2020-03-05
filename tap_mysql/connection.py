@@ -99,7 +99,7 @@ class MySQLConnection(pymysql.connections.Connection):
         # that the connection fails, the patch is reverted by reassigning the
         # patched out method to it's original spot.
 
-        if config["conn_type"] == "socket":
+        if config["unix_socket"]:
             args = {
                 "user": config["user"],
                 "password": config["password"],
