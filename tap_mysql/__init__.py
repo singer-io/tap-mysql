@@ -701,7 +701,7 @@ def log_server_params(mysql_conn):
                 cur.execute('''
                 show session status where Variable_name IN ('Ssl_version', 'Ssl_cipher')''')
                 rows = cur.fetchall()
-                mapped_row = {k:v for (k,v) in [(r[0], r[1]) for r in rows]}
+                mapped_row = dict(rows)
                 LOGGER.info('Server SSL Parameters (blank means SSL is not active): ' +
                             '[ssl_version: %s], ' +
                             '[ssl_cipher: %s]',
