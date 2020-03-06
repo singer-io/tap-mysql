@@ -876,6 +876,37 @@ class TestEscaping(unittest.TestCase):
         self.assertTrue(isinstance(record_message, singer.RecordMessage))
         self.assertEqual(record_message.record, {'b c': 1})
 
+class TestJsonTables(unittest.TestCase):
+
+    def setUp(self):
+        self.conn = test_utils.get_test_connection()
+
+        with connect_with_backoff(self.conn) as open_conn:
+            with open_conn.cursor() as cursor:
+                cursor.execute('CREATE TABLE json_table (val json)')
+                cursor.execute('INSERT INTO json_table (val) VALUES ( \'{"a": 10, "b": "c"}\')')
+
+        self.catalog = test_utils.discover_catalog(self.conn, {})
+        for stream in self.catalog.streams:
+            stream.key_properties = []
+
+            stream.metadata = [
+                {'breadcrumb': (), 'metadata': {'selected': True, 'database-name': 'tap_mysql_test'}},
+                {'breadcrumb': ('properties', 'val'), 'metadata': {'selected': True}}
+            ]
+
+            stream.stream = stream.table
+            test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
+
+    def runTest(self):
+        global SINGER_MESSAGES
+        SINGER_MESSAGES.clear()
+        tap_mysql.do_sync(self.conn, {}, self.catalog, {})
+
+        record_message = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))[0]
+        self.assertTrue(isinstance(record_message, singer.RecordMessage))
+        self.assertEqual(record_message.record, {'val': '{"a": 10, "b": "c"}'})
+
 class TestUnsupportedPK(unittest.TestCase):
 
     def setUp(self):
