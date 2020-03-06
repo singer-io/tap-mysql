@@ -11,43 +11,46 @@ image_tag = "5.7.29"
 
 def start_container(name):
     START_COMMAND = """
-    sudo docker run -e "MYSQL_ROOT_PASSWORD={1}"\
-        -p {2}:{2} --name {3} \
-        -d {4}:{5}
-    """.format(os.getenv('TAP_MONGODB_USER'),
-               os.getenv('TAP_MONGODB_PASSWORD'),
-               3306,
-               name,
-               image_name,
-               image_tag)
+    sudo docker run -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_USER={user}" -e "MYSQL_PASSWORD={password}" -e "MYSQL_DATABASE={database}"\
+        -p {port}:{port} --name={name}  -v /var/lib/mysql:/var/lib/mysql\
+        -d {image_name}:{image_tag} mysqld  --datadir=/var/lib/mysql --user=mysql\
+        --server-id=1 --log-bin=/var/lib/mysql/mysql-bin.log --binlog_do_db={database}
+    """.format(password=os.getenv('TAP_MYSQL_PASSWORD'),
+               user=os.getenv('TAP_MYSQL_USER'),
+               database="tap_tester_mysql_binlog",
+               port=3306,
+               name=name,
+               image_name=image_name,
+               image_tag=image_tag)
 
     print("Starting Docker process mongo1 using command: {}".format(START_COMMAND))
 
     proc = subprocess.run(START_COMMAND, shell=True)
     if proc.returncode != 0:
         sys.exit("Exited with code: {}, the docker process failed to start.".format(proc.returncode))
-    print("Process started successfully. Starting Oplog replication.")
-
-    # Sleeping to allow Mongo enough time to start up
-    time.sleep(5)
+    print("Process started successfully.")
 
     ip_addr = get_ip_addr(name)
+    
+    # Sleeping to allow mysql enough time to start up
+    time.sleep(5)
+
     CONFIGURE_COMMAND = """
-    docker run --rm mongo mongo --host {} \test -u {} -p {} --authenticationDatabase admin --eval {}
-    """.format(ip_addr,
-               os.getenv('TAP_MONGODB_USER'),
-               os.getenv('TAP_MONGODB_PASSWORD'),
-               '\'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})\'')
+    docker run --rm mysql:{} mysql -h {} -P {} -u root --password={} -e "GRANT ALL PRIVILEGES ON *.* TO '{}'@'%'"
+    """.format(image_tag,
+               ip_addr,
+               3306,
+               os.getenv('TAP_MYSQL_PASSWORD'),
+               os.getenv('TAP_MYSQL_USER'))
     print(CONFIGURE_COMMAND)
     proc = subprocess.run(CONFIGURE_COMMAND, shell=True)
     if proc.returncode != 0:
         sys.exit("Exited with code: {}, the docker command failed.".format(proc.returncode))
-    print("Oploag configured correctly.")
 
 
 def get_ip_addr(name):
     IP_ADDR_COMMAND = "docker inspect {} | jq -r .[].NetworkSettings.IPAddress"
-    print("Retrieving IP addr of mongodb container")
+    print("Retrieving IP addr of mysql container")
     ip_addr = subprocess.check_output(IP_ADDR_COMMAND.format(name), shell=True).decode('utf-8').rstrip()
     print(ip_addr)
     return ip_addr
@@ -83,12 +86,11 @@ DESCRIPTION = """
 Manage docker instance for tap-mssql testing.
 
 Uses environment variables:
-    TAP_MONGODB_USER
-    TAP_MONGODB_PASSWORD
+    TAP_MYSQL_PASSWORD
 """
 parser = argparse.ArgumentParser(description=DESCRIPTION, formatter_class=RawTextHelpFormatter)
 parser.add_argument('action', choices=['start','stop', 'connect'], help='action to perform with the container')
-parser.add_argument('--name', help="name assigned to running docker process", default='mongo1')
+parser.add_argument('--name', help="name assigned to running docker process", default='mysql1')
 
 def main():
     parsed_args = parser.parse_args()
