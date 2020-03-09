@@ -369,7 +369,7 @@ def _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state):
                                 binlog_event.table)
 
         # NB: Flag 0x1 indicates that the binlog has been closed successfully, so we can rely on this being a complete log.
-        if binlog_event.flags & EVENT_FLAG_STMT_END_F:
+        if hasattr(binlog_event, 'flags') and binlog_event.flags & EVENT_FLAG_STMT_END_F:
             state = update_bookmarks(state,
                                      binlog_streams_map,
                                      reader.log_file,
