@@ -17,7 +17,7 @@ def start_container(name):
         --server-id=1 --log-bin=/var/lib/mysql/mysql-bin.log --binlog_do_db={database}
     """.format(password=os.getenv('TAP_MYSQL_PASSWORD'),
                user=os.getenv('TAP_MYSQL_USER'),
-               database="tap_tester_mysql_binlog",
+               database=os.getenv('TAP_MYSQL_DBNAME'),
                port=3306,
                name=name,
                image_name=image_name,
@@ -36,13 +36,13 @@ def start_container(name):
     time.sleep(5)
 
     CONFIGURE_COMMAND = """
-    docker run --rm mysql:{} mysql -h {} -P {} -u root --password={} -e "GRANT ALL PRIVILEGES ON *.* TO '{}'@'%'"
-    """.format(image_tag,
-               ip_addr,
-               3306,
-               os.getenv('TAP_MYSQL_PASSWORD'),
-               os.getenv('TAP_MYSQL_USER'))
-    print(CONFIGURE_COMMAND)
+    docker run --rm mysql:{image_tag} mysql -h {host} -P {port} -u root --password={password} -e "GRANT ALL PRIVILEGES ON *.* TO '{user}'@'%'"
+    """.format(image_tag=image_tag,
+               host=ip_addr,
+               port=3306,
+               password=os.getenv('TAP_MYSQL_PASSWORD'),
+               user=os.getenv('TAP_MYSQL_USER'))
+    print("Grant all permissions for user %s using command: %s" % (os.getenv('TAP_MYSQL_USER'), CONFIGURE_COMMAND))
     proc = subprocess.run(CONFIGURE_COMMAND, shell=True)
     if proc.returncode != 0:
         sys.exit("Exited with code: {}, the docker command failed.".format(proc.returncode))
@@ -66,15 +66,18 @@ def stop_container(name):
     print("Process stopped successfully")
 
 def connect_to_db(name):
-    CONNECT_COMMAND = "docker run -it --rm mongo mongo --host {} test -u {} -p {} --authenticationDatabase admin"
+    CONNECT_COMMAND = "docker run -it --rm mysql:{image_tag} mysql -h {host} -u {user} -P {port} -D {dbname} --password={password}"
 
     ip_addr = get_ip_addr(name)
 
-    print("Attempting to connect to running container using a mongo container")
-    connect_command_format = CONNECT_COMMAND.format(ip_addr,
-                                                    os.getenv('TAP_MONGODB_USER'),
-                                                    os.getenv('TAP_MONGODB_PASSWORD'))
-    print(connect_command_format)
+    print("Attempting to connect to running container using a mysql container")
+    connect_command_format = CONNECT_COMMAND.format(image_tag=image_tag,
+                                                    host=ip_addr,
+                                                    user=os.getenv('TAP_MYSQL_USER'),
+                                                    port=3306,
+                                                    dbname=os.getenv('TAP_MYSQL_DBNAME'),
+                                                    password=os.getenv('TAP_MYSQL_PASSWORD'))
+    print("Connecting with command: %s" % connect_command_format)
     # NB: Using call instead of run here because it is blocking
     #     This returns only an exit code.
     returncode = subprocess.call(connect_command_format,
