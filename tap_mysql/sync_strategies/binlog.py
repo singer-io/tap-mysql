@@ -40,6 +40,12 @@ mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP2
 }
 
+# Event Flags
+# NB: Event flags are an unsigned short that accounts for flags on the event itself
+# Flag docs: https://dev.mysql.com/doc/internals/en/binlog-event-flag.html
+# - Note: `mysqlbinlog` calls 0x1 STMT_END_F, which we are using to decide if we need to bookmark
+EVENT_FLAG_STMT_END_F = 1 # Corresponds to the end log of a statement, regardless of how mysql breaks up the events
+
 def add_automatic_properties(catalog_entry, columns):
     catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
         type=["null", "string"],
@@ -362,10 +368,12 @@ def _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state):
                                 binlog_event.schema,
                                 binlog_event.table)
 
-        state = update_bookmarks(state,
-                                 binlog_streams_map,
-                                 reader.log_file,
-                                 reader.log_pos)
+        # NB: Flag 0x1 indicates that the binlog has been closed successfully, so we can rely on this being a complete log.
+        if binlog_event.flags & EVENT_FLAG_STMT_END_F:
+            state = update_bookmarks(state,
+                                     binlog_streams_map,
+                                     reader.log_file,
+                                     reader.log_pos)
 
         # The iterator across python-mysql-replication's fetchone method should ultimately terminate
         # upon receiving an EOF packet. There seem to be some cases when a MySQL server will not send
