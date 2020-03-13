@@ -28,6 +28,24 @@ import tap_mysql.sync_strategies.incremental as incremental
 
 from tap_mysql.connection import connect_with_backoff, MySQLConnection
 
+old_convert_datetime = pymysql.converters.convert_datetime
+old_convert_date = pymysql.converters.convert_date
+
+def monkey_patch_datetime(datetime_str):
+    value = old_convert_datetime(datetime_str)
+    if datetime_str == value:
+        return None
+    return value
+
+def monkey_patch_date(date_str):
+    value = old_convert_date(date_str)
+    if date_str == value:
+        return None
+    return value
+
+
+pymysql.converters.convert_datetime = monkey_patch_datetime
+pymysql.converters.convert_date = monkey_patch_date
 
 Column = collections.namedtuple('Column', [
     "table_schema",
