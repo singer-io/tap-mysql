@@ -44,9 +44,9 @@ class TestDateTypes(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp)')
-                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col) VALUES (1, \'0000-00-00\', \'0000-00-00 00:00:00\')')
-                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col) VALUES (2, NULL, NULL)')
+                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp, time_col time)')
+                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col) VALUES (1, \'0000-00-00\', \'0000-00-00 00:00:00\', \'00:00:00\' )')
+                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col) VALUES (2, NULL, NULL, NULL)')
             open_conn.commit()
 
         self.catalog = test_utils.discover_catalog(self.conn, {})
@@ -63,7 +63,8 @@ class TestDateTypes(unittest.TestCase):
                  }},
                 {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
                 {'breadcrumb': ('properties', 'datetime_col'), 'metadata': {'selected': True}},
-                {'breadcrumb': ('properties', 'timestamp_col'), 'metadata': {'selected': True}}
+                {'breadcrumb': ('properties', 'timestamp_col'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'time_col'), 'metadata': {'selected': True}}
             ]
 
             test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
@@ -106,29 +107,16 @@ class TestDateTypes(unittest.TestCase):
 
         record_messages = list(filter(lambda m: isinstance(m, singer.RecordMessage), SINGER_MESSAGES))
 
-        # Expected from 0.9.3
-        # expected_binlog3_records = [
-        #     {'datetime_col': '0000-00-00 00:00:00',
-        #      'id': 1,
-        #      'timestamp_col': '0000-00-00 00:00:00'},
-        #     {'datetime_col': None,
-        #      'id': 2,
-        #      'timestamp_col': None}
-        # ]
-
         # Expected from 0.7.11
-        expected_binlog3_records = [
+        expected_records = [
             {'datetime_col': None,
              'id': 1,
-             'timestamp_col': None},
+             'timestamp_col': None,
+             'time_col': '1970-01-01T00:00:00.000000Z'},
             {'datetime_col': None,
              'id': 2,
-             'timestamp_col': None}
+             'timestamp_col': None,
+             'time_col': None}
         ]
 
-        self.assertEqual(expected_binlog3_records, [x.asdict()['record'] for x in record_messages[-2:]])
-
-# if __name__== "__main__":
-#     test1 = TestBinlogReplication()
-#     test1.setUp()
-#     test1.test_binlog_stream()
+        self.assertEqual(expected_records, [x.asdict()['record'] for x in record_messages[-2:]])

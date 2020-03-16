@@ -16,21 +16,6 @@ READ_TIMEOUT_SECONDS = 3600
 # We need to hold onto this for self-signed SSL
 match_hostname = ssl.match_hostname
 
-# MySQL 8.0 Patch:
-# Workaround to support MySQL 8.0 without upgrading the PyMySQL version
-# since there are breaking changes between these versions, this should suffice to allow
-# new character sets to be used with MySQL 8.0 instances.
-# FIXME: Remove when PyMYSQL upgrade behavior has been evaluated.
-# Patch Originally Found Here: https://github.com/PyMySQL/PyMySQL/pull/592
-original_charset_by_id = pymysql.charset.charset_by_id
-def charset_wrapper(*args, **kwargs):
-    unknown_charset = pymysql.charset.Charset(None, None, None, None)
-    try:
-        return original_charset_by_id(*args, **kwargs)
-    except KeyError:
-        return unknown_charset
-pymysql.connections.charset_by_id = charset_wrapper
-
 @backoff.on_exception(backoff.expo,
                       (pymysql.err.OperationalError),
                       max_tries=5,
