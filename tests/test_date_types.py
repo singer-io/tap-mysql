@@ -119,4 +119,4 @@ class TestDateTypes(unittest.TestCase):
              'time_col': None}
         ]
 
-        self.assertEqual(expected_records, [x.asdict()['record'] for x in record_messages[-2:]])
+        self.assertEqual(expected_records, [x.asdict()['record'] for x in record_messages])

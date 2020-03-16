@@ -20,7 +20,7 @@ LOGGER = singer.get_logger()
 # to how `0000-00-00 00:00:00` date/time types are returned. In 0.7.11,
 # they are returned as NULL, and in 0.9.3, they are returned as the string
 # `0000-00-00 00:00:00`. To maintain backwards-compatability, we are
-# monkey patching the functions continue returning None
+# monkey patching the functions so they continue returning None
 original_convert_datetime = pymysql.converters.convert_datetime
 original_convert_date = pymysql.converters.convert_date
 
