@@ -44,9 +44,9 @@ class TestDateTypes(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp, time_col time)')
-                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col) VALUES (1, \'0000-00-00\', \'0000-00-00 00:00:00\', \'00:00:00\' )')
-                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col) VALUES (2, NULL, NULL, NULL)')
+                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp, time_col time, date_col date)')
+                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col, date_col) VALUES (1, \'0000-00-00\', \'0000-00-00 00:00:00\', \'00:00:00\', \'0000-00-00\' )')
+                cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col, date_col) VALUES (2, NULL, NULL, NULL, NULL)')
             open_conn.commit()
 
         self.catalog = test_utils.discover_catalog(self.conn, {})
@@ -64,7 +64,8 @@ class TestDateTypes(unittest.TestCase):
                 {'breadcrumb': ('properties', 'id'), 'metadata': {'selected': True}},
                 {'breadcrumb': ('properties', 'datetime_col'), 'metadata': {'selected': True}},
                 {'breadcrumb': ('properties', 'timestamp_col'), 'metadata': {'selected': True}},
-                {'breadcrumb': ('properties', 'time_col'), 'metadata': {'selected': True}}
+                {'breadcrumb': ('properties', 'time_col'), 'metadata': {'selected': True}},
+                {'breadcrumb': ('properties', 'date_col'), 'metadata': {'selected': True}}
             ]
 
             test_utils.set_replication_method_and_key(stream, 'LOG_BASED', None)
@@ -112,11 +113,13 @@ class TestDateTypes(unittest.TestCase):
             {'datetime_col': None,
              'id': 1,
              'timestamp_col': None,
-             'time_col': '1970-01-01T00:00:00.000000Z'},
+             'time_col': '1970-01-01T00:00:00.000000Z',
+             'date_col': None},
             {'datetime_col': None,
              'id': 2,
              'timestamp_col': None,
-             'time_col': None}
+             'time_col': None,
+             'date_col': None}
         ]
 
         self.assertEqual(expected_records, [x.asdict()['record'] for x in record_messages])
