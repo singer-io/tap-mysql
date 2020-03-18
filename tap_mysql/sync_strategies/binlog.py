@@ -136,7 +136,7 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
             the_utc_date = common.to_utc_datetime_str(val)
             row_to_persist[column_name] = the_utc_date
 
-        elif db_column_type == FIELD_TYPE.JSON and isinstance(val, dict):
+        elif db_column_type == FIELD_TYPE.JSON:
             row_to_persist[column_name] = json.dumps(json_bytes_to_string(val))
 
         elif 'boolean' in property_type or property_type == 'boolean':
