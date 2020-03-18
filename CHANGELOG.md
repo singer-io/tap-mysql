@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.17.2
+  * Fix bug with JSON columns in binlog [#120](https://github.com/singer-io/tap-mysql/pull/120)
+
 ## 1.17.1
   * Fix monkey patching bug [#118](https://github.com/singer-io/tap-mysql/pull/118)
 
