@@ -105,6 +105,9 @@ def new_read_offset_or_inline(packet, large):
     if large and t in (pymysqlreplication.JSONB_TYPE_INT32,
                        pymysqlreplication.JSONB_TYPE_UINT32):
         return (t, None, packet.read_binary_json_type_inlined(t, large))
+    if large:
+        return (t, packet.read_uint32(), None)
+    return (t, packet.read_uint16(), None)
 
 pymysqlreplication.packet.read_offset_or_inline = new_read_offset_or_inline
 
