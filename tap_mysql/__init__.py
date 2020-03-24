@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=missing-docstring,not-an-iterable,too-many-locals,too-many-arguments,too-many-branches,invalid-name,duplicate-code,too-many-statements
+# pylint: disable=missing-docstring,not-an-iterable,too-many-locals,too-many-arguments,too-many-branches,invalid-name,duplicate-code,too-many-statements,too-many-return-statements
 
 import datetime
 import collections
@@ -75,21 +75,21 @@ FLOAT_TYPES = set(['float', 'double'])
 DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
 
 def new_read_binary_json_type_inlined(self, t, large):
-    if t == pymysqlreplication.JSONB_TYPE_LITERAL:
+    if t == pymysqlreplication.packet.JSONB_TYPE_LITERAL:
         value = self.read_uint32() if large else self.read_uint16()
-        if value == pymysqlreplication.JSONB_LITERAL_NULL:
+        if value == pymysqlreplication.packet.JSONB_LITERAL_NULL:
             return None
-        elif value == pymysqlreplication.JSONB_LITERAL_TRUE:
+        if value == pymysqlreplication.packet.JSONB_LITERAL_TRUE:
             return True
-        elif value == pymysqlreplication.JSONB_LITERAL_FALSE:
+        if value == pymysqlreplication.packet.JSONB_LITERAL_FALSE:
             return False
-    elif t == pymysqlreplication.JSONB_TYPE_INT16:
+    if t == pymysqlreplication.packet.JSONB_TYPE_INT16:
         return self.read_int16()
-    elif t == pymysqlreplication.JSONB_TYPE_UINT16:
+    if t == pymysqlreplication.packet.JSONB_TYPE_UINT16:
         return self.read_uint16()
-    elif t == pymysqlreplication.JSONB_TYPE_INT32:
+    if t == pymysqlreplication.packet.JSONB_TYPE_INT32:
         return self.read_int32()
-    elif t == pymysqlreplication.JSONB_TYPE_UINT32:
+    if t == pymysqlreplication.packet.JSONB_TYPE_UINT32:
         return self.read_uint32()
     raise ValueError('Json type %d is not handled' % t)
 
@@ -99,11 +99,11 @@ def new_read_offset_or_inline(packet, large):
     t = packet.read_uint8()
 
     if t in (pymysqlreplication.packet.JSONB_TYPE_LITERAL,
-             pymysqlreplication.JSONB_TYPE_INT16,
-             pymysqlreplication.JSONB_TYPE_UINT16):
+             pymysqlreplication.packet.JSONB_TYPE_INT16,
+             pymysqlreplication.packet.JSONB_TYPE_UINT16):
         return (t, None, packet.read_binary_json_type_inlined(t, large))
-    if large and t in (pymysqlreplication.JSONB_TYPE_INT32,
-                       pymysqlreplication.JSONB_TYPE_UINT32):
+    if large and t in (pymysqlreplication.packet.JSONB_TYPE_INT32,
+                       pymysqlreplication.packet.JSONB_TYPE_UINT32):
         return (t, None, packet.read_binary_json_type_inlined(t, large))
     if large:
         return (t, packet.read_uint32(), None)
