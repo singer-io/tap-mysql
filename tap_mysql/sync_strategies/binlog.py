@@ -352,12 +352,15 @@ def _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state):
                                                          time_extracted)
 
                 elif isinstance(binlog_event, UpdateRowsEvent):
-                    rows_saved = handle_update_rows_event(binlog_event,
-                                                          catalog_entry,
-                                                          state,
-                                                          desired_columns,
-                                                          rows_saved,
-                                                          time_extracted)
+                    try:
+                        rows_saved = handle_update_rows_event(binlog_event,
+                                                              catalog_entry,
+                                                              state,
+                                                              desired_columns,
+                                                              rows_saved,
+                                                              time_extracted)
+                    except IndexError as err:
+                        LOGGER.warn('An update event seems to have updated 0 rows, skipping the event')
 
                 elif isinstance(binlog_event, DeleteRowsEvent):
                     rows_saved = handle_delete_rows_event(binlog_event,
