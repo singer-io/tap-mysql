@@ -99,27 +99,19 @@ class MySQLConnection(pymysql.connections.Connection):
         # that the connection fails, the patch is reverted by reassigning the
         # patched out method to it's original spot.
 
+        args = {
+            "user": config["user"],
+            "password": config["password"],
+            "host": config["host"],
+            "port": int(config["port"]),
+            "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
+            "connect_timeout": CONNECT_TIMEOUT_SECONDS,
+            "read_timeout": READ_TIMEOUT_SECONDS,
+            "charset": "utf8",
+        }
+
         if config["unix_socket"]:
-            args = {
-                "user": config["user"],
-                "password": config["password"],
-                "unix_socket": config['unix_socket'],
-                "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
-                "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-                "read_timeout": READ_TIMEOUT_SECONDS,
-                "charset": "utf8",
-            }
-        else:
-            args = {
-                "user": config["user"],
-                "password": config["password"],
-                "host": config["host"],
-                "port": int(config["port"]),
-                "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
-                "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-                "read_timeout": READ_TIMEOUT_SECONDS,
-                "charset": "utf8",
-            }
+            args.add("unix_socket": config['unix_socket'])
 
 
         ssl_arg = None
