@@ -111,7 +111,7 @@ class MySQLConnection(pymysql.connections.Connection):
         }
 
         if config["unix_socket"]:
-            args.add("unix_socket": config['unix_socket'])
+            args["unix_socket"] = config["unix_socket"]
 
         ssl_arg = None
 
