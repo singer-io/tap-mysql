@@ -4,6 +4,7 @@
 import copy
 
 import datetime
+import json
 import pytz
 import tzlocal
 
@@ -124,6 +125,12 @@ def fetch_server_id(mysql_conn):
 
             return server_id
 
+def json_bytes_to_string(data):
+    if isinstance(data, bytes):  return data.decode()
+    if isinstance(data, dict):   return dict(map(json_bytes_to_string, data.items()))
+    if isinstance(data, tuple):  return tuple(map(json_bytes_to_string, data))
+    if isinstance(data, list):   return list(map(json_bytes_to_string, data))
+    return data
 
 def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extracted):
     row_to_persist = {}
@@ -136,6 +143,8 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
             the_utc_date = common.to_utc_datetime_str(val)
             row_to_persist[column_name] = the_utc_date
 
+        elif db_column_type == FIELD_TYPE.JSON:
+            row_to_persist[column_name] = json.dumps(json_bytes_to_string(val))
 
         elif 'boolean' in property_type or property_type == 'boolean':
             if val is None:

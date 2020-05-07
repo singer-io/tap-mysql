@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name='tap-mysql',
-      version='1.16.0',
+      version='1.17.3',
       description='Singer.io tap for extracting data from MySQL',
       author='Stitch',
       url='https://singer.io',
@@ -13,7 +13,7 @@ setup(name='tap-mysql',
           'attrs==16.3.0',
           'pendulum==1.2.0',
           'singer-python==5.5.0',
-          'PyMySQL==0.7.11',
+          'PyMySQL==0.9.3',
           'backoff==1.3.2',
           'mysql-replication==0.18',
       ],
