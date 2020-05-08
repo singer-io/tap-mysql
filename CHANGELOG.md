@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.17.4
+  * Fix bookmarking of binlog to avoid skipping deletes [#115](https://github.com/singer-io/tap-mysql/pull/115)
+
 ## 1.17.3
   * Fix for python-mysql-replication bug where large json values cause errors [#122](https://github.com/singer-io/tap-mysql/pull/122)
 
