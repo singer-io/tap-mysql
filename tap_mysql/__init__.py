@@ -139,9 +139,6 @@ def schema_for_column(c):
     elif data_type in FLOAT_TYPES:
         result.type = ['null', 'number']
 
-    elif data_type == 'json':
-        result.type = ['null', 'string']
-
     elif data_type == 'decimal':
         result.type = ['null', 'number']
         result.multipleOf = 10 ** (0 - c.numeric_scale)
