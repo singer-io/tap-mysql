@@ -702,6 +702,10 @@ def sync_non_binlog_streams(mysql_conn, non_binlog_catalog, config, state):
 
 def sync_binlog_streams(mysql_conn, binlog_catalog, config, state):
     if binlog_catalog.streams:
+        # NB: Ensure state is up to date for consistency. State updates in
+        # Singer must be locked against concurrent updates, and writing
+        # state before binlog will make sure that this lock is claimed.
+        singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
         for stream in binlog_catalog.streams:
             write_schema_message(stream)
 
