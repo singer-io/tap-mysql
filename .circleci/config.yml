@@ -30,13 +30,20 @@ jobs:
           command: |
             source /usr/local/share/virtualenvs/tap-tester/bin/activate
             source dev_env.sh
-            run-a-test --tap=tap-mysql \
+            run-test --tap=tap-mysql \
                        --target=target-stitch \
                        --orchestrator=stitch-orchestrator \
                        --email=harrison+sandboxtest@stitchdata.com \
                        --password=$SANDBOX_PASSWORD \
                        --client-id=50 \
-                       tap_tester.suites.mysql
+                       tests
+            # run-a-test --tap=tap-mysql \
+            #            --target=target-stitch \
+            #            --orchestrator=stitch-orchestrator \
+            #            --email=harrison+sandboxtest@stitchdata.com \
+            #            --password=$SANDBOX_PASSWORD \
+            #            --client-id=50 \
+            #            tap_tester.suites.mysql
 workflows:
   version: 2
   commit:
