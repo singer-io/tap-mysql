@@ -14,7 +14,7 @@ jobs:
           command: |
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
-            # pip install .
+            pip install .
             pip install .[dev]
       - run:
           name: 'pylint'
