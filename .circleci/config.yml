@@ -15,7 +15,6 @@ jobs:
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .
-            pip install .[dev]
       - run:
           name: 'pylint'
           command: |
@@ -41,14 +40,7 @@ jobs:
                        --email=harrison+sandboxtest@stitchdata.com \
                        --password=$SANDBOX_PASSWORD \
                        --client-id=50 \
-                       tests
-            # run-a-test --tap=tap-mysql \
-            #            --target=target-stitch \
-            #            --orchestrator=stitch-orchestrator \
-            #            --email=harrison+sandboxtest@stitchdata.com \
-            #            --password=$SANDBOX_PASSWORD \
-            #            --client-id=50 \
-            #            tap_tester.suites.mysql
+                       tests/test_date_types.py
 workflows:
   version: 2
   commit:

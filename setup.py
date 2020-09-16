@@ -17,11 +17,6 @@ setup(name='tap-mysql',
           'backoff==1.8.0',
           'mysql-replication==0.18',
       ],
-      extras_require={
-          'dev': [
-              'tap-mysql==1.17.4'
-          ]
-      },
       entry_points='''
           [console_scripts]
           tap-mysql=tap_mysql:main
