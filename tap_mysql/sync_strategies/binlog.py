@@ -4,6 +4,7 @@
 import copy
 
 import datetime
+import json
 import pytz
 import tzlocal
 
@@ -39,6 +40,13 @@ mysql_timestamp_types = {
     FIELD_TYPE.TIMESTAMP,
     FIELD_TYPE.TIMESTAMP2
 }
+
+# Event Flags
+# NB: Event flags are an unsigned short that accounts for flags on the event itself
+# Flag docs: https://dev.mysql.com/doc/internals/en/binlog-event-flag.html
+# - Note: `mysqlbinlog` calls 0x0001 STMT_END_F, which we are using to decide if we need to bookmark
+LOG_EVENT_BINLOG_IN_USE_F = 0x0001 # Corresponds to the end log of a statement, set if log closed
+                                   # successfully after writing
 
 def add_automatic_properties(catalog_entry, columns):
     catalog_entry.schema.properties[SDC_DELETED_AT] = Schema(
@@ -117,6 +125,12 @@ def fetch_server_id(mysql_conn):
 
             return server_id
 
+def json_bytes_to_string(data):
+    if isinstance(data, bytes):  return data.decode()
+    if isinstance(data, dict):   return dict(map(json_bytes_to_string, data.items()))
+    if isinstance(data, tuple):  return tuple(map(json_bytes_to_string, data))
+    if isinstance(data, list):   return list(map(json_bytes_to_string, data))
+    return data
 
 def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extracted):
     row_to_persist = {}
@@ -129,6 +143,8 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
             the_utc_date = common.to_utc_datetime_str(val)
             row_to_persist[column_name] = the_utc_date
 
+        elif db_column_type == FIELD_TYPE.JSON:
+            row_to_persist[column_name] = json.dumps(json_bytes_to_string(val))
 
         elif 'boolean' in property_type or property_type == 'boolean':
             if val is None:
@@ -362,10 +378,12 @@ def _run_binlog_sync(mysql_conn, reader, binlog_streams_map, state):
                                 binlog_event.schema,
                                 binlog_event.table)
 
-        state = update_bookmarks(state,
-                                 binlog_streams_map,
-                                 reader.log_file,
-                                 reader.log_pos)
+        # NB: Flag 0x1 indicates that the binlog has been closed successfully, so we can rely on this being a complete log.
+        if hasattr(binlog_event, 'flags') and binlog_event.flags & LOG_EVENT_BINLOG_IN_USE_F:
+            state = update_bookmarks(state,
+                                     binlog_streams_map,
+                                     reader.log_file,
+                                     reader.log_pos)
 
         # The iterator across python-mysql-replication's fetchone method should ultimately terminate
         # upon receiving an EOF packet. There seem to be some cases when a MySQL server will not send
