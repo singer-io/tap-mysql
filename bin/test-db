@@ -11,41 +11,21 @@ image_tag = "5.7.29"
 
 def start_container(name):
     START_COMMAND = """
-    sudo docker run -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_USER={user}" -e "MYSQL_PASSWORD={password}" -e "MYSQL_DATABASE={database}"\
-        -p {port}:{port} --name={name}  -v /var/lib/mysql:/var/lib/mysql\
-        -d {image_name}:{image_tag} mysqld  --datadir=/var/lib/mysql --user=mysql\
-        --server-id=1 --log-bin=/var/lib/mysql/mysql-bin.log --binlog_do_db={database}
+    sudo docker run -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_DATABASE={database}" -p {port}:{port} --name={name} -d {image_name}:{image_tag}
     """.format(password=os.getenv('TAP_MYSQL_PASSWORD'),
-               user=os.getenv('TAP_MYSQL_USER'),
                database=os.getenv('TAP_MYSQL_DBNAME'),
                port=3306,
                name=name,
                image_name=image_name,
                image_tag=image_tag)
 
-    print("Starting Docker process mongo1 using command: {}".format(START_COMMAND))
+
+    print("Starting Docker process {} using command: {}".format(name, START_COMMAND))
 
     proc = subprocess.run(START_COMMAND, shell=True)
     if proc.returncode != 0:
         sys.exit("Exited with code: {}, the docker process failed to start.".format(proc.returncode))
     print("Process started successfully.")
-
-    ip_addr = get_ip_addr(name)
-    
-    # Sleeping to allow mysql enough time to start up
-    time.sleep(5)
-
-    CONFIGURE_COMMAND = """
-    docker run --rm mysql:{image_tag} mysql -h {host} -P {port} -u root --password={password} -e "GRANT ALL PRIVILEGES ON *.* TO '{user}'@'%'"
-    """.format(image_tag=image_tag,
-               host=ip_addr,
-               port=3306,
-               password=os.getenv('TAP_MYSQL_PASSWORD'),
-               user=os.getenv('TAP_MYSQL_USER'))
-    print("Grant all permissions for user %s using command: %s" % (os.getenv('TAP_MYSQL_USER'), CONFIGURE_COMMAND))
-    proc = subprocess.run(CONFIGURE_COMMAND, shell=True)
-    if proc.returncode != 0:
-        sys.exit("Exited with code: {}, the docker command failed.".format(proc.returncode))
 
 
 def get_ip_addr(name):
@@ -66,14 +46,10 @@ def stop_container(name):
     print("Process stopped successfully")
 
 def connect_to_db(name):
-    CONNECT_COMMAND = "docker run -it --rm mysql:{image_tag} mysql -h {host} -u {user} -P {port} -D {dbname} --password={password}"
-
-    ip_addr = get_ip_addr(name)
+    CONNECT_COMMAND = "docker exec -it {name} mysql -P {port} -D {dbname} --password={password}"
 
     print("Attempting to connect to running container using a mysql container")
-    connect_command_format = CONNECT_COMMAND.format(image_tag=image_tag,
-                                                    host=ip_addr,
-                                                    user=os.getenv('TAP_MYSQL_USER'),
+    connect_command_format = CONNECT_COMMAND.format(name=name,
                                                     port=3306,
                                                     dbname=os.getenv('TAP_MYSQL_DBNAME'),
                                                     password=os.getenv('TAP_MYSQL_PASSWORD'))
@@ -86,10 +62,11 @@ def connect_to_db(name):
         sys.exit("Exited with code: {}, could not connect.".format(returncode))
 
 DESCRIPTION = """
-Manage docker instance for tap-mssql testing.
+Manage docker instance for tap-mysql testing.
 
 Uses environment variables:
     TAP_MYSQL_PASSWORD
+    TAP_MYSQL_DBNAME
 """
 parser = argparse.ArgumentParser(description=DESCRIPTION, formatter_class=RawTextHelpFormatter)
 parser.add_argument('action', choices=['start','stop', 'connect'], help='action to perform with the container')
