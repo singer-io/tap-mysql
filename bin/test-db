@@ -6,21 +6,20 @@ import subprocess
 import time
 from argparse import RawTextHelpFormatter
 
-image_name = "mysql"
-image_tag = "5.7.29"
+image_name = "singerio/mysql"
+image_tag = "5.7.29-binlog"
 
 def start_container(name):
     START_COMMAND = """
-    sudo docker run --rm -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_DATABASE={database}" \
-    -p {port}:{port} --name={name} -v /var/lib/mysql -v {localpath}/mysql.cnf:/etc/mysql/conf.d/mysql.cnf \
-    -d {image_name}:{image_tag}
+    sudo docker run -d --rm -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_DATABASE={database}" \
+    -p {port}:{port} --name={name} \
+    {image_name}:{image_tag}
     """.format(password=os.getenv('TAP_MYSQL_PASSWORD'),
                database=os.getenv('TAP_MYSQL_DBNAME'),
                port=3306,
                name=name,
                image_name=image_name,
-               image_tag=image_tag,
-               localpath=os.path.dirname(os.path.realpath(__file__)))
+               image_tag=image_tag)
 
 
     print("Starting Docker process {} using command: {}".format(name, START_COMMAND))
