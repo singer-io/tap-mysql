@@ -34,6 +34,7 @@ jobs:
           command: |
             source /usr/local/share/virtualenvs/tap-tester/bin/activate
             source dev_env.sh
+            pip install .
             run-test --tap=tap-mysql \
                      --target=target-stitch \
                      --orchestrator=stitch-orchestrator \
