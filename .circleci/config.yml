@@ -23,7 +23,7 @@ jobs:
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install nose
             source dev_env.sh
-            nosetests
+            nosetests tests/nosetests
       - add_ssh_keys
       - run:
           name: 'Integration Tests'
