@@ -14,7 +14,7 @@ setup(name='tap-mysql',
           'pendulum==1.2.0',
           'singer-python==5.5.0',
           'PyMySQL==0.9.3',
-          'backoff==1.3.2',
+          'backoff==1.8.0',
           'mysql-replication==0.18',
       ],
       entry_points='''
