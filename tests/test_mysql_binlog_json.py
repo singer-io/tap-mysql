@@ -9,10 +9,11 @@ import datetime
 import decimal
 import json
 import os
-import pymysql
 import pytz
 import re
 import unittest
+
+import db_utils
 
 expected_schemas = {
     'mysql_binlog_json_test': {
@@ -63,23 +64,6 @@ class MySQLBinlogJson(unittest.TestCase):
                 'user' : os.getenv('TAP_MYSQL_USER'),
         }
 
-
-    def get_db_connection(self):
-        props = self.get_properties()
-        creds = self.get_credentials()
-
-        connection = pymysql.connect(host=props['host'],
-                                     database=props['database'],
-                                     port=int(props['port']),
-                                     user=props['user'],
-                                     password=creds['password'],
-                                     autocommit=True)
-
-        with connection.cursor() as cur:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        return connection
-
-
     def table_name(self):
         return "mysql_binlog_json_test"
 
@@ -116,7 +100,7 @@ class MySQLBinlogJson(unittest.TestCase):
             #pylint: disable=line-too-long
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_PORT, TAP_MYSQL_DBNAME, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD")
 
-        connection = self.get_db_connection()
+        connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cur:
             create_databases_sql = """

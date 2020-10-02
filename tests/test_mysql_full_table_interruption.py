@@ -1,5 +1,4 @@
 import os
-import pymysql
 import unittest
 
 import tap_tester.connections as connections
@@ -7,6 +6,8 @@ import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
 
 from tap_tester.scenario import (SCENARIOS)
+
+import db_utils
 
 class MySQLFullTableInterruption(unittest.TestCase):
     def name(self):
@@ -35,19 +36,6 @@ class MySQLFullTableInterruption(unittest.TestCase):
                 'database' : self.database_name(),
                 'user' : os.getenv('TAP_MYSQL_USER'),
         }
-
-
-    def get_db_connection(self):
-        props = self.get_properties()
-        creds = self.get_credentials()
-
-        connection = pymysql.connect(host=props['host'],
-                                     port=int(props['port']),
-                                     user=props['user'],
-                                     password=creds['password'],
-                                     autocommit=True)
-
-        return connection
 
 
     def table_names(self):
@@ -167,7 +155,9 @@ class MySQLFullTableInterruption(unittest.TestCase):
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD, TAP_MYSQL_PORT")
 
         print("setting up mysql databases and tables")
-        connection = self.get_db_connection()
+        props = self.get_properties()
+        props.pop('database') # Don't connect to specific database for setup
+        connection = db_utils.get_db_connection(props, self.get_credentials())
 
         with connection.cursor() as cur:
             create_databases_sql = """

@@ -7,11 +7,12 @@ import datetime
 import unittest
 import datetime
 import pprint
-import pymysql
 import pdb
 from functools import reduce
 from singer import utils
 from decimal import Decimal
+
+import db_utils
 
 dummy_data = {'simple_example': [[1, 'matt']],
               'various_types': [[1, -1, 1.23, 123456789.00, 127, 32767, 8388607, 2147483647, 9223372036854775807, 1.234, 1.234, 1, '2017-09-13', '12:34:56', '1999', 1],
@@ -203,7 +204,7 @@ class MySQLFullAndIncremental(unittest.TestCase):
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD, TAP_MYSQL_PORT")
 
         print("setting up mysql databases and tables")
-        connection = self.getDbConnection()
+        connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cursor:
             flatten = lambda l: [item for sublist in l for item in sublist]
@@ -304,20 +305,6 @@ class MySQLFullAndIncremental(unittest.TestCase):
             'my_isam': {'c_pk'},
             'view': {'c_pk'},
         }
-
-    def getDbConnection(self):
-        props = self.get_properties()
-        creds = self.get_credentials()
-
-        connection = pymysql.connect(host=props['host'],
-                                     user=props['user'],
-                                     port=int(props['port']),
-                                     password=creds['password'],
-                                     autocommit=True)
-
-        with connection.cursor() as cur:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        return connection
 
     def name(self):
         return "tap_tester_mysql_full_and_incremental"
@@ -568,7 +555,7 @@ class MySQLFullAndIncremental(unittest.TestCase):
         #----------------------------------------------------------------------
 
         print("adding a column to an existing table in the source db")
-        connection = self.getDbConnection()
+        connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cursor:
             add_column_sql = '''

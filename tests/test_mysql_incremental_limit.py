@@ -7,10 +7,11 @@ import datetime
 import unittest
 import datetime
 import pprint
-import pymysql
 import pdb
 from functools import reduce
 from singer import utils
+
+import db_utils
 
 dummy_data = {'simple_example': [[1, 'matt', '2017-01-01 00:00:00'], [2, 'kyler', '2017-01-01 00:00:01'], [3, 'jimbo', '2017-01-01 00:00:02'],
                                  [4, 'jon', '2017-01-01 00:00:03'], [5, 'tom', '2017-01-01 00:00:04']] }
@@ -59,7 +60,7 @@ class MySQLIncrementalLimit(unittest.TestCase):
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD, TAP_MYSQL_PORT")
 
         print("setting up mysql databases and tables")
-        connection = self.getDbConnection()
+        connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cursor:
             flatten = lambda l: [item for sublist in l for item in sublist]
@@ -97,20 +98,6 @@ class MySQLIncrementalLimit(unittest.TestCase):
         return {
             'simple_example': {'c_pk'}
         }
-
-    def getDbConnection(self):
-        props = self.get_properties()
-        creds = self.get_credentials()
-
-        connection = pymysql.connect(host=props['host'],
-                                     user=props['user'],
-                                     port=int(props['port']),
-                                     password=creds['password'],
-                                     autocommit=True)
-
-        with connection.cursor() as cur:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        return connection
 
     def name(self):
         return "tap_tester_mysql_incremental_limit"
