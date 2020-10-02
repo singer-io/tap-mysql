@@ -44,7 +44,7 @@ class TestDateTypes(unittest.TestCase):
 
         with connect_with_backoff(self.conn) as open_conn:
             with open_conn.cursor() as cursor:
-                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp null, time_col time, date_col date)')
+                cursor.execute('CREATE TABLE datetime_types (id int, datetime_col datetime, timestamp_col timestamp, time_col time, date_col date)')
                 cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col, date_col) VALUES (1, \'0000-00-00\', \'0000-00-00 00:00:00\', \'00:00:00\', \'0000-00-00\' )')
                 cursor.execute('INSERT INTO datetime_types (id, datetime_col, timestamp_col, time_col, date_col) VALUES (2, NULL, NULL, NULL, NULL)')
             open_conn.commit()

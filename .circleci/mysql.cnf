@@ -3,6 +3,7 @@
 [mysqld]
 # For testing, matches original test instance
 sql-mode="NO_ENGINE_SUBSTITUTION"
+explicit_defaults_for_timestamp="TRUE"
 
 # For Binlog
 binlog_format=ROW
