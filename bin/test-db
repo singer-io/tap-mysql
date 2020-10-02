@@ -26,17 +26,8 @@ def start_container(name):
 
     proc = subprocess.run(START_COMMAND, shell=True)
     if proc.returncode != 0:
-        sys.exit("Exited with code: {}, the docker process failed to start.".format(proc.returncode))
+        sys.exit("Exited with code: {}, the docker process failed to start. Use `docker logs -f mysql1` to inspect what went wrong.".format(proc.returncode))
     print("Process started successfully.")
-
-
-def get_ip_addr(name):
-    IP_ADDR_COMMAND = "docker inspect {} | jq -r .[].NetworkSettings.IPAddress"
-    print("Retrieving IP addr of mysql container")
-    ip_addr = subprocess.check_output(IP_ADDR_COMMAND.format(name), shell=True).decode('utf-8').rstrip()
-    print(ip_addr)
-    return ip_addr
-
 
 def stop_container(name):
     STOP_COMMAND = "sudo docker stop {0} && sudo docker rm {0}"
@@ -61,7 +52,7 @@ def connect_to_db(name):
     returncode = subprocess.call(connect_command_format,
                                  shell=True)
     if returncode != 0:
-        sys.exit("Exited with code: {}, could not connect.".format(returncode))
+        sys.exit("Exited with code: {}, could not connect. Use `docker logs -f mysql1` to inspect what went wrong.".format(returncode))
 
 DESCRIPTION = """
 Manage docker instance for tap-mysql testing.
