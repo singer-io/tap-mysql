@@ -2,7 +2,11 @@ version: 2
 jobs:
   build:
     docker:
-      - image: 218546966473.dkr.ecr.us-east-1.amazonaws.com/circle-ci:tap-tester
+      - image: 218546966473.dkr.ecr.us-east-1.amazonaws.com/circle-ci:tap-tester-v4
+      - image: singerio/mysql:5.7.29-binlog
+        environment:
+          MYSQL_ROOT_PASSWORD: Password1!
+          MYSQL_DATABASE: dev
     steps:
       - checkout
       - run:
@@ -23,20 +27,21 @@ jobs:
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install nose
             source dev_env.sh
-            nosetests
+            nosetests tests/nosetests
       - add_ssh_keys
       - run:
           name: 'Integration Tests'
           command: |
             source /usr/local/share/virtualenvs/tap-tester/bin/activate
             source dev_env.sh
-            run-a-test --tap=tap-mysql \
-                       --target=target-stitch \
-                       --orchestrator=stitch-orchestrator \
-                       --email=harrison+sandboxtest@stitchdata.com \
-                       --password=$SANDBOX_PASSWORD \
-                       --client-id=50 \
-                       tap_tester.suites.mysql
+            pip install .
+            run-test --tap=tap-mysql \
+                     --target=target-stitch \
+                     --orchestrator=stitch-orchestrator \
+                     --email=harrison+sandboxtest@stitchdata.com \
+                     --password=$SANDBOX_PASSWORD \
+                     --client-id=50 \
+                     tests
 workflows:
   version: 2
   commit:

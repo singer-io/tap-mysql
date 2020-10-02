@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import subprocess
+import time
+from argparse import RawTextHelpFormatter
+
+image_name = "singerio/mysql"
+image_tag = "5.7.29-binlog"
+
+def start_container(name):
+    START_COMMAND = """
+    sudo docker run -d --rm -e "MYSQL_ROOT_PASSWORD={password}" -e "MYSQL_DATABASE={database}" \
+    -p {port}:{port} --name={name} \
+    {image_name}:{image_tag}
+    """.format(password=os.getenv('TAP_MYSQL_PASSWORD'),
+               database=os.getenv('TAP_MYSQL_DBNAME'),
+               port=3306,
+               name=name,
+               image_name=image_name,
+               image_tag=image_tag)
+
+
+    print("Starting Docker process {} using command: {}".format(name, START_COMMAND))
+
+    proc = subprocess.run(START_COMMAND, shell=True)
+    if proc.returncode != 0:
+        sys.exit("Exited with code: {}, the docker process failed to start. Use `docker logs -f mysql1` to inspect what went wrong.".format(proc.returncode))
+    print("Process started successfully.")
+
+def stop_container(name):
+    STOP_COMMAND = "sudo docker stop {0} && sudo docker rm {0}"
+
+    print("Stopping Docker process {}".format(name))
+    proc = subprocess.run(STOP_COMMAND.format(name), shell=True)
+    if proc.returncode != 0:
+        sys.exit("Exited with code: {}, the docker process failed to stop.".format(proc.returncode))
+    print("Process stopped successfully")
+
+def connect_to_db(name):
+    CONNECT_COMMAND = "docker exec -it {name} mysql -P {port} -D {dbname} --password={password}"
+
+    print("Attempting to connect to running container using a mysql container")
+    connect_command_format = CONNECT_COMMAND.format(name=name,
+                                                    port=3306,
+                                                    dbname=os.getenv('TAP_MYSQL_DBNAME'),
+                                                    password=os.getenv('TAP_MYSQL_PASSWORD'))
+    print("Connecting with command: %s" % connect_command_format)
+    # NB: Using call instead of run here because it is blocking
+    #     This returns only an exit code.
+    returncode = subprocess.call(connect_command_format,
+                                 shell=True)
+    if returncode != 0:
+        sys.exit("Exited with code: {}, could not connect. Use `docker logs -f mysql1` to inspect what went wrong.".format(returncode))
+
+DESCRIPTION = """
+Manage docker instance for tap-mysql testing.
+
+Uses environment variables:
+    TAP_MYSQL_PASSWORD
+    TAP_MYSQL_DBNAME
+"""
+parser = argparse.ArgumentParser(description=DESCRIPTION, formatter_class=RawTextHelpFormatter)
+parser.add_argument('action', choices=['start','stop', 'connect'], help='action to perform with the container')
+parser.add_argument('--name', help="name assigned to running docker process", default='mysql1')
+
+def main():
+    parsed_args = parser.parse_args()
+    # Potential arguments to add: pull, changing docker cointainer, changing password
+    if parsed_args.action == 'start':
+        start_container(parsed_args.name)
+    elif parsed_args.action == 'stop':
+        stop_container(parsed_args.name)
+    elif parsed_args.action == 'connect':
+        connect_to_db(parsed_args.name)
+
+if __name__ == "__main__":
+    main()

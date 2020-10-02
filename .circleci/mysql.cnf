@@ -1,0 +1,14 @@
+[mysql]
+
+[mysqld]
+# For testing, matches original test instance
+sql-mode="NO_ENGINE_SUBSTITUTION"
+explicit_defaults_for_timestamp="TRUE"
+
+# For Binlog
+binlog_format=ROW
+binlog_row_image=FULL
+expire_logs_days=7
+log_bin=mysql-binlog
+log_slave_updates=1
+server-id=1
