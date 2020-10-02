@@ -265,7 +265,7 @@ CREATE TABLE {}.{} (
         data = dict([('foooo%i'%i, 'baaaaar%i'%i) for i in range(2560)], literal=True)
         rec = {'id': 2, 'our_json': json.dumps(data)}
 
-        with self.get_db_connection().cursor() as cur:
+        with db_utils.get_db_connection(self.get_properties(), self.get_credentials()).cursor() as cur:
             self.insert_record(cur, rec)
 
         # run binlog sync
