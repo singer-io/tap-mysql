@@ -15,7 +15,7 @@ setup(name='tap-mysql',
           'singer-python==5.9.0',
           'PyMySQL==0.9.3',
           'backoff==1.8.0',
-          'mysql-replication==0.18',
+          'mysql-replication==0.22',
       ],
       entry_points='''
           [console_scripts]
