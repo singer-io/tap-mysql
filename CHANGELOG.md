@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.17.5
+  * Revert #122, bump pymysql-replication to 0.22  [#133](https://github.com/singer-io/tap-mysql/pull/133)
+
 ## 1.17.4
   * Fix bookmarking of binlog to avoid skipping deletes [#115](https://github.com/singer-io/tap-mysql/pull/115)
 
