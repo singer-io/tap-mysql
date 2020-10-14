@@ -11,6 +11,8 @@ import os
 import pytz
 import re
 import unittest
+import random
+import string    
 
 import db_utils
 
@@ -106,8 +108,24 @@ rec_1 = {
     'our_boolean': True,
 }
 
-rec_2 = {
-    'id': 2,
+expected_rec_1 = copy.deepcopy(rec_1)
+expected_rec_1['our_enum'] = 'one'
+expected_rec_1['our_mediumtext'] = 'less text'
+expected_rec_1['our_unsigned_decimal_1'] = Decimal("12345.67")
+expected_rec_1['our_signed_decimal_1'] = -Decimal("12345.67")
+expected_rec_1['our_unsigned_decimal_2'] = 1234567
+expected_rec_1['our_signed_decimal_2'] = -1234567
+expected_rec_1['our_bit_1'] = True
+expected_rec_1['our_datetime'] = '2000-01-01T01:01:01.000000Z'
+expected_rec_1['our_timestamp'] = '2000-01-01T01:01:01.000000Z'
+expected_rec_1['our_date'] = '2000-01-01T00:00:00.000000Z'
+expected_rec_1['our_time'] = '1970-01-01T01:01:01.000000Z'
+
+# TODO I want to be able to create n records while still covering these datatypes if possible.
+# TODO n records must exceed the capacity of a single log file.
+
+rec_n = {
+    'id': n,
     'our_char': 'B',
     'our_enum': '2',
     'our_longtext': 'hippopotamus',
@@ -139,143 +157,18 @@ rec_2 = {
     'our_time': rec_2_datetime.time(),
     'our_boolean': False,
 }
-
-rec_3 = {
-    'id': 3,
-    'our_char': 'C',
-    'our_enum': '3',
-    'our_longtext': 'orange',
-    'our_mediumtext': 'blue',
-    'our_text': 'red',
-    'our_varchar': 'quail',
-    'our_unsigned_tinyint': 30,
-    'our_signed_tinyint': -30,
-    'our_unsigned_smallint': 600,
-    'our_signed_smallint': -600,
-    'our_unsigned_mediumint': 6000,
-    'our_signed_mediumint': -6000,
-    'our_unsigned_int': 369123702,
-    'our_signed_int': -369123702,
-    'our_unsigned_bigint': 3881498714470269,
-    'our_signed_bigint': -3881498714470269,
-    'our_unsigned_decimal_1': decimal.Decimal('37037.01'),
-    'our_signed_decimal_1': decimal.Decimal('-37037.01'),
-    'our_unsigned_decimal_2': decimal.Decimal('3703701'),
-    'our_signed_decimal_2': decimal.Decimal('-3703701'),
-    'our_unsigned_float': Decimal("3.7035"),
-    'our_signed_float': -Decimal("3.7035"),
-    'our_unsigned_double': Decimal("17.0367"),
-    'our_signed_double': -Decimal("17.0367"),
-    'our_bit_1': 1,
-    'our_datetime': rec_3_datetime,
-    'our_timestamp': rec_3_datetime,
-    'our_date': rec_3_datetime.date(),
-    'our_time': rec_3_datetime.time(),
-    'our_boolean': False,
-}
-
-expected_rec_1 = {
-    'id': 1,
-    'our_char': 'A',
-    'our_enum': 'one',
-    'our_longtext': 'so much text',
-    'our_mediumtext': 'less text',
-    'our_text': 'text',
-    'our_varchar': 'chicken',
-    'our_unsigned_tinyint': 10,
-    'our_signed_tinyint': -10,
-    'our_unsigned_smallint': 200,
-    'our_signed_smallint': -200,
-    'our_unsigned_mediumint': 2000,
-    'our_signed_mediumint': -2000,
-    'our_unsigned_int': 123041234,
-    'our_signed_int': -123041234,
-    'our_unsigned_bigint': 1293832904823423,
-    'our_signed_bigint': -1293832904823423,
-    'our_unsigned_decimal_1': Decimal("12345.67"),
-    'our_signed_decimal_1': -Decimal("12345.67"),
-    'our_unsigned_decimal_2': 1234567,
-    'our_signed_decimal_2': -1234567,
-    'our_unsigned_float': Decimal("1.2345"),
-    'our_signed_float': -Decimal("1.2345"),
-    'our_unsigned_double': Decimal("5.6789"),
-    'our_signed_double': -Decimal("5.65789"),
-    'our_bit_1': True,
-    'our_datetime': '2000-01-01T01:01:01.000000Z',
-    'our_timestamp': '2000-01-01T01:01:01.000000Z',
-    'our_date': '2000-01-01T00:00:00.000000Z',
-    'our_time': '1970-01-01T01:01:01.000000Z',
-    'our_boolean': True,
-}
-
-expected_rec_2 = {
-    'id': 2,
-    'our_char': 'B',
-    'our_enum': 'two',
-    'our_longtext': 'hippopotamus',
-    'our_mediumtext': 'ostrich',
-    'our_text': 'emu',
-    'our_varchar': 'turkey',
-    'our_unsigned_tinyint': 20,
-    'our_signed_tinyint': -20,
-    'our_unsigned_smallint': 400,
-    'our_signed_smallint': -400,
-    'our_unsigned_mediumint': 4000,
-    'our_signed_mediumint': -4000,
-    'our_unsigned_int': 246082468,
-    'our_signed_int': -246082468,
-    'our_unsigned_bigint': 2587665809646846,
-    'our_signed_bigint': -2587665809646846,
-    'our_unsigned_decimal_1': Decimal("24691.34"),
-    'our_signed_decimal_1': -Decimal("24691.34"),
-    'our_unsigned_decimal_2': 2469134,
-    'our_signed_decimal_2': -2469134,
-    'our_unsigned_float': Decimal("2.469"),
-    'our_signed_float': -Decimal("2.469"),
-    'our_unsigned_double': Decimal("11.3578"),
-    'our_signed_double': -Decimal("11.3578"),
-    'our_bit_1': False,
-    'our_datetime': '2002-02-02T02:02:02.000000Z',
-    'our_timestamp': '2002-02-02T02:02:02.000000Z',
-    'our_date': '2002-02-02T00:00:00.000000Z',
-    'our_time': '1970-01-01T02:02:02.000000Z',
-    'our_boolean': False,
-}
-
-expected_rec_3 = {
-    'id': 3,
-    'our_char': 'C',
-    'our_enum': 'three',
-    'our_longtext': 'orange',
-    'our_mediumtext': 'blue',
-    'our_text': 'red',
-    'our_varchar': 'quail',
-    'our_unsigned_tinyint': 30,
-    'our_signed_tinyint': -30,
-    'our_unsigned_smallint': 600,
-    'our_signed_smallint': -600,
-    'our_unsigned_mediumint': 6000,
-    'our_signed_mediumint': -6000,
-    'our_unsigned_int': 369123702,
-    'our_signed_int': -369123702,
-    'our_unsigned_bigint': 3881498714470269,
-    'our_signed_bigint': -3881498714470269,
-    'our_unsigned_decimal_1': Decimal("37037.01"),
-    'our_signed_decimal_1': -Decimal("37037.01"),
-    'our_unsigned_decimal_2': 3703701,
-    'our_signed_decimal_2': -3703701,
-    'our_unsigned_float': Decimal("3.7035000324249268"),
-    'our_signed_float': -Decimal("3.7035000324249268"),
-    'our_unsigned_double': Decimal("17.0367"),
-    'our_signed_double': -Decimal("17.0367"),
-    'our_bit_1': True,
-    'our_datetime': '2004-04-04T04:04:04.000000Z',
-    'our_timestamp': '2004-04-04T04:04:04.000000Z',
-    'our_date': '2004-04-04T00:00:00.000000Z',
-    'our_time': '1970-01-01T04:04:04.000000Z',
-    'our_boolean': False,
-}
-
+expected_rec_n = copy.deepcopy(rec_n)
+expected_rec_n['our_enum'] = 'one'
+expected_rec_1['our_mediumtext'] = 'less text'
+expected_rec_n['our_unsigned_decimal_1'] = Decimal("12345.67")
+expected_rec_n['our_signed_decimal_1'] = -Decimal("12345.67")
+expected_rec_n['our_unsigned_decimal_2'] = 1234567
+expected_rec_n['our_signed_decimal_2'] = -1234567
+expected_rec_n['our_bit_1'] = True
+expected_rec_n['our_datetime'] = '2000-01-01T01:01:01.000000Z'
+expected_rec_n['our_timestamp'] = '2000-01-01T01:01:01.000000Z'
+expected_rec_n['our_date'] = '2000-01-01T00:00:00.000000Z'
+expected_rec_n['our_time'] = '1970-01-01T01:01:01.000000Z'
 
 
 class MySQLBinlog(unittest.TestCase):
@@ -284,7 +177,7 @@ class MySQLBinlog(unittest.TestCase):
 
 
     def name(self):
-        return "tap_tester_mysql_binlog"
+        return "tap_tester_mysql_binlog_edge_cases"
 
 
     def get_type(self):
@@ -307,7 +200,7 @@ class MySQLBinlog(unittest.TestCase):
 
 
     def table_name(self):
-        return "mysql_binlog_test"
+        return "mysql_binlog_test_edge_cases"
 
 
     def tap_stream_id(self):
