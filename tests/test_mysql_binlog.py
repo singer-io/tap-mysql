@@ -332,6 +332,13 @@ class MySQLBinlog(unittest.TestCase):
         cursor.execute(insert_sql, rec_vals)
 
 
+    def get_engines(self):
+        return [
+            "MYISAM",
+            "INNODB",
+        ]
+
+
     def fetch_server_id(self):
         with db_utils.get_db_connection(self.get_properties(), self.get_credentials()).cursor() as cur:
             cur.execute("SELECT @@server_id")
@@ -350,6 +357,8 @@ class MySQLBinlog(unittest.TestCase):
             #pylint: disable=line-too-long
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_PORT, TAP_MYSQL_DBNAME, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD")
 
+
+    def initialize_db(self, engine):
         connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cur:
@@ -359,7 +368,6 @@ class MySQLBinlog(unittest.TestCase):
             """.format(self.database_name(), self.database_name())
 
             cur.execute(create_databases_sql)
-
             cur.execute("""
             SELECT EXISTS (
             SELECT 1
@@ -407,15 +415,37 @@ CREATE TABLE {}.{} (
             our_time               TIME,
             our_boolean            BOOLEAN
 )
-""".format(self.database_name(), self.table_name())
+ENGINE = {}
+""".format(self.database_name(), self.table_name(), engine)
 
             cur.execute(create_table_sql)
+
+            # Ensure expected engine in use
+            cur.execute("""
+            SELECT TABLE_NAME, ENGINE
+            FROM  information_schema.tables
+            where  table_schema =   %s;""",
+                        [self.database_name()])
+            engine_in_use = cur._result.rows[0][1]
+            self.assertEqual(engine, engine_in_use.upper(),
+                             msg="Unexpected engine in use: {}".format(engine_in_use))
 
             for record in [rec_1, rec_2]:
                 self.insert_record(cur, record)
 
+        print("\n\nMySQL DB Instantiated." + \
+              "\nNAME: {}\nENGINE: {}".format(self.database_name(), engine_in_use) + \
+              "\nTABLE: {}\nEVENTS: 2 records inserted\n\n".format(self.table_name()))
 
     def test_run(self):
+        """Run the binlog replication test using multiple storage engines."""
+        engines = self.get_engines()
+        for engine in engines:
+            self.initialize_db(engine)
+            self.binlog_test()
+
+
+    def binlog_test(self):
         """
         Test binlog replication
         • Verify an initial sync returns expected records of various datatypes
@@ -423,6 +453,7 @@ CREATE TABLE {}.{} (
         • Update, Delete, and Insert records then verify the next sync captures these changes
         • Verify some log_file and log_pos state was persisted after each sync
         """
+        print("RUNNING {}\n\n".format(self.name()))
 
         conn_id = connections.ensure_connection(self)
 
