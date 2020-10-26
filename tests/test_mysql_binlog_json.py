@@ -90,6 +90,13 @@ class MySQLBinlogJson(unittest.TestCase):
         cursor.execute(insert_sql, rec_vals)    
 
 
+    def get_engines(self):
+        return [
+            "MYISAM",
+            "INNODB",
+        ]
+
+
     def setUp(self):
         missing_envs = [x for x in [os.getenv('TAP_MYSQL_HOST'),
                                     os.getenv('TAP_MYSQL_PORT'),
@@ -100,6 +107,8 @@ class MySQLBinlogJson(unittest.TestCase):
             #pylint: disable=line-too-long
             raise Exception("set TAP_MYSQL_HOST, TAP_MYSQL_PORT, TAP_MYSQL_DBNAME, TAP_MYSQL_USER, TAP_MYSQL_PASSWORD")
 
+
+    def initialize_db(self, engine):
         connection = db_utils.get_db_connection(self.get_properties(), self.get_credentials())
 
         with connection.cursor() as cur:
@@ -128,15 +137,40 @@ CREATE TABLE {}.{} (
             id                     BIGINT PRIMARY KEY,
             our_json               JSON
 )
-""".format(self.database_name(), self.table_name())
+ENGINE = {}
+""".format(self.database_name(), self.table_name(), engine)
 
             cur.execute(create_table_sql)
+
+            # Ensure expected engine in use
+            cur.execute("""
+            SELECT TABLE_NAME, ENGINE
+            FROM  information_schema.tables
+            where  table_schema =   %s;""",
+                        [self.database_name()])
+            engine_in_use = cur._result.rows[0][1]
+            self.assertEqual(engine, engine_in_use.upper(),
+                             msg="Unexpected engine in use: {}".format(engine_in_use))
 
             for record in [rec_1]:
                 self.insert_record(cur, record)
 
+        print("\n\nMySQL DB Instantiated." + \
+              "\nNAME: {}\nENGINE: {}".format(self.database_name(), engine_in_use) + \
+              "\nTABLE: {}\nEVENTS: 1 record inserted\n\n".format(self.table_name()))
+
 
     def test_run(self):
+        """Run the binlog replication json test using multiple storage engines."""
+        engines = self.get_engines()
+        for engine in engines:
+            self.initialize_db(engine)
+            self.binlog_json_test()
+
+
+    def binlog_json_test(self):
+        print("RUNNING {}\n\n".format(self.name()))
+
         conn_id = connections.ensure_connection(self)
 
         # run in check mode
