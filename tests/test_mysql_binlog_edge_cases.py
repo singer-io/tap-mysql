@@ -16,6 +16,7 @@ import string
 
 import db_utils
 
+
 expected_schemas = {
     'mysql_binlog_test_edge_cases': {
         'type': 'object',
@@ -120,7 +121,7 @@ class MySQLBinlog(unittest.TestCase):
 
     def get_engines(self):
         return [
-            # "MYISAM", # TODO Put back in
+            # "MYISAM", # TODO Put back in ???
             "INNODB",
         ]
 
@@ -169,10 +170,7 @@ CREATE TABLE {}.{} (
             our_varchar_2          VARCHAR(255)
 )
 ENGINE = {}
-
 """.format(self.database_name(), self.table_name(), engine)
-            # INNODB-LOG-FILE-SIZE = {}
-            # --innodb-log-file-size={}
             cur.execute(create_table_sql)
 
             # Ensure expected engine in use
@@ -242,12 +240,16 @@ ENGINE = {}
 
         conn_id = connections.ensure_connection(self)
 
-        # prior to first sync update a record
+        # prior to first sync update a record...
         updated_timestamp = datetime.datetime.now()
         updated_id = 1 
         expected_records[1]['our_timestamp_2'] = datetime.datetime.strftime(updated_timestamp, "%Y-%m-%dT%H:%M:%S.%fZ")
 
-        # prior to first sync delete a record
+        # insert a record and...
+        inserted_record = self.generate_record_n(len(expected_records))
+        expected_records += [inserted_record] # TODO need to format
+
+        # delete a record
         deleted_id = 2 
         
         with db_utils.get_db_connection(self.get_properties(), self.get_credentials()).cursor() as cur:
@@ -258,6 +260,9 @@ ENGINE = {}
                 updated_id)
             
             )
+
+            self.insert_record(cur, inserted_record)
+
             delete_time = datetime.datetime.now()
             cur.execute("DELETE FROM {}.{} WHERE id = {}".format(
                 self.database_name(),
@@ -334,7 +339,7 @@ ENGINE = {}
                                                                    expected_sync_streams,
                                                                    expected_pks)
 
-        # TODO IS THIS EXPECTATION VALID ? | BUG ?
+        # BUG missing deleted record | https://stitchdata.atlassian.net/browse/SRCE-4258
         # self.assertEqual({self.table_name(): len(expected_records)}, record_count_by_stream)
         records_for_stream = runner.get_records_from_target_output()[self.table_name()]
         messages_for_stream = records_for_stream['messages']
@@ -365,7 +370,7 @@ ENGINE = {}
         # we need to compare record by record since there are so many.
         # a failure comparing expected_records to upsert_records would result in
         # an output message greater in length than a standard tmux buffer
-        # TODO wrkte up bug here for missing microsecond precision
+        # BUG missing datetime precision | https://stitchdata.atlassian.net/browse/SRCE-4257
         # for expected_record in expected_records:
         #     upsert_record = [rec for rec in upsert_records
         #                      if rec['id'] == expected_record['id']]

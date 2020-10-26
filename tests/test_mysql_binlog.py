@@ -14,6 +14,8 @@ import unittest
 
 import db_utils
 
+# BUG missing datetime precision | https://stitchdata.atlassian.net/browse/SRCE-4257 | Search for BUG_1 below
+
 expected_schemas = {
     'mysql_binlog_test': {
         'type': 'object',
@@ -201,8 +203,8 @@ expected_rec_1 = {
     'our_unsigned_double': Decimal("5.6789"),
     'our_signed_double': -Decimal("5.65789"),
     'our_bit_1': True,
-    'our_datetime': '2000-01-01T01:01:01.000000Z',
-    'our_timestamp': '2000-01-01T01:01:01.000000Z',
+    'our_datetime': '2000-01-01T01:01:01.000000Z',  # '2000-01-01T01:01:01.001000Z' BUG_1
+    'our_timestamp': '2000-01-01T01:01:01.000000Z',  # '2000-01-01T01:01:01.001000Z' BUG_1
     'our_date': '2000-01-01T00:00:00.000000Z',
     'our_time': '1970-01-01T01:01:01.000000Z',
     'our_boolean': True,
@@ -235,8 +237,8 @@ expected_rec_2 = {
     'our_unsigned_double': Decimal("11.3578"),
     'our_signed_double': -Decimal("11.3578"),
     'our_bit_1': False,
-    'our_datetime': '2002-02-02T02:02:02.000000Z',
-    'our_timestamp': '2002-02-02T02:02:02.000000Z',
+    'our_datetime': '2002-02-02T02:02:02.000000Z',  # '2002-02-02T02:02:02.002000Z' BUG_1
+    'our_timestamp': '2002-02-02T02:02:02.000000Z',  # '2002-02-02T02:02:02.002000Z' BUG_1
     'our_date': '2002-02-02T00:00:00.000000Z',
     'our_time': '1970-01-01T02:02:02.000000Z',
     'our_boolean': False,
@@ -269,8 +271,8 @@ expected_rec_3 = {
     'our_unsigned_double': Decimal("17.0367"),
     'our_signed_double': -Decimal("17.0367"),
     'our_bit_1': True,
-    'our_datetime': '2004-04-04T04:04:04.000000Z',
-    'our_timestamp': '2004-04-04T04:04:04.000000Z',
+    'our_datetime': '2004-04-04T04:04:04.000000Z',   # '2004-04-04T04:04:04.004000Z' BUG_1
+    'our_timestamp': '2004-04-04T04:04:04.000000Z',   # '2004-04-04T04:04:04.004000Z' BUG_1
     'our_date': '2004-04-04T00:00:00.000000Z',
     'our_time': '1970-01-01T04:04:04.000000Z',
     'our_boolean': False,
