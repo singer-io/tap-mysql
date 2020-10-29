@@ -614,8 +614,6 @@ ENGINE = {}
 
         self.assertEqual(expected_table_version, bookmark['version'])
 
-        # TODO does PATH B ever get executed the way this test is setup?
-
         # Either the log_file is the same but the log_pos has increased or the log_file
         # has rotated and the numeric suffix has increased
         if expected_log_file == bookmark['log_file']:
@@ -673,8 +671,6 @@ ENGINE = {}
 
         upsert_records = [m['data'] for m in messages_for_stream
                           if m['action'] == 'upsert']
-
-        # TODO why do we assume a timedelta?
 
         deleted_at_rec = upsert_records[1].get('_sdc_deleted_at')
         deleted_at_rec_timestamp = utils.strptime_to_utc(deleted_at_rec).timestamp()

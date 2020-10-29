@@ -399,7 +399,7 @@ ENGINE = {}
         #                      msg="multiple upsert_recs with same pk: {}".format(upsert_record))
         #     self.assertEqual(expected_record, upsert_record.pop())
 
-        # TODO add check for _sdc_delete_at for deleted record
+        # TODO add check for _sdc_delete_at for deleted record once bug addressed
 
         # run binlog sync
         sync_job_name = runner.run_sync_mode(self, conn_id)
@@ -449,8 +449,6 @@ ENGINE = {}
         bookmark = state['bookmarks'][self.tap_stream_id(t1)]
 
         self.assertEqual(expected_table_version, bookmark['version'])
-
-        # TODO does PATH B ever get executed the way this test is setup?
 
         # Either the log_file is the same but the log_pos has increased or the log_file
         # has rotated and the numeric suffix has increased
