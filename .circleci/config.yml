@@ -15,7 +15,7 @@ jobs:
       - run:
           name: 'Get environment variables'
           command: |
-            aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/sandbox dev_env.sh
+            aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/tap_tester_sandbox dev_env.sh
       - run:
           name: 'Setup virtual env'
           command: |
@@ -57,7 +57,7 @@ workflows:
   build_daily:
     triggers:
       - schedule:
-          cron: "0 12 * * *"
+          cron: "0 6 * * *"
           filters:
             branches:
               only:
