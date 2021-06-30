@@ -21,8 +21,7 @@ jobs:
           command: |
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
-            pip install .
-            pip install pylint
+            pip install .[dev]
             pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
       - run:
           name: 'Unit Tests'
