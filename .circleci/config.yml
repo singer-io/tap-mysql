@@ -20,6 +20,7 @@ jobs:
           name: 'Setup virtual env'
           command: |
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
+            source dev_env.sh
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .[dev]
             pylint tap_mysql -d "$PYLINT_DISABLE_LIST"
