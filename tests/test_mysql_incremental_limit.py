@@ -1,4 +1,3 @@
-from tap_tester.scenario import (SCENARIOS)
 import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
@@ -193,5 +192,3 @@ class MySQLIncrementalLimit(unittest.TestCase):
                              msg="incorrect replication_key specified in bookmark for stream `{}`".format(k))
 
         print("state and bookmarks are correct")
-
-SCENARIOS.add(MySQLIncrementalLimit)

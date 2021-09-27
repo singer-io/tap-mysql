@@ -1,4 +1,3 @@
-from tap_tester.scenario import (SCENARIOS)
 import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
@@ -87,7 +86,7 @@ class MySQLBinlogJson(unittest.TestCase):
             columns_sql,
             value_sql)
 
-        cursor.execute(insert_sql, rec_vals)    
+        cursor.execute(insert_sql, rec_vals)
 
 
     def get_engines(self):
@@ -347,5 +346,3 @@ ENGINE = {}
 
         self.assertTrue(len(actual_json.keys()) > 0)
         self.assertEqual(expected_json, actual_json)
-
-SCENARIOS.add(MySQLBinlogJson)
