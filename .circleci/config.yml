@@ -22,7 +22,7 @@ jobs:
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .[dev]
-            pylint tap_mysql -d $PYLINT_DISABLE_LIST
+            pylint tap_mysql -d "$PYLINT_DISABLE_LIST"
       - run:
           name: 'Unit Tests'
           command: |
