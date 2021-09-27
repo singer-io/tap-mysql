@@ -1,4 +1,3 @@
-from tap_tester.scenario import (SCENARIOS)
 import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
@@ -525,6 +524,3 @@ ENGINE = {}
         time_delta = delete_time.timestamp() - deleted_at_t1_timestamp
         print("Delete time vs record: difference in seconds", time_delta)
         self.assertLess(time_delta, 3) # time delta less than 3 seconds in magnitude
-
-
-SCENARIOS.add(MySQLBinlog)

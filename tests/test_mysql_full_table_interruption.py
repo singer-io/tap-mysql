@@ -5,8 +5,6 @@ import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
 
-from tap_tester.scenario import (SCENARIOS)
-
 import db_utils
 
 class MySQLFullTableInterruption(unittest.TestCase):
@@ -267,5 +265,3 @@ class MySQLFullTableInterruption(unittest.TestCase):
             # last_pk_fetched and max_pk_values are cleared after success
             self.assertEqual(bookmark,
                              {'initial_full_table_complete': True})
-
-SCENARIOS.add(MySQLFullTableInterruption)

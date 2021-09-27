@@ -1,4 +1,3 @@
-from tap_tester.scenario import (SCENARIOS)
 import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
@@ -658,5 +657,3 @@ class MySQLFullAndIncremental(unittest.TestCase):
         self.assertEqual(incremental_table_initial_table_version,
                          incremental_table_new_table_version,
                          msg="Expected incrementally-replicated table's table_version to remain unchanged over multiple invocations.")
-
-SCENARIOS.add(MySQLFullAndIncremental)

@@ -5,7 +5,7 @@ orbs:
 jobs:
   build:
     docker:
-      - image: 218546966473.dkr.ecr.us-east-1.amazonaws.com/circle-ci:tap-tester-v4
+      - image: 218546966473.dkr.ecr.us-east-1.amazonaws.com/circle-ci:stitch-tap-tester
       - image: singerio/mysql:5.7.29-binlog
         environment:
           MYSQL_ROOT_PASSWORD: Password1!
@@ -20,6 +20,7 @@ jobs:
           name: 'Setup virtual env'
           command: |
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
+            source dev_env.sh
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .[dev]
             pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
@@ -37,13 +38,7 @@ jobs:
             source /usr/local/share/virtualenvs/tap-tester/bin/activate
             source dev_env.sh
             pip install .
-            run-test --tap=tap-mysql \
-                     --target=target-stitch \
-                     --orchestrator=stitch-orchestrator \
-                     --email=harrison+sandboxtest@stitchdata.com \
-                     --password=$SANDBOX_PASSWORD \
-                     --client-id=50 \
-                     tests
+            run-test --tap=tap-mysql tests
       - slack/notify-on-failure:
           only_for_branches: master
 

@@ -1,4 +1,3 @@
-from tap_tester.scenario import (SCENARIOS)
 import tap_tester.connections as connections
 import tap_tester.menagerie   as menagerie
 import tap_tester.runner      as runner
@@ -692,7 +691,7 @@ ENGINE = {}
         del upsert_records[0]['_sdc_deleted_at']
         del upsert_records[1]['_sdc_deleted_at']
         del upsert_records[2]['_sdc_deleted_at']
-        
+
         self.assertEqual([updated_expected_rec_1,
                           updated_expected_rec_2,
                           updated_expected_rec_3],
@@ -727,5 +726,3 @@ ENGINE = {}
 
 
         self.assertEqual(record_count_by_stream, {})
-
-SCENARIOS.add(MySQLBinlog)
