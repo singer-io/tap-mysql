@@ -15,14 +15,13 @@ jobs:
       - run:
           name: 'Get environment variables'
           command: |
-            aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/sandbox dev_env.sh
+            aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/tap_tester_sandbox dev_env.sh
       - run:
           name: 'Setup virtual env'
           command: |
             virtualenv -p python3 /usr/local/share/virtualenvs/tap-mysql
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
-            pip install .
-            pip install pylint
+            pip install .[dev]
             pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
       - run:
           name: 'Unit Tests'
@@ -51,7 +50,7 @@ workflows:
   build_daily:
     triggers:
       - schedule:
-          cron: "0 12 * * *"
+          cron: "0 6 * * *"
           filters:
             branches:
               only:

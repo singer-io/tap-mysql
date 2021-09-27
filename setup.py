@@ -17,6 +17,9 @@ setup(name='tap-mysql',
           'backoff==1.8.0',
           'mysql-replication==0.22',
       ],
+      extras_require={
+          'dev': ['pylint==2.8.3']
+      },
       entry_points='''
           [console_scripts]
           tap-mysql=tap_mysql:main
