@@ -23,7 +23,7 @@ jobs:
             source dev_env.sh
             source /usr/local/share/virtualenvs/tap-mysql/bin/activate
             pip install .[dev]
-            pylint tap_mysql -d "$PYLINT_DISABLE_LIST"
+            pylint tap_mysql -d C,W,unexpected-keyword-arg,duplicate-code
       - run:
           name: 'Unit Tests'
           command: |
