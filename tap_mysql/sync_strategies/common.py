@@ -3,7 +3,8 @@
 
 import copy
 import datetime
-from tap_mysql.__init__ import execute_query as execute_query
+import functools
+import backoff
 import singer
 import time
 import tzlocal
@@ -47,6 +48,41 @@ pymysql.converters.conversions[pymysql.constants.FIELD_TYPE.DATETIME] = monkey_p
 pymysql.converters.conversions[pymysql.constants.FIELD_TYPE.DATE] = monkey_patch_date
 #--------------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------
+
+# boolean function to check if the error is 'timeout' error or not
+def is_timeout_error():
+    """
+        This function checks whether the URLError contains 'timed out' substring and return boolean
+        values accordingly, to decide whether to backoff or not.
+    """
+    def gen_fn(exc):
+        if str(exc).__contains__('timed out'):
+            # retry if the error string contains 'timed out'
+            return False
+        return True
+
+    return gen_fn
+
+def reconnect(details):
+    # get connection and reconnect
+    connection = details.get("args")[3]
+    connection.ping(reconnect=True)
+
+def backoff_timeout_error(fnc):
+    @backoff.on_exception(backoff.expo,
+                          (pymysql.err.OperationalError),
+                          giveup=is_timeout_error(),
+                          on_backoff=reconnect,
+                          max_tries=5,
+                          factor=2)
+    @functools.wraps(fnc)
+    def wrapper(*args, **kwargs):
+        return fnc(*args, **kwargs)
+    return wrapper
+
+@backoff_timeout_error
+def execute_query(cursor, query, params, conn):
+    cursor.execute(query, params)
 
 def escape(string):
     if '`' in string:

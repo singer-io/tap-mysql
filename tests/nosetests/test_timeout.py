@@ -1,6 +1,6 @@
 import unittest
 import pymysql
-import tap_mysql
+from tap_mysql.sync_strategies.common import execute_query
 import tap_mysql.connection as connection
 from unittest import mock
 
@@ -109,7 +109,7 @@ class TestTimeoutBackoff(unittest.TestCase):
 
         try:
             # function call
-            tap_mysql.execute_query(cursor, "SELECT * from Test", None, MockedConnection)
+            execute_query(cursor, "SELECT * from Test", None, MockedConnection)
         except pymysql.err.OperationalError:
             pass
 
@@ -125,7 +125,7 @@ class TestTimeoutBackoff(unittest.TestCase):
 
         try:
             # function call
-            tap_mysql.execute_query(cursor, "SELECT * from Test", None, MockedConnection)
+            execute_query(cursor, "SELECT * from Test", None, MockedConnection)
         except pymysql.err.OperationalError:
             pass
 

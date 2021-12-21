@@ -3,12 +3,10 @@
 
 import datetime
 import collections
-import functools
 import itertools
 from itertools import dropwhile
 import copy
 import os
-import backoff
 import pendulum
 import pymysql
 
@@ -74,41 +72,6 @@ FLOAT_TYPES = set(['float', 'double'])
 
 DATETIME_TYPES = set(['datetime', 'timestamp', 'date', 'time'])
 
-
-# boolean function to check if the error is 'timeout' error or not
-def is_timeout_error():
-    """
-        This function checks whether the URLError contains 'timed out' substring and return boolean
-        values accordingly, to decide whether to backoff or not.
-    """
-    def gen_fn(exc):
-        if str(exc).__contains__('timed out'):
-            # retry if the error string contains 'timed out'
-            return False
-        return True
-
-    return gen_fn
-
-def reconnect(details):
-    # get connection and reconnect
-    connection = details.get("args")[3]
-    connection.ping(reconnect=True)
-
-def backoff_timeout_error(fnc):
-    @backoff.on_exception(backoff.expo,
-                          (pymysql.err.OperationalError),
-                          giveup=is_timeout_error(),
-                          on_backoff=reconnect,
-                          max_tries=5,
-                          factor=2)
-    @functools.wraps(fnc)
-    def wrapper(*args, **kwargs):
-        return fnc(*args, **kwargs)
-    return wrapper
-
-@backoff_timeout_error
-def execute_query(cursor, query, params, conn):
-    cursor.execute(query, params)
 
 def schema_for_column(c):
     '''Returns the Schema object for the given Column.'''
@@ -200,7 +163,7 @@ def discover_catalog(mysql_conn, config):
 
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            execute_query(cur, """
+            common.execute_query(cur, """
             SELECT table_schema,
                    table_name,
                    table_type,
@@ -220,7 +183,7 @@ def discover_catalog(mysql_conn, config):
                     'is_view': table_type == 'VIEW'
                 }
 
-            execute_query(cur, """
+            common.execute_query(cur, """
                 SELECT table_schema,
                        table_name,
                        column_name,
@@ -355,7 +318,7 @@ def log_engine(mysql_conn, catalog_entry):
     else:
         with connect_with_backoff(mysql_conn) as open_conn:
             with open_conn.cursor() as cur:
-                execute_query(cur, """
+                common.execute_query(cur, """
                     SELECT engine
                       FROM information_schema.tables
                      WHERE table_schema = %s
@@ -719,7 +682,7 @@ def log_server_params(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         try:
             with open_conn.cursor() as cur:
-                execute_query(cur, '''
+                common.execute_query(cur, '''
                 SELECT VERSION() as version,
                        @@session.wait_timeout as wait_timeout,
                        @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
@@ -734,7 +697,7 @@ def log_server_params(mysql_conn):
                             'interactive_timeout: %s',
                             *row)
             with open_conn.cursor() as cur:
-                execute_query(cur, '''
+                common.execute_query(cur, '''
                 show session status where Variable_name IN ('Ssl_version', 'Ssl_cipher')''', None, mysql_conn)
                 rows = cur.fetchall()
                 mapped_row = dict(rows)
