@@ -62,7 +62,7 @@ def add_automatic_properties(catalog_entry, columns):
 def verify_binlog_config(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            cur.execute("SELECT  @@binlog_format")
+            common.execute_query(cur, "SELECT  @@binlog_format", None, mysql_conn)
             binlog_format = cur.fetchone()[0]
 
             if binlog_format != 'ROW':
@@ -70,7 +70,7 @@ def verify_binlog_config(mysql_conn):
                                 .format(binlog_format))
 
             try:
-                cur.execute("SELECT  @@binlog_row_image")
+                common.execute_query(cur, "SELECT  @@binlog_row_image", None, mysql_conn)
                 binlog_row_image = cur.fetchone()[0]
             except pymysql.err.InternalError as ex:
                 if ex.args[0] == 1193:
@@ -86,7 +86,7 @@ def verify_binlog_config(mysql_conn):
 def verify_log_file_exists(mysql_conn, log_file, log_pos):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            cur.execute("SHOW BINARY LOGS")
+            common.execute_query(cur, "SHOW BINARY LOGS", None, mysql_conn)
             result = cur.fetchall()
 
             existing_log_file = list(filter(lambda log: log[0] == log_file, result))
@@ -105,7 +105,7 @@ def verify_log_file_exists(mysql_conn, log_file, log_pos):
 def fetch_current_log_file_and_pos(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            cur.execute("SHOW MASTER STATUS")
+            common.execute_query(cur, "SHOW MASTER STATUS", None, mysql_conn)
 
             result = cur.fetchone()
 
@@ -120,7 +120,7 @@ def fetch_current_log_file_and_pos(mysql_conn):
 def fetch_server_id(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            cur.execute("SELECT @@server_id")
+            common.execute_query(cur, "SELECT @@server_id", None, mysql_conn)
             server_id = cur.fetchone()[0]
 
             return server_id
@@ -199,7 +199,7 @@ def calculate_bookmark(mysql_conn, binlog_streams_map, state):
 
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            cur.execute("SHOW BINARY LOGS")
+            common.execute_query(cur, "SHOW BINARY LOGS", None, mysql_conn)
 
             binary_logs = cur.fetchall()
 

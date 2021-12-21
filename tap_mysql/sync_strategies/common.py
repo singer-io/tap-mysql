@@ -3,6 +3,7 @@
 
 import copy
 import datetime
+from tap_mysql.__init__ import execute_query as execute_query
 import singer
 import time
 import tzlocal
@@ -187,7 +188,7 @@ def whitelist_bookmark_keys(bookmark_key_set, tap_stream_id, state):
         singer.clear_bookmark(state, tap_stream_id, bk)
 
 
-def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params):
+def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params, mysql_conn):
     replication_key = singer.get_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key')
@@ -197,7 +198,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
     time_extracted = utils.now()
 
     LOGGER.info('Running %s', query_string)
-    cursor.execute(select_sql, params)
+    execute_query(cursor, select_sql, params, mysql_conn)
 
     row = cursor.fetchone()
     rows_saved = 0

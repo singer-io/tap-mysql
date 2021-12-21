@@ -64,9 +64,9 @@ def sync_is_resumable(mysql_conn, catalog_entry):
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
             for pk in key_properties:
-                cur.execute(sql.format(database_name,
-                                          catalog_entry.table,
-                                          pk))
+                common.execute_query(cur, sql.format(database_name,
+                                     catalog_entry.table,
+                                     pk), None, mysql_conn)
 
                 result = cur.fetchone()
 
@@ -82,7 +82,7 @@ def sync_is_resumable(mysql_conn, catalog_entry):
     return True
 
 
-def get_max_pk_values(cursor, catalog_entry):
+def get_max_pk_values(cursor, catalog_entry, mysql_conn):
     database_name = common.get_database_name(catalog_entry)
     escaped_db = common.escape(database_name)
     escaped_table = common.escape(catalog_entry.table)
@@ -96,9 +96,9 @@ def get_max_pk_values(cursor, catalog_entry):
 
     select_column_clause = ", ".join(["max(" + pk + ")" for pk in escaped_columns])
 
-    cursor.execute(sql.format(select_column_clause,
+    common.execute_query(cursor, sql.format(select_column_clause,
                            escaped_db,
-                           escaped_table))
+                           escaped_table), None, mysql_conn)
     result = cursor.fetchone()
     processed_results = []
     for bm in result:
@@ -200,10 +200,10 @@ def generate_pk_clause(catalog_entry, state):
 
     return sql
 
-def update_incremental_full_table_state(catalog_entry, state, cursor):
+def update_incremental_full_table_state(catalog_entry, state, cursor, mysql_conn):
     max_pk_values = singer.get_bookmark(state,
                                         catalog_entry.tap_stream_id,
-                                        'max_pk_values') or get_max_pk_values(cursor, catalog_entry)
+                                        'max_pk_values') or get_max_pk_values(cursor, catalog_entry, mysql_conn)
 
 
     if not max_pk_values:
@@ -251,7 +251,7 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
             if perform_resumable_sync:
                 LOGGER.info("Full table sync is resumable based on primary key definition, will replicate incrementally")
 
-                state = update_incremental_full_table_state(catalog_entry, state, cur)
+                state = update_incremental_full_table_state(catalog_entry, state, cur, mysql_conn)
                 pk_clause = generate_pk_clause(catalog_entry, state)
 
             select_sql += pk_clause
@@ -263,7 +263,8 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
                               select_sql,
                               columns,
                               stream_version,
-                              params)
+                              params,
+                              mysql_conn)
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')

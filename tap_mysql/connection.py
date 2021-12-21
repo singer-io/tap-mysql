@@ -16,6 +16,19 @@ READ_TIMEOUT_SECONDS = 3600
 # We need to hold onto this for self-signed SSL
 match_hostname = ssl.match_hostname
 
+def get_request_timeout():
+    args = singer.utils.parse_args([])
+    # get the value of request timeout from config
+    config_request_timeout = args.config.get("request_timeout")
+
+    # only return the timeout value if it is passed in the config and the value is not 0, "0" or ""
+    if config_request_timeout and float(config_request_timeout):
+        # return the timeout from config
+        return float(config_request_timeout)
+
+    # return default timeout
+    return READ_TIMEOUT_SECONDS
+
 @backoff.on_exception(backoff.expo,
                       (pymysql.err.OperationalError),
                       max_tries=5,
@@ -36,7 +49,7 @@ def connect_with_backoff(connection):
              warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
 
         try:
-            cur.execute("SET @@session.net_read_timeout={}".format(READ_TIMEOUT_SECONDS))
+            cur.execute("SET @@session.net_read_timeout={}".format(get_request_timeout()))
         except pymysql.err.InternalError as e:
              warnings.append('Could not set session.net_read_timeout. Error: ({}) {}'.format(*e.args))
 
@@ -91,7 +104,7 @@ class MySQLConnection(pymysql.connections.Connection):
             "port": int(config["port"]),
             "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-            "read_timeout": READ_TIMEOUT_SECONDS,
+            "read_timeout": get_request_timeout(),
             "charset": "utf8",
         }
 
