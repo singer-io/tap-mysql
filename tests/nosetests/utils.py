@@ -7,6 +7,14 @@ from tap_mysql.connection import MySQLConnection
 
 DB_NAME='tap_mysql_test'
 
+class MockParseArgs:
+    config = {}
+    def __init__(self, config):
+        self.config = config
+
+def get_args(config):
+    return MockParseArgs(config)
+
 def get_db_config():
     config = {}
     config['host'] = os.environ.get('TAP_MYSQL_HOST')

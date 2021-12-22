@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 import pymysql
 import tap_mysql
 import copy
@@ -37,7 +38,9 @@ singer.write_message = accumulate_singer_messages
 class TestTypeMapping(unittest.TestCase):
 
     @classmethod
-    def setUpClass(cls):
+    @mock.patch("singer.utils.parse_args")
+    def setUpClass(cls, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         conn = test_utils.get_test_connection()
 
         with connect_with_backoff(conn) as open_conn:
@@ -248,7 +251,9 @@ class TestSelectsAppropriateColumns(unittest.TestCase):
 
 class TestSchemaMessages(unittest.TestCase):
 
-    def runTest(self):
+    @mock.patch("singer.utils.parse_args")
+    def runTest(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         conn = test_utils.get_test_connection()
 
         with connect_with_backoff(conn) as open_conn:
@@ -290,7 +295,9 @@ def currently_syncing_seq(messages):
 
 class TestCurrentStream(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -315,7 +322,9 @@ class TestCurrentStream(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
-    def test_emit_currently_syncing(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_emit_currently_syncing(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {}
 
         global SINGER_MESSAGES
@@ -324,7 +333,9 @@ class TestCurrentStream(unittest.TestCase):
         tap_mysql.do_sync(self.conn, {}, self.catalog, state)
         self.assertRegexpMatches(currently_syncing_seq(SINGER_MESSAGES), '^a+b+c+_+')
 
-    def test_start_at_currently_syncing(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_start_at_currently_syncing(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {
             'currently_syncing': 'tap_mysql_test-b',
             'bookmarks': {
@@ -356,7 +367,9 @@ def message_types_and_versions(messages):
 
 class TestStreamVersionFullTable(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -376,7 +389,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
-    def test_with_no_state(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_with_no_state(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {}
 
         global SINGER_MESSAGES
@@ -389,7 +404,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
 
-    def test_with_no_initial_full_table_complete_in_state(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_with_no_initial_full_table_complete_in_state(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         common.get_stream_version = lambda a, b: 12345
 
         state = {
@@ -413,7 +430,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertFalse('version' in state['bookmarks']['tap_mysql_test-full_table'].keys())
         self.assertTrue(state['bookmarks']['tap_mysql_test-full_table']['initial_full_table_complete'])
 
-    def test_with_initial_full_table_complete_in_state(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_with_initial_full_table_complete_in_state(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         common.get_stream_version = lambda a, b: 12345
 
         state = {
@@ -433,7 +452,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
         self.assertEqual(['RecordMessage', 'ActivateVersionMessage'], message_types)
         self.assertEqual(versions, [12345, 12345])
 
-    def test_version_cleared_from_state_after_full_table_success(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_version_cleared_from_state_after_full_table_success(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         common.get_stream_version = lambda a, b: 12345
 
         state = {
@@ -460,7 +481,9 @@ class TestStreamVersionFullTable(unittest.TestCase):
 
 class TestIncrementalReplication(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -490,7 +513,9 @@ class TestIncrementalReplication(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'INCREMENTAL', 'updated')
 
-    def test_with_no_state(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_with_no_state(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {}
 
         global SINGER_MESSAGES
@@ -513,8 +538,9 @@ class TestIncrementalReplication(unittest.TestCase):
         self.assertTrue(isinstance(versions[0], int))
         self.assertEqual(versions[0], versions[1])
 
-
-    def test_with_state(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_with_state(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {
             'bookmarks': {
                 'tap_mysql_test-incremental': {
@@ -547,7 +573,9 @@ class TestIncrementalReplication(unittest.TestCase):
         self.assertEqual(versions[0], versions[1])
         self.assertEqual(versions[1], 1)
 
-    def test_change_replication_key(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_change_replication_key(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {
             'bookmarks': {
                 'tap_mysql_test-incremental': {
@@ -574,7 +602,9 @@ class TestIncrementalReplication(unittest.TestCase):
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['replication_key_value'], 3)
         self.assertEqual(state['bookmarks']['tap_mysql_test-incremental']['version'], 1)
 
-    def test_version_not_cleared_from_state_after_incremental_success(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_version_not_cleared_from_state_after_incremental_success(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {
             'bookmarks': {
                 'tap_mysql_test-incremental': {
@@ -591,7 +621,9 @@ class TestIncrementalReplication(unittest.TestCase):
 
 class TestBinlogReplication(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.maxDiff = None
         self.state = {}
         self.conn = test_utils.get_test_connection()
@@ -648,7 +680,9 @@ class TestBinlogReplication(unittest.TestCase):
                                                'version',
                                                singer.utils.now())
 
-    def test_initial_full_table(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_initial_full_table(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {}
         expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.conn)
 
@@ -697,7 +731,9 @@ class TestBinlogReplication(unittest.TestCase):
         self.assertEqual(singer.get_bookmark(state, 'tap_mysql_test-binlog_2', 'version'),
                          activate_version_message_2.version)
 
-    def test_fail_on_view(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_fail_on_view(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         for stream in self.catalog.streams:
             md = singer.metadata.to_map(stream.metadata)
             singer.metadata.write(md, (), 'is-view', True)
@@ -719,7 +755,9 @@ class TestBinlogReplication(unittest.TestCase):
         self.assertEqual(expected_exception_message, exception_message)
 
 
-    def test_fail_if_log_file_does_not_exist(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_fail_if_log_file_does_not_exist(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         log_file = 'chicken'
         stream = self.catalog.streams[0]
         state = {
@@ -747,7 +785,9 @@ class TestBinlogReplication(unittest.TestCase):
             LOGGER.error(exception_message)
 
 
-    def test_binlog_stream(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_binlog_stream(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
@@ -798,7 +838,9 @@ class TestBinlogReplication(unittest.TestCase):
 
 
 class TestViews(unittest.TestCase):
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -816,7 +858,9 @@ class TestViews(unittest.TestCase):
                     CREATE VIEW a_view AS SELECT id, a FROM a_table
                     ''')
 
-    def test_discovery_sets_is_view(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_discovery_sets_is_view(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         catalog = test_utils.discover_catalog(self.conn, {})
         is_view = {}
 
@@ -829,7 +873,9 @@ class TestViews(unittest.TestCase):
             {'a_table': False,
              'a_view': True})
 
-    def test_do_not_discover_key_properties_for_view(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_do_not_discover_key_properties_for_view(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         catalog = test_utils.discover_catalog(self.conn, {})
         primary_keys = {}
         for c in catalog.streams:
@@ -842,7 +888,9 @@ class TestViews(unittest.TestCase):
 
 class TestEscaping(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -866,7 +914,9 @@ class TestEscaping(unittest.TestCase):
 
         test_utils.set_replication_method_and_key(self.catalog.streams[0], 'FULL_TABLE', None)
 
-    def runTest(self):
+    @mock.patch("singer.utils.parse_args")
+    def runTest(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
         tap_mysql.do_sync(self.conn, {}, self.catalog, {})
@@ -878,7 +928,9 @@ class TestEscaping(unittest.TestCase):
 
 class TestJsonTables(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -898,7 +950,9 @@ class TestJsonTables(unittest.TestCase):
             stream.stream = stream.table
             test_utils.set_replication_method_and_key(stream, 'FULL_TABLE', None)
 
-    def runTest(self):
+    @mock.patch("singer.utils.parse_args")
+    def runTest(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
         tap_mysql.do_sync(self.conn, {}, self.catalog, {})
@@ -909,7 +963,9 @@ class TestJsonTables(unittest.TestCase):
 
 class TestUnsupportedPK(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
 
         with connect_with_backoff(self.conn) as open_conn:
@@ -919,7 +975,9 @@ class TestUnsupportedPK(unittest.TestCase):
                 cursor.execute("INSERT INTO bad_pk_tab (bad_pk, age) VALUES ('a', 100)")
                 cursor.execute("INSERT INTO good_pk_tab (good_pk, age) VALUES (1, 100)")
 
-    def runTest(self):
+    @mock.patch("singer.utils.parse_args")
+    def runTest(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         catalog = test_utils.discover_catalog(self.conn, {})
 
         primary_keys = {}
