@@ -25,7 +25,7 @@ def get_request_timeout():
     if not config_request_timeout:
         return READ_TIMEOUT_SECONDS
 
-    if isinstance(config_request_timeout, int):
+    if isinstance(config_request_timeout, int): # pylint: disable=no-else-return
         # return value from config
         return config_request_timeout
     elif isinstance(config_request_timeout, str) and config_request_timeout.isdigit():
