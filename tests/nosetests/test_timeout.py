@@ -25,7 +25,7 @@ class MockedConnection:
 @mock.patch("singer.utils.parse_args")
 class TestTimeoutValue(unittest.TestCase):
 
-    def test_timeout_value_in_config(self, mocked_parse_args):
+    def test_timeout_int_value_in_config(self, mocked_parse_args):
 
         mock_config = {"request_timeout": 100}
         # mock parse args
@@ -36,6 +36,7 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(100.0, timeout)
+        self.assertTrue(isinstance(timeout, int))
 
     def test_timeout_value_not_in_config(self, mocked_parse_args):
 
@@ -48,6 +49,17 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(3600, timeout)
+        self.assertTrue(isinstance(timeout, int))
+
+    def test_timeout_decimal_value_in_config(self, mocked_parse_args):
+
+        mock_config = {"request_timeout": 100.1}
+        # mock parse args
+        mocked_parse_args.return_value = get_args(mock_config)
+
+        with self.assertRaises(Exception):
+            # get the timeout value for assertion
+            timeout = connection.get_request_timeout()
 
     def test_timeout_string_value_in_config(self, mocked_parse_args):
 
@@ -60,6 +72,17 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(100.0, timeout)
+        self.assertTrue(isinstance(timeout, int))
+
+    def test_timeout_string_decimal_value_in_config(self, mocked_parse_args):
+
+        mock_config = {"request_timeout": "100.1"}
+        # mock parse args
+        mocked_parse_args.return_value = get_args(mock_config)
+
+        with self.assertRaises(Exception):
+            # get the timeout value for assertion
+            timeout = connection.get_request_timeout()
 
     def test_timeout_empty_value_in_config(self, mocked_parse_args):
 
@@ -72,6 +95,7 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(3600, timeout)
+        self.assertTrue(isinstance(timeout, int))
 
     def test_timeout_0_value_in_config(self, mocked_parse_args):
 
@@ -84,10 +108,11 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(3600, timeout)
+        self.assertTrue(isinstance(timeout, int))
 
     def test_timeout_string_0_value_in_config(self, mocked_parse_args):
 
-        mock_config = {"request_timeout": "0.0"}
+        mock_config = {"request_timeout": "0"}
         # mock parse args
         mocked_parse_args.return_value = get_args(mock_config)
 
@@ -96,6 +121,17 @@ class TestTimeoutValue(unittest.TestCase):
 
         # verify that we got expected timeout value
         self.assertEquals(3600, timeout)
+        self.assertTrue(isinstance(timeout, int))
+
+    def test_timeout_string_0_decimal_value_in_config(self, mocked_parse_args):
+
+        mock_config = {"request_timeout": "0.0"}
+        # mock parse args
+        mocked_parse_args.return_value = get_args(mock_config)
+
+        with self.assertRaises(Exception):
+            # get the timeout value for assertion
+            timeout = connection.get_request_timeout()
 
 @mock.patch("time.sleep")
 class TestTimeoutBackoff(unittest.TestCase):
