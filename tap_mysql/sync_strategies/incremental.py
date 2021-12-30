@@ -78,7 +78,6 @@ def sync_table(mysql_conn, catalog_entry, state, columns, limit=None):
                                              select_sql,
                                              columns,
                                              stream_version,
-                                             params,
-                                             mysql_conn)
+                                             params)
                 if limit is None or num_rows < limit:
                     iterate_limit = False

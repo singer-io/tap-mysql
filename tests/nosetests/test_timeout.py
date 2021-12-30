@@ -1,7 +1,7 @@
 import unittest
 import pymysql
-from tap_mysql.sync_strategies.common import execute_query
 import tap_mysql.connection as connection
+from tap_mysql.sync_strategies.common import backoff_timeout_error
 from unittest import mock
 
 class MockParseArgs:
@@ -13,6 +13,9 @@ def get_args(config):
     return MockParseArgs(config)
 
 class MockedConnection:
+    def __init__(self, *args, **kwargs):
+        pass
+
     def __enter__(self):
         return self
 
@@ -20,6 +23,9 @@ class MockedConnection:
         pass
 
     def ping(*args, **kwargs):
+        pass
+
+    def show_warnings(*args, **kwargs):
         pass
 
 @mock.patch("singer.utils.parse_args")
@@ -134,36 +140,39 @@ class TestTimeoutValue(unittest.TestCase):
             timeout = connection.get_request_timeout()
 
 @mock.patch("time.sleep")
+@mock.patch("singer.utils.parse_args")
 class TestTimeoutBackoff(unittest.TestCase):
 
-    def test_timeout_backoff(self, mocked_sleep):
-
-        # create mock class of cursor
-        cursor = mock.MagicMock()
-        # raise timeout error for "cursor.execute"
-        cursor.execute.side_effect = pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query (timed out)')
-
+    @mock.patch("pymysql.cursors.SSCursor.execute")
+    def test_timeout_backoff(self, mocked_cursor_execute, mocked_parse_args, mocked_sleep):
+        # mock 'cursor.execute' and raise error
+        mocked_cursor_execute.side_effect = pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query (timed out)')
+        # add decorator on 'cursor.execute'
+        pymysql.cursors.SSCursor.execute = backoff_timeout_error(pymysql.cursors.SSCursor.execute)
+        # initialize cursor
+        cursor = pymysql.cursors.SSCursor(MockedConnection)
         try:
             # function call
-            execute_query(cursor, "SELECT * from Test", None, MockedConnection)
+            cursor.execute("SELECT * FROM test")
         except pymysql.err.OperationalError:
             pass
 
         # verify that we backoff for 5 times
-        self.assertEquals(cursor.execute.call_count, 5)
+        self.assertEquals(mocked_cursor_execute.call_count, 5)
 
-    def test_timeout_error_not_occurred(self, mocked_sleep):
-
-        # create mock class of cursor
-        cursor = mock.MagicMock()
-        # raise any error other than timeout error for "cursor.execute"
-        cursor.execute.side_effect = pymysql.err.OperationalError(2003, 'Can\'t connect to MySQL server on \'localhost\' (111)')
-
+    @mock.patch("pymysql.cursors.SSCursor.execute")
+    def test_timeout_error_not_occurred(self, mocked_cursor_execute, mocked_parse_args, mocked_sleep):
+        # mock 'cursor.execute' and raise error
+        mocked_cursor_execute.side_effect = pymysql.err.OperationalError(2003, 'Can\'t connect to MySQL server on \'localhost\' (111)')
+        # add decorator on 'cursor.execute'
+        pymysql.cursors.SSCursor.execute = backoff_timeout_error(pymysql.cursors.SSCursor.execute)
+        # initialize cursor
+        cursor = pymysql.cursors.SSCursor(MockedConnection)
         try:
             # function call
-            execute_query(cursor, "SELECT * from Test", None, MockedConnection)
+            cursor.execute("SELECT * FROM test")
         except pymysql.err.OperationalError:
             pass
 
         # verify that we did not backoff as timeout error has not occurred
-        self.assertEquals(cursor.execute.call_count, 1)
+        self.assertEquals(mocked_cursor_execute.call_count, 1)

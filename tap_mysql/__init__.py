@@ -8,6 +8,7 @@ from itertools import dropwhile
 import copy
 import os
 import pendulum
+
 import pymysql
 
 import singer
@@ -163,14 +164,14 @@ def discover_catalog(mysql_conn, config):
 
     with connect_with_backoff(mysql_conn) as open_conn:
         with open_conn.cursor() as cur:
-            common.execute_query(cur, """
+            cur.execute("""
             SELECT table_schema,
                    table_name,
                    table_type,
                    table_rows
                 FROM information_schema.tables
                 {}
-            """.format(table_schema_clause), None, mysql_conn)
+            """.format(table_schema_clause))
 
             table_info = {}
 
@@ -183,7 +184,7 @@ def discover_catalog(mysql_conn, config):
                     'is_view': table_type == 'VIEW'
                 }
 
-            common.execute_query(cur, """
+            cur.execute("""
                 SELECT table_schema,
                        table_name,
                        column_name,
@@ -196,7 +197,7 @@ def discover_catalog(mysql_conn, config):
                     FROM information_schema.columns
                     {}
                     ORDER BY table_schema, table_name
-            """.format(table_schema_clause), None, mysql_conn)
+            """.format(table_schema_clause))
 
             columns = []
             rec = cur.fetchone()
@@ -318,12 +319,12 @@ def log_engine(mysql_conn, catalog_entry):
     else:
         with connect_with_backoff(mysql_conn) as open_conn:
             with open_conn.cursor() as cur:
-                common.execute_query(cur, """
+                cur.execute("""
                     SELECT engine
                       FROM information_schema.tables
                      WHERE table_schema = %s
                        AND table_name   = %s
-                """, (database_name, catalog_entry.table), mysql_conn)
+                """, (database_name, catalog_entry.table))
 
                 row = cur.fetchone()
 
@@ -682,12 +683,12 @@ def log_server_params(mysql_conn):
     with connect_with_backoff(mysql_conn) as open_conn:
         try:
             with open_conn.cursor() as cur:
-                common.execute_query(cur, '''
+                cur.execute('''
                 SELECT VERSION() as version,
                        @@session.wait_timeout as wait_timeout,
                        @@session.innodb_lock_wait_timeout as innodb_lock_wait_timeout,
                        @@session.max_allowed_packet as max_allowed_packet,
-                       @@session.interactive_timeout as interactive_timeout''', None, mysql_conn)
+                       @@session.interactive_timeout as interactive_timeout''')
                 row = cur.fetchone()
                 LOGGER.info('Server Parameters: ' +
                             'version: %s, ' +
@@ -697,8 +698,8 @@ def log_server_params(mysql_conn):
                             'interactive_timeout: %s',
                             *row)
             with open_conn.cursor() as cur:
-                common.execute_query(cur, '''
-                show session status where Variable_name IN ('Ssl_version', 'Ssl_cipher')''', None, mysql_conn)
+                cur.execute('''
+                show session status where Variable_name IN ('Ssl_version', 'Ssl_cipher')''')
                 rows = cur.fetchall()
                 mapped_row = dict(rows)
                 LOGGER.info('Server SSL Parameters (blank means SSL is not active): ' +
@@ -718,6 +719,17 @@ def main():
     os.environ['TZ'] = 'UTC'
 
     mysql_conn = MySQLConnection(args.config)
+
+    # add timeout error decorator on 'cursor.execute'
+    # In connection.py's 'make_connection_wrapper', the 'cursorclass' in config is set to the value from kwargs and in binlog.py's,
+    # 'sync_binlog_stream' when initializing 'BinLogStreamReader' we are passing connection_settings={}, as per the code at:
+    #       https://github.com/noplay/python-mysql-replication/blob/main/pymysqlreplication/binlogstream.py#L282
+    # the 'self.__connection_settings' will be {} and hence default cursor 'pymysql.cursors.SSCursor.execute' will be set
+    pymysql.cursors.SSCursor.execute = common.backoff_timeout_error(pymysql.cursors.SSCursor.execute)
+    # add decorator for 'cursorclass' from config
+    if args.config.get("cursorclass"):
+        args.config.get("cursorclass").execute = common.backoff_timeout_error(args.config.get("cursorclass").execute)
+
     log_server_params(mysql_conn)
 
     if args.discover:

@@ -64,8 +64,8 @@ def is_timeout_error():
     return gen_fn
 
 def reconnect(details):
-    # get connection and reconnect
-    connection = details.get("args")[3]
+    # get connection as 1st param will be 'self' and reconnect
+    connection = details.get("args")[0].connection
     connection.ping(reconnect=True)
 
 def backoff_timeout_error(fnc):
@@ -79,10 +79,6 @@ def backoff_timeout_error(fnc):
     def wrapper(*args, **kwargs):
         return fnc(*args, **kwargs)
     return wrapper
-
-@backoff_timeout_error
-def execute_query(cursor, query, params, conn):
-    cursor.execute(query, params)
 
 def escape(string):
     if '`' in string:
@@ -224,7 +220,7 @@ def whitelist_bookmark_keys(bookmark_key_set, tap_stream_id, state):
         singer.clear_bookmark(state, tap_stream_id, bk)
 
 
-def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params, mysql_conn):
+def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version, params):
     replication_key = singer.get_bookmark(state,
                                           catalog_entry.tap_stream_id,
                                           'replication_key')
@@ -234,7 +230,7 @@ def sync_query(cursor, catalog_entry, state, select_sql, columns, stream_version
     time_extracted = utils.now()
 
     LOGGER.info('Running %s', query_string)
-    execute_query(cursor, select_sql, params, mysql_conn)
+    cursor.execute(select_sql, params)
 
     row = cursor.fetchone()
     rows_saved = 0
