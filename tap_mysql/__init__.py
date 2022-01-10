@@ -719,6 +719,17 @@ def main():
     os.environ['TZ'] = 'UTC'
 
     mysql_conn = MySQLConnection(args.config)
+
+    # add timeout error decorator on 'cursor.execute'
+    # In connection.py's 'make_connection_wrapper', the 'cursorclass' in config is set to the value from kwargs and in binlog.py's,
+    # 'sync_binlog_stream' when initializing 'BinLogStreamReader' we are passing connection_settings={}, as per the code at:
+    #       https://github.com/noplay/python-mysql-replication/blob/main/pymysqlreplication/binlogstream.py#L282
+    # the 'self.__connection_settings' will be {} and hence default cursor 'pymysql.cursors.SSCursor.execute' will be set
+    pymysql.cursors.SSCursor.execute = common.backoff_timeout_error(pymysql.cursors.SSCursor.execute)
+    # add decorator for 'cursorclass' from config
+    if args.config.get("cursorclass"):
+        args.config.get("cursorclass").execute = common.backoff_timeout_error(args.config.get("cursorclass").execute)
+
     log_server_params(mysql_conn)
 
     if args.discover:

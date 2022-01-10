@@ -1,5 +1,6 @@
 import copy
 import os
+from unittest import mock
 import pymysql
 import unittest
 import singer
@@ -133,7 +134,9 @@ def init_tables(conn):
 
 
 class BinlogInterruption(unittest.TestCase):
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
         self.catalog = init_tables(self.conn)
 
@@ -164,7 +167,9 @@ class BinlogInterruption(unittest.TestCase):
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-    def test_table_2_interrupted(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_table_2_interrupted(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         singer.write_message = singer_write_message_no_table_2
 
         state = {}
@@ -291,7 +296,9 @@ class BinlogInterruption(unittest.TestCase):
         self.assertIsNotNone(table_2_bookmark.get('log_file'))
         self.assertIsNotNone(table_2_bookmark.get('log_pos'))
 
-    def test_table_3_interrupted(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_table_3_interrupted(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         singer.write_message = singer_write_message_no_table_3
 
         state = {}
@@ -424,7 +431,9 @@ class BinlogInterruption(unittest.TestCase):
         self.assertIsNotNone(table_3_bookmark.get('log_pos'))
 
 class FullTableInterruption(unittest.TestCase):
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
         self.catalog = init_tables(self.conn)
 
@@ -448,7 +457,9 @@ class FullTableInterruption(unittest.TestCase):
         global SINGER_MESSAGES
         SINGER_MESSAGES.clear()
 
-    def test_table_2_interrupted(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_table_2_interrupted(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         singer.write_message = singer_write_message_no_table_2
 
         state = {}

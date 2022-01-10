@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 import pymysql
 import tap_mysql
 import copy
@@ -36,7 +37,9 @@ singer.write_message = accumulate_singer_messages
 
 class TestDateTypes(unittest.TestCase):
 
-    def setUp(self):
+    @mock.patch("singer.utils.parse_args")
+    def setUp(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         self.conn = test_utils.get_test_connection()
         self.state = {}
 
@@ -85,7 +88,9 @@ class TestDateTypes(unittest.TestCase):
                                                'version',
                                                singer.utils.now())
 
-    def test_initial_full_table(self):
+    @mock.patch("singer.utils.parse_args")
+    def test_initial_full_table(self, mocked_parse_args):
+        mocked_parse_args.return_value = test_utils.get_args({})
         state = {}
         expected_log_file, expected_log_pos = binlog.fetch_current_log_file_and_pos(self.conn)
 

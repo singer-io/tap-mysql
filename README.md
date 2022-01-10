@@ -77,7 +77,8 @@ Create a config file containing the database connection credentials, e.g.:
   "host": "localhost",
   "port": "3306",
   "user": "root",
-  "password": "password"
+  "password": "password",
+  "request_timeout": 300
 }
 ```
 
