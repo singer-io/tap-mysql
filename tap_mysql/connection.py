@@ -32,7 +32,7 @@ def get_request_timeout():
         # return default value if timeout from config is "0" and integer casted value of valid value
         return int(config_request_timeout) if int(config_request_timeout) else READ_TIMEOUT_SECONDS
 
-    # raise Exception as MySql dose not support float values
+    # raise Exception as MySql does not support float values
     # Document: https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_net_read_timeout
     raise Exception("Unsupported value of timeout, please use string or integer type values.")
 
