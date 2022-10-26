@@ -20,7 +20,7 @@ def get_db_config():
     return config
 
 
-def get_test_connection():
+def get_test_connection(extra_config=None):
     db_config = get_db_config()
 
     con = pymysql.connect(**db_config)
@@ -38,7 +38,9 @@ def get_test_connection():
     db_config['database'] = DB_NAME
     db_config['autocommit'] = True
 
-    mysql_conn = MySQLConnection(db_config)
+    if not extra_config:
+        extra_config = {}
+    mysql_conn = MySQLConnection({**db_config, **extra_config})
     mysql_conn.autocommit_mode = True
 
     return mysql_conn
