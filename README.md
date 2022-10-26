@@ -70,7 +70,7 @@ mysql> select * from example_db.animals;
 
 ### Create the configuration file
 
-Create a config file containing the database connection credentials, e.g.:
+Create a config file containing the database connection credentials. The required parameters are the same basic configuration properties used by the MySQL command-line client (`mysql`):
 
 ```json
 {
@@ -81,8 +81,17 @@ Create a config file containing the database connection credentials, e.g.:
 }
 ```
 
-These are the same basic configuration properties used by the MySQL command-line
-client (`mysql`).
+
+
+List of config parameters:
+
+| Parameter    | type                          | required | default                                                                                                                                                           | description                                                                                                               |
+|--------------|-------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| host         | string                        | Yes      | -                                                                                                                                                                 | mysql/mariadb host                                                                                                        |
+| port         | int                           | Yes      | -                                                                                                                                                                 | mysql/mariadb port                                                                                                        |
+| user         | string                        | Yes      | -                                                                                                                                                                 | db username                                                                                                               |
+| password     | string                        | Yes      | -                                                                                                                                                                 | db password                                                                                                               |
+| session_sqls | List of strings               | No       | ```['SET @@session.time_zone="+0:00"', 'SET @@session.wait_timeout=28800', 'SET @@session.net_read_timeout=3600', 'SET @@session.innodb_lock_wait_timeout=3600']``` | Set session variables dynamically.                                                                                        |
 
 ### Discovery mode
 

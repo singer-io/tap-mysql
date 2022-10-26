@@ -11,7 +11,10 @@ import ssl
 LOGGER = singer.get_logger()
 
 CONNECT_TIMEOUT_SECONDS = 30
-READ_TIMEOUT_SECONDS = 3600
+DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
+                        'SET @@session.wait_timeout=28800',
+                        'SET @@session.net_read_timeout=3600',
+                        'SET @@session.innodb_lock_wait_timeout=3600']
 
 # We need to hold onto this for self-signed SSL
 match_hostname = ssl.match_hostname
@@ -22,40 +25,28 @@ match_hostname = ssl.match_hostname
                       factor=2)
 def connect_with_backoff(connection):
     connection.connect()
-
-    warnings = []
-    with connection.cursor() as cur:
-        try:
-            cur.execute('SET @@session.time_zone="+0:00"')
-        except pymysql.err.InternalError as e:
-            warnings.append('Could not set session.time_zone. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute('SET @@session.wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-             warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
-
-        try:
-            cur.execute("SET @@session.net_read_timeout={}".format(READ_TIMEOUT_SECONDS))
-        except pymysql.err.InternalError as e:
-             warnings.append('Could not set session.net_read_timeout. Error: ({}) {}'.format(*e.args))
-
-
-        try:
-            cur.execute('SET @@session.innodb_lock_wait_timeout=2700')
-        except pymysql.err.InternalError as e:
-            warnings.append(
-                'Could not set session.innodb_lock_wait_timeout. Error: ({}) {}'.format(*e.args)
-                )
-
-        if warnings:
-            LOGGER.info(("Encountered non-fatal errors when configuring MySQL session that could "
-                         "impact performance:"))
-        for w in warnings:
-            LOGGER.warning(w)
-
+    run_session_sqls(connection)
     return connection
 
+def run_session_sqls(connection):
+    session_sqls = connection.session_sqls
+    
+    warnings = []
+    if session_sqls and isinstance(session_sqls, list):
+        for sql in session_sqls:
+            try:
+                run_sql(connection, sql)
+            except pymysql.err.InternalError as exc:
+                warnings.append(f'Could not set session variable `{sql}`: {exc}')
+
+    if warnings:
+        LOGGER.warning('Encountered non-fatal errors when configuring session that could impact performance:')
+    for warning in warnings:
+        LOGGER.warning(warning)
+
+def run_sql(connection, sql):
+    with connection.cursor() as cur:
+        cur.execute(sql)
 
 def parse_internal_hostname(hostname):
     # special handling for google cloud
@@ -91,7 +82,6 @@ class MySQLConnection(pymysql.connections.Connection):
             "port": int(config["port"]),
             "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-            "read_timeout": READ_TIMEOUT_SECONDS,
             "charset": "utf8",
         }
 
@@ -123,7 +113,7 @@ class MySQLConnection(pymysql.connections.Connection):
             if config.get("internal_hostname"):
                 parsed_hostname = parse_internal_hostname(config["internal_hostname"])
                 ssl.match_hostname = lambda cert, hostname: match_hostname(cert, parsed_hostname)
-
+        
         super().__init__(defer_connect=True, ssl=ssl_arg, **args)
 
         # Configure SSL without custom CA
@@ -142,6 +132,7 @@ class MySQLConnection(pymysql.connections.Connection):
             self.ctx.verify_mode = ssl.CERT_REQUIRED if verify_mode else ssl.CERT_NONE
             self.client_flag |= CLIENT.SSL
 
+        self.session_sqls = config.get("session_sqls", DEFAULT_SESSION_SQLS)
 
     def __enter__(self):
         return self
