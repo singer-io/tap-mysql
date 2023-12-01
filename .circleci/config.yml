@@ -49,12 +49,3 @@ workflows:
           context:
             - circleci-user
             - tier-1-tap-user
-  build_daily:
-    <<: *commit_jobs
-    triggers:
-      - schedule:
-          cron: "0 1 * * *"
-          filters:
-            branches:
-              only:
-                - master
