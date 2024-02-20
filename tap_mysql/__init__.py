@@ -159,7 +159,8 @@ def discover_catalog(mysql_conn, config):
         WHERE table_schema NOT IN (
         'information_schema',
         'performance_schema',
-        'mysql'
+        'mysql',
+        'sys'
         )"""
 
     with connect_with_backoff(mysql_conn) as open_conn:
