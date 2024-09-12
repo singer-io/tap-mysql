@@ -16,6 +16,27 @@ READ_TIMEOUT_SECONDS = 3600
 # We need to hold onto this for self-signed SSL
 match_hostname = ssl.match_hostname
 
+def get_request_timeout():
+    args = singer.utils.parse_args([])
+    # get the value of request timeout from config
+    config_request_timeout = args.config.get("request_timeout")
+
+    # return default value if timeout from config is none or empty
+    if not config_request_timeout:
+        return READ_TIMEOUT_SECONDS
+
+    if isinstance(config_request_timeout, int): # pylint: disable=no-else-return
+        # return value from config
+        return config_request_timeout
+    elif isinstance(config_request_timeout, str) and config_request_timeout.isdigit():
+        # return default value if timeout from config is "0" and integer casted value of valid value
+        return int(config_request_timeout) if int(config_request_timeout) else READ_TIMEOUT_SECONDS
+
+    # raise Exception as MySql does not support float values
+    # Document: https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_net_read_timeout
+    raise Exception("Unsupported value of timeout, please use string or integer type values.")
+
+
 @backoff.on_exception(backoff.expo,
                       (pymysql.err.OperationalError),
                       max_tries=5,
@@ -36,7 +57,7 @@ def connect_with_backoff(connection):
              warnings.append('Could not set session.wait_timeout. Error: ({}) {}'.format(*e.args))
 
         try:
-            cur.execute("SET @@session.net_read_timeout={}".format(READ_TIMEOUT_SECONDS))
+            cur.execute("SET @@session.net_read_timeout={}".format(get_request_timeout()))
         except pymysql.err.InternalError as e:
              warnings.append('Could not set session.net_read_timeout. Error: ({}) {}'.format(*e.args))
 
@@ -91,7 +112,7 @@ class MySQLConnection(pymysql.connections.Connection):
             "port": int(config["port"]),
             "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
-            "read_timeout": READ_TIMEOUT_SECONDS,
+            "read_timeout": get_request_timeout(),
             "charset": "utf8",
         }
 
